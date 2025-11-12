@@ -927,6 +927,27 @@ function svbUpdatePreviewTransform(key){
  }
 }
 
+function svbCollectOverlayData() {
+  const keys = ['child1', 'child2', 'parent1', 'parent2'];
+  const payload = {};
+  keys.forEach(key => {
+    const pick = (suffix, fallback = 0) => {
+      const el = document.querySelector(`input[name="${key}_${suffix}"]`);
+      if (!el) return fallback;
+      const num = parseFloat(el.value);
+      return Number.isFinite(num) ? num : fallback;
+    };
+    payload[key] = {
+      x: pick('x'),
+      y: pick('y'),
+      scale: pick('scale', 100),
+      angle: pick('angle'),
+      radius: pick('radius')
+    };
+  });
+  return payload;
+}
+
 
 // ... (Функции autoBindNameAudio, autoBindAgeAudio, buildSoundMap - БЕЗ ИЗМЕНЕНИЙ) ...
 const svbNorm = s => (s||'').toString().toLowerCase().trim().replace(/[\s_\-’']/g,'');
@@ -1063,7 +1084,7 @@ function svbLock(on){
   document.documentElement.style.overflow = on ? 'hidden' : '';
 }
 async function svbStartGenerate(){
-  if(svbGenerating) return; 
+  if(svbGenerating) return;
   svbGenerating = true;
   svbLock(true);
   $('#svb-lock-percent').textContent = '0%';
@@ -1071,6 +1092,11 @@ async function svbStartGenerate(){
   $('#svb-status').textContent = 'Запускаємо процес...';
   const form = document.getElementById('svb-form');
   const fd = new FormData(form);
+  try {
+    fd.append('overlay_json', JSON.stringify(svbCollectOverlayData()));
+  } catch (jsonErr) {
+    console.error('overlay_json encode failed', jsonErr);
+  }
   fd.append('action', 'svb_generate');
   try {
     const response = await fetch(SVB_AJAX.url, { method:'POST', body:fd });
@@ -1399,11 +1425,38 @@ function svb_generate() {
         $pos[$pk] = [
             'x' => isset($_POST[$pk . '_x']) ? intval($_POST[$pk . '_x']) : 0,
             'y' => isset($_POST[$pk . '_y']) ? intval($_POST[$pk . '_y']) : 0,
-            's' => isset($_POST[$pk . '_scale']) ? max(10,intval($_POST[$pk . '_scale'])) : 100,
-            'angle' => isset($_POST[$pk . '_angle']) ? floatval($_POST[$pk . '_angle']) : 0,
+            's' => isset($_POST[$pk . '_scale']) ? max(10, intval($_POST[$pk . '_scale'])) : 100,
+            'angle' => isset($_POST[$pk . '_angle']) ? floatval($_POST[$pk . '_angle']) : 0.0,
             'radius' => isset($_POST[$pk . '_radius']) ? intval($_POST[$pk . '_radius']) : 0,
         ];
     }
+
+    if (!empty($_POST['overlay_json'])) {
+        $overlay_raw = wp_unslash($_POST['overlay_json']);
+        $overlay_decoded = json_decode($overlay_raw, true);
+        if (is_array($overlay_decoded)) {
+            foreach ($photo_keys as $pk) {
+                if (empty($overlay_decoded[$pk]) || !is_array($overlay_decoded[$pk])) continue;
+                $record = $overlay_decoded[$pk];
+                if (isset($record['x']) && is_numeric($record['x'])) {
+                    $pos[$pk]['x'] = (int)round($record['x']);
+                }
+                if (isset($record['y']) && is_numeric($record['y'])) {
+                    $pos[$pk]['y'] = (int)round($record['y']);
+                }
+                if (isset($record['scale']) && is_numeric($record['scale'])) {
+                    $pos[$pk]['s'] = max(10, (int)round($record['scale']));
+                }
+                if (isset($record['angle']) && is_numeric($record['angle'])) {
+                    $pos[$pk]['angle'] = (float)$record['angle'];
+                }
+                if (isset($record['radius']) && is_numeric($record['radius'])) {
+                    $pos[$pk]['radius'] = max(0, (int)round($record['radius']));
+                }
+            }
+        }
+    }
+    svb_dbg_write($job_dir, 'req.overlay', $pos);
     // === КОНЕЦ ИСПРАВЛЕНИЯ ===
 
     $original_w = 1920; // Исходная ширина, от которой считаем X
@@ -1417,7 +1470,7 @@ function svb_generate() {
             if (empty($photos[$pk])) continue;
             $radius = $pos[$pk]['radius'] ?? 0;
             if ($radius <= 0) continue;
-            $scalePercent = $pos[$pk]['s'] ?? 100;
+            $scalePercent = min(200, max(10, $pos[$pk]['s'] ?? 100));
             if (!svb_apply_manual_round_corners($photos[$pk], $radius, $scalePercent, $target_w, $job_dir)) {
                 svb_dbg_write($job_dir, 'warn.round_fallback', "Manual corner radius failed for {$pk}");
             }
@@ -1492,16 +1545,17 @@ function svb_generate() {
         $y = $even( (int)($p['y'] * $scale_factor_y) );
         
         // Логика Масштаба (Scale)
-        $sx_perc = max(10, (int)($p['s'] ?? 100)) / 100.0; // e.g., 0.35
+        $scale_percent = max(10, min(200, (int)($p['s'] ?? 100)));
+        $sx_perc = $scale_percent / 100.0; // e.g., 0.35
         $scW = $even( (int)($target_w * $sx_perc) );
         $scH = -2; // Сохранить пропорции
-        
+
         // === ИСПРАВЛЕНИЕ: Получаем angle и radius из $p ===
-        $angle_degrees = $p['angle'];
-        $radius = $p['radius'];
-        
+        $angle_degrees = max(-180.0, min(180.0, (float)($p['angle'] ?? 0.0)));
+        $radius = max(0, (int)($p['radius'] ?? 0));
+
         // === ИСПРАВЛЕНИЕ (Угол): теперь используем тот же знак, что и CSS-превью ===
-        $angle_radians = $angle_degrees * (M_PI / 180);
+        $angle_radians = -$angle_degrees * (M_PI / 180);
         
         $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba"; 
         
