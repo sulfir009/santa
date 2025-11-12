@@ -249,8 +249,15 @@ if (!function_exists('svb_apply_manual_round_corners')) {
             return false;
         }
 
-        $img = @imagecreatefrompng($file);
+        $imgData = @file_get_contents($file);
+        if ($imgData === false) return false;
+
+        $img = @imagecreatefromstring($imgData);
         if (!$img) return false;
+
+        if (function_exists('imagepalettetotruecolor')) {
+            @imagepalettetotruecolor($img);
+        }
 
         imagealphablending($img, false);
         imagesavealpha($img, true);
@@ -1522,13 +1529,16 @@ function svb_generate() {
         if (!empty($_FILES[$field]['name']) && $_FILES[$field]['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES[$field]['name'], PATHINFO_EXTENSION));
             if (!in_array($ext, ['png','jpg','jpeg','webp'])) $ext = 'jpg';
-            $tmp = $job_dir . '/' . $field . '.' . $ext;
+            $base = $job_dir . '/' . $field;
+            $tmp = $base . '_orig.' . $ext;
             if (!@move_uploaded_file($_FILES[$field]['tmp_name'], $tmp)) {
                 wp_send_json_error('cannot save photo ' . $field);
             }
-            $destPng = $job_dir . '/' . $field . '.png';
+            $destPng = $base . '.png';
             if (svb_transcode_image_to_png_rgba($ffmpeg, $tmp, $destPng, 709, $job_dir)) {
-                @unlink($tmp);
+                if ($tmp !== $destPng && file_exists($tmp)) {
+                    @unlink($tmp);
+                }
                 $photos[$pk] = $destPng;
             } elseif (file_exists($destPng)) {
                 @unlink($tmp);
