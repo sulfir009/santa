@@ -691,14 +691,14 @@ function svb_render_form() {
         </div>
 
         <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-            <label>X<span class="svb-val" id="val-child1-x">650</span>
-                <input class="svb-range svb-key-control" type="range" name="child1_x" value="650" min="-1000" max="2500" step="5" data-val-id="val-child1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+            <label>X<span class="svb-val" id="val-child1-x">785</span>
+                <input class="svb-range svb-key-control" type="range" name="child1_x" value="785" min="-1000" max="2500" step="5" data-val-id="val-child1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
             </label>
-            <label>Y<span class="svb-val" id="val-child1-y">210</span>
-                <input class="svb-range svb-key-control" type="range" name="child1_y" value="210" min="-1000" max="2000" step="5" data-val-id="val-child1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+            <label>Y<span class="svb-val" id="val-child1-y">315</span>
+                <input class="svb-range svb-key-control" type="range" name="child1_y" value="315" min="-1000" max="2000" step="5" data-val-id="val-child1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
             </label>
-            <label>Scale<span class="svb-val" id="val-child1-scale">35</span>%
-                <input class="svb-range svb-key-control" type="range" name="child1_scale" value="35" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
+            <label>Scale<span class="svb-val" id="val-child1-scale">29</span>%
+                <input class="svb-range svb-key-control" type="range" name="child1_scale" value="29" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
             </label>
             <label>Angle<span class="svb-val" id="val-child1-angle">4</span>°
                 <input class="svb-range svb-key-control" type="range" name="child1_angle" value="4" min="-45" max="45" step="1" data-val-id="val-child1-angle" data-key-up="." data-key-down=","/>
@@ -841,6 +841,50 @@ function svb_render_form() {
       </div>
       <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото батька)</span>
     </div>
+    <div class="svb-drop" data-photo="extra">
+      <div class="svb-field"><span class="svb-label">Додаткове фото</span><input class="svb-input" type="file" name="photo_extra" accept="image/*"></div>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-extra">
+        <video id="svb-video-extra" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-extra" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="extra" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="extra">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="extra" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-extra" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="extra">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="extra" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="extra" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-extra-x">775</span>
+          <input class="svb-range svb-key-control" type="range" name="extra_x" value="775" min="-1000" max="2500" step="5" data-val-id="val-extra-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-extra-y">405</span>
+          <input class="svb-range svb-key-control" type="range" name="extra_y" value="405" min="-1000" max="2000" step="5" data-val-id="val-extra-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-extra-scale">31</span>%
+          <input class="svb-range svb-key-control" type="range" name="extra_scale" value="31" min="10" max="200" step="1" data-val-id="val-extra-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-extra-angle">0</span>°
+          <input class="svb-range svb-key-control" type="range" name="extra_angle" value="0" min="-45" max="45" step="1" data-val-id="val-extra-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-extra-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="extra_radius" value="0" min="0" max="200" step="1" data-val-id="val-extra-radius" data-key-up="]" data-key-down="["/>
+        </label>
+      </div>
+      <span class="svb-note">Інтервал: 06:35:03–06:43:13 (додаткове фото у цій сцені)</span>
+    </div>
   </div>
 
   <div class="svb-actions">
@@ -957,7 +1001,7 @@ function svbBindAudioPreview(){
 }
 
 function svbBindPhotoInputs(){
- ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+ ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
    svbMarkTouched(key);
    const input = document.querySelector(`input[name="photo_${key}"]`);
    if(!input) return;
@@ -982,7 +1026,7 @@ function svbBindPhotoInputs(){
    });
  });
 
- ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+ ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
   ['x','y','scale','angle','radius'].forEach(k=>{
     const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
     if(ctrl){
@@ -1022,18 +1066,28 @@ function svbUpdatePreviewTransform(key){
   const scaleX = previewWidth / target_w;
   const scaleY = previewHeight / target_h;
 
-  const baseX = (x_raw / original_w) * target_w;
-  const baseY = (y_raw / original_h) * target_h;
-
-  img.style.left = `${baseX * scaleX}px`;
-  img.style.top = `${baseY * scaleY}px`;
-
   const safeScale = Math.max(10, s_raw);
   const widthVideo = target_w * (safeScale / 100);
   const naturalW = img.naturalWidth || target_w;
   const naturalH = img.naturalHeight || target_h;
   const aspect = (naturalW > 0 && naturalH > 0) ? (naturalH / naturalW) : (target_h / target_w);
   const heightVideo = widthVideo * aspect;
+
+  const baseX = (x_raw / original_w) * target_w;
+  const baseY = (y_raw / original_h) * target_h;
+
+  const angleRad = (a || 0) * Math.PI / 180;
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+
+  const rotatedW = Math.abs(widthVideo * cosA) + Math.abs(heightVideo * sinA);
+  const rotatedH = Math.abs(widthVideo * sinA) + Math.abs(heightVideo * cosA);
+
+  const offsetX = Math.max(0, (rotatedW - widthVideo) / 2);
+  const offsetY = Math.max(0, (rotatedH - heightVideo) / 2);
+
+  img.style.left = `${(baseX - offsetX) * scaleX}px`;
+  img.style.top = `${(baseY - offsetY) * scaleY}px`;
 
   img.style.width = `${widthVideo * scaleX}px`;
   img.style.height = `${heightVideo * scaleY}px`;
@@ -1051,7 +1105,7 @@ function svbUpdatePreviewTransform(key){
 }
 
 function svbCollectOverlayData() {
-  const keys = ['child1', 'child2', 'parent1', 'parent2'];
+  const keys = ['child1', 'child2', 'parent1', 'parent2', 'extra'];
   const payload = {};
   keys.forEach(key => {
     const pick = (suffix, fallback = 0) => {
@@ -1356,7 +1410,7 @@ function svbMarkTouched(key){
 }
 
 function svbBindRealtimeControls() {
-    ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+    ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
         const vid = document.getElementById(`svb-video-${key}`);
         const playBtn = document.querySelector(`[data-vid-ctrl="play"][data-key="${key}"]`);
         const pauseBtn = document.querySelector(`[data-vid-ctrl="pause"][data-key="${key}"]`);
@@ -1478,7 +1532,7 @@ document.querySelector('input[name="name_text"]').addEventListener('input', auto
 document.querySelector('input[name="age_value"]').addEventListener('input', autoBindAgeAudio);
 
 // Обновляем позицию при загрузке
-['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
   if (document.getElementById('img-' + key)) {
     svbUpdatePreviewTransform(key);
   }
@@ -1523,7 +1577,7 @@ function svb_generate() {
     // --- (Сохранение фото - без изменений) ---
     $photos = [];
     $photo_meta = [];
-    $photo_keys = ['child1','child2','parent1','parent2'];
+    $photo_keys = ['child1','child2','parent1','parent2','extra'];
     foreach ($photo_keys as $pk) {
         $field = 'photo_' . $pk;
         if (!empty($_FILES[$field]['name']) && $_FILES[$field]['error'] === UPLOAD_ERR_OK) {
@@ -1711,15 +1765,19 @@ function svb_generate() {
         $scaled_w = $scW;
         $scaled_h = $scH;
 
-        $rot_diag = sqrt(($scaled_w * $scaled_w) + ($scaled_h * $scaled_h));
-        $pad_mod = 16;
-        $pad_side = (int)ceil($rot_diag / $pad_mod) * $pad_mod;
-        if ($pad_side < $pad_mod) {
-            $pad_side = $pad_mod;
+        $cosA = cos($angle_radians);
+        $sinA = sin($angle_radians);
+
+        if (abs($angle_radians) > 0.0001) {
+            $rotated_w = abs($scaled_w * $cosA) + abs($scaled_h * $sinA);
+            $rotated_h = abs($scaled_w * $sinA) + abs($scaled_h * $cosA);
+        } else {
+            $rotated_w = $scaled_w;
+            $rotated_h = $scaled_h;
         }
 
-        $offset_x = ($pad_side - $scaled_w) / 2.0;
-        $offset_y = ($pad_side - $scaled_h) / 2.0;
+        $offset_x = max(0.0, ($rotated_w - $scaled_w) / 2.0);
+        $offset_y = max(0.0, ($rotated_h - $scaled_h) / 2.0);
 
         $x = $even((int)round($x_base - $offset_x));
         $y = $even((int)round($y_base - $offset_y));
@@ -1728,7 +1786,8 @@ function svb_generate() {
             'input' => $p,
             'scaled_w' => $scaled_w,
             'scaled_h' => $scaled_h,
-            'pad_side' => $pad_side,
+            'rotated_w' => $rotated_w,
+            'rotated_h' => $rotated_h,
             'offset_x' => $offset_x,
             'offset_y' => $offset_y,
             'x_base' => $x_base,
@@ -1765,12 +1824,11 @@ function svb_generate() {
         }
         // === КОНЕЦ ИСПРАВЛЕНИЯ ===
 
-        if ($angle_radians != 0) { 
-            $chain .= ",rotate={$angle_radians}:ow='hypot(iw,ih)':oh='hypot(iw,ih)':c=none"; 
+        if ($angle_radians != 0) {
+            $chain .= ",rotate={$angle_radians}:ow=rotw(iw):oh=roth(ih):c=none";
         }
-        
-        $mod = 16; $modW = "ceil(iw/{$mod})*{$mod}"; $modH = "ceil(ih/{$mod})*{$mod}";
-        $chain .= ",pad=w={$modW}:h={$modH}:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0";
+
+        $chain .= ",pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0";
 
         $chain .= ",format=yuva420p"; 
         
@@ -1792,7 +1850,7 @@ function svb_generate() {
     };
 
     $addOverlay('child1', $P_CHILD1); $addOverlay('child2', $P_CHILD2);
-    $addOverlay('parent1', $P_PARENTS); $addOverlay('parent2', $P_PARENTS);
+    $addOverlay('parent1', $P_PARENTS); $addOverlay('parent2', $P_PARENTS); $addOverlay('extra', $P_PARENTS);
     $finalV = $vlabel;
     
     // --- Аудио (Без изменений) ---
