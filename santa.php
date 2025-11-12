@@ -114,6 +114,103 @@ function svb_transcode_image_to_png_rgba($ffmpeg, $src, $dst){
     return ($rc === 0) && file_exists($dst);
 }
 
+function svb_apply_manual_round_corners($file, $radiusCssPx, $scalePercent, $targetWidth, $job_dir = '') {
+    if ($radiusCssPx <= 0) return true;
+    if (!file_exists($file)) return false;
+
+    $info = @getimagesize($file);
+    if (!$info) return false;
+    [$width, $height] = $info;
+    if ($width <= 0 || $height <= 0) return false;
+
+    $scalePercent = max(1, (int)$scalePercent);
+    $scaledWidth = max(1, (int)round($targetWidth * ($scalePercent / 100.0)));
+    $scaleFactor = $scaledWidth > 0 ? ($width / $scaledWidth) : 1.0;
+    $radius = (int)round($radiusCssPx * $scaleFactor);
+    $maxRadius = (int)floor((min($width, $height) - 1) / 2);
+    if ($maxRadius < 1) $maxRadius = 1;
+    $radius = max(1, min($radius, $maxRadius));
+    if ($radius <= 0) return true;
+
+    if (class_exists('Imagick')) {
+        try {
+            $img = new Imagick($file);
+            $img->setImageFormat('png');
+            $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
+            $img->roundCorners($radius, $radius);
+            $img->writeImage($file);
+            $img->clear();
+            $img->destroy();
+            return true;
+        } catch (Throwable $e) {
+            svb_dbg_write($job_dir, 'warn.imagick_round', $e->getMessage());
+        }
+    }
+
+    if (!function_exists('imagecreatetruecolor') || !function_exists('imagepng')) {
+        return false;
+    }
+
+    $img = @imagecreatefrompng($file);
+    if (!$img) return false;
+
+    imagealphablending($img, false);
+    imagesavealpha($img, true);
+
+    $mask = imagecreatetruecolor($width, $height);
+    if (!$mask) {
+        imagedestroy($img);
+        return false;
+    }
+
+    if (function_exists('imageantialias')) imageantialias($mask, true);
+
+    imagealphablending($mask, false);
+    imagesavealpha($mask, true);
+
+    $maskTransparent = imagecolorallocatealpha($mask, 0, 0, 0, 127);
+    $maskOpaque = imagecolorallocatealpha($mask, 0, 0, 0, 0);
+
+    imagefilledrectangle($mask, 0, 0, $width, $height, $maskTransparent);
+    imagefilledrectangle($mask, $radius, 0, $width - $radius, $height, $maskOpaque);
+    imagefilledrectangle($mask, 0, $radius, $width, $height - $radius, $maskOpaque);
+
+    $diameter = $radius * 2;
+    imagefilledellipse($mask, $radius, $radius, $diameter, $diameter, $maskOpaque);
+    imagefilledellipse($mask, $width - $radius - 1, $radius, $diameter, $diameter, $maskOpaque);
+    imagefilledellipse($mask, $radius, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
+    imagefilledellipse($mask, $width - $radius - 1, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
+
+    $transparentColor = imagecolorallocatealpha($img, 0, 0, 0, 127);
+    $cache = [];
+
+    for ($y = 0; $y < $height; $y++) {
+        for ($x = 0; $x < $width; $x++) {
+            $rgba = imagecolorat($mask, $x, $y);
+            $alpha = ($rgba & 0x7F000000) >> 24;
+            if ($alpha === 0) continue;
+            if ($alpha >= 127) {
+                imagesetpixel($img, $x, $y, $transparentColor);
+                continue;
+            }
+
+            $srcRGBA = imagecolorsforindex($img, imagecolorat($img, $x, $y));
+            $key = $srcRGBA['red'] . '_' . $srcRGBA['green'] . '_' . $srcRGBA['blue'] . '_' . $alpha;
+            if (!isset($cache[$key])) {
+                $cache[$key] = imagecolorallocatealpha($img, $srcRGBA['red'], $srcRGBA['green'], $srcRGBA['blue'], $alpha);
+            }
+            imagesetpixel($img, $x, $y, $cache[$key]);
+        }
+    }
+
+    $ok = imagepng($img, $file);
+
+    imagedestroy($img);
+    imagedestroy($mask);
+
+    return $ok;
+}
+
 function svb_scan_audio_catalog() {
     $out = ['name' => [ 'boy'=>[], 'girl'=>[], 'root'=>[] ]];
 
@@ -1270,8 +1367,9 @@ function svb_generate() {
     }
     $ffmpeg  = svb_exec_find('ffmpeg'); if (!$ffmpeg) $ffmpeg = '/opt/homebrew/bin/ffmpeg';
     $ffprobe = svb_exec_find('ffprobe'); if (!$ffprobe) $ffprobe = '/opt/homebrew/bin/ffprobe';
-    $HAS_FIFO  = svb_ff_has_filter($ffmpeg, 'fifo');
-    $HAS_AFIFO = svb_ff_has_filter($ffmpeg, 'afifo');
+    $HAS_FIFO     = svb_ff_has_filter($ffmpeg, 'fifo');
+    $HAS_AFIFO    = svb_ff_has_filter($ffmpeg, 'afifo');
+    $HAS_ROUNDED  = svb_ff_has_filter($ffmpeg, 'roundedcorners');
     svb_dbg_write($job_dir, 'env.ffmpeg_version', @shell_exec($ffmpeg.' -hide_banner -version 2>&1'));
     // --- (Сохранение фото - без изменений) ---
     $photos = [];
@@ -1307,7 +1405,28 @@ function svb_generate() {
         ];
     }
     // === КОНЕЦ ИСПРАВЛЕНИЯ ===
-    
+
+    $original_w = 1920; // Исходная ширина, от которой считаем X
+    $original_h = 1080; // Исходная высота, от которой считаем Y
+    $target_w   = 854;  // Новая ширина (480p)
+    $target_h   = 480;  // Новая высота (480p)
+
+    if (!$HAS_ROUNDED) {
+        svb_dbg_write($job_dir, 'info.round_fallback', 'roundedcorners filter missing, applying manual mask');
+        foreach ($photo_keys as $pk) {
+            if (empty($photos[$pk])) continue;
+            $radius = $pos[$pk]['radius'] ?? 0;
+            if ($radius <= 0) continue;
+            $scalePercent = $pos[$pk]['s'] ?? 100;
+            if (!svb_apply_manual_round_corners($photos[$pk], $radius, $scalePercent, $target_w, $job_dir)) {
+                svb_dbg_write($job_dir, 'warn.round_fallback', "Manual corner radius failed for {$pk}");
+            }
+        }
+    }
+
+    $scale_factor_x = $target_w / $original_w;
+    $scale_factor_y = $target_h / $original_h;
+
     $audio_cats = ['name','age','facts','hobby','praise','request'];
     $audio_sel  = [];
     foreach($audio_cats as $cat){
@@ -1355,23 +1474,14 @@ function svb_generate() {
 
     /* === FILTER COMPLEX === */
     
-    // === (Константы размеров - без изменений) ===
-    $original_w = 1920; // Исходная ширина, от которой считаем X
-    $original_h = 1080; // Исходная высота, от которой считаем Y
-    $target_w = 854;    // Новая ширина (480p)
-    $target_h = 480;    // Новая высота (480p)
-
-    $scale_factor_x = $target_w / $original_w; 
-    $scale_factor_y = $target_h / $original_h; 
-    
     $filter = [];
     $filter[] = "[0:v]fps=30,format=yuv420p,setsar=1,setpts=PTS-STARTPTS[vbase]";
-    
+
     $vlabel = "[vbase]";
     $vcount = 0;
     $even = static function($n){ $n = (int)$n; return ($n & 1) ? $n - 1 : $n; };
-    
-    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h){ 
+
+    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h){
         if (!isset($imgIndexMap[$key])) return;
         $idx = $imgIndexMap[$key];
         // === ИСПРАВЛЕНИЕ: Добавляем defaults для angle и radius ===
@@ -1397,9 +1507,9 @@ function svb_generate() {
         
         $chain .= ",scale=w={$scW}:h={$scH}"; 
 
-        // === ИСПРАВЛЕНИЕ (Радиус): Добавляем фильтр roundedcorners ===
+        // === ИСПРАВЛЕНИЕ (Радиус): Добавляем фильтр roundedcorners при наличии ===
         // (Примечание: этот фильтр может отсутствовать в старых версиях FFmpeg)
-        if ($radius > 0) {
+        if ($HAS_ROUNDED && $radius > 0) {
             // Мы масштабировали ширину до $scW, который равен $target_w * $sx_perc
             // CSS применяет 'px' радиус до scale.
             // FFmpeg применяет 'px' радиус после scale.
