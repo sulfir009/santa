@@ -1555,7 +1555,7 @@ function svb_generate() {
         $radius = max(0, (int)($p['radius'] ?? 0));
 
         // === ИСПРАВЛЕНИЕ (Угол): теперь используем тот же знак, что и CSS-превью ===
-        $angle_radians = -$angle_degrees * (M_PI / 180);
+        $angle_radians = $angle_degrees * (M_PI / 180);
         
         $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba"; 
         
