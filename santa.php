@@ -1500,8 +1500,8 @@ function svb_generate() {
         $angle_degrees = $p['angle'];
         $radius = $p['radius'];
         
-        // === ИСПРАВЛЕНИЕ (Угол): Добавлен знак МИНУС для синхронизации с CSS ===
-        $angle_radians = -($angle_degrees * (M_PI / 180));
+        // === ИСПРАВЛЕНИЕ (Угол): теперь используем тот же знак, что и CSS-превью ===
+        $angle_radians = $angle_degrees * (M_PI / 180);
         
         $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba"; 
         
