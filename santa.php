@@ -384,9 +384,9 @@ function svb_render_form() {
   position: absolute;
   top: 0; /* ИСПОЛЬЗУЕМ TOP/LEFT ДЛЯ ПОЗИЦИОНИРОВАНИЯ */
   left: 0; /* ИСПОЛЬЗУЕМ TOP/LEFT ДЛЯ ПОЗИЦИОНИРОВАНИЯ */
-  transform-origin: top left;
+  transform-origin: center center;
   z-index: 2; /* Картинка поверх видео */
-  will-change: transform, top, left, width, height; 
+  will-change: transform, top, left, width, height;
   
   /* === ИСПРАВЛЕНИЕ: Плейсхолдер больше не 100px === */
   /* Он будет 0px, пока JS не задаст ему % ширины */
@@ -907,24 +907,41 @@ function svbUpdatePreviewTransform(key){
 
  const original_w = 1920;
  const original_h = 1080;
+  const target_w = 854;
+  const target_h = 480;
 
- const final_x_perc = (x_raw / original_w) * 100;
- const final_y_perc = (y_raw / original_h) * 100;
+  const previewWidth = previewBox.clientWidth || previewBox.offsetWidth || target_w;
+  const previewHeight = previewBox.clientHeight || previewBox.offsetHeight || (previewWidth * (target_h / target_w));
 
- img.style.left = `${final_x_perc}%`;
- img.style.top = `${final_y_perc}%`;
- img.style.width = `${s_raw}%`;
- img.style.height = 'auto';
- img.style.transformOrigin = 'top left';
- img.style.transform = `rotate(${a}deg)`;
+  const scaleX = previewWidth / target_w;
+  const scaleY = previewHeight / target_h;
 
- if (!isNaN(radius) && radius > 0) {
-   img.style.borderRadius = `${radius}px`;
-   img.style.overflow = 'hidden';
- } else {
-   img.style.borderRadius = '0px';
-   img.style.overflow = '';
- }
+  const baseX = (x_raw / original_w) * target_w;
+  const baseY = (y_raw / original_h) * target_h;
+
+  img.style.left = `${baseX * scaleX}px`;
+  img.style.top = `${baseY * scaleY}px`;
+
+  const safeScale = Math.max(10, s_raw);
+  const widthVideo = target_w * (safeScale / 100);
+  const naturalW = img.naturalWidth || target_w;
+  const naturalH = img.naturalHeight || target_h;
+  const aspect = (naturalW > 0 && naturalH > 0) ? (naturalH / naturalW) : (target_h / target_w);
+  const heightVideo = widthVideo * aspect;
+
+  img.style.width = `${widthVideo * scaleX}px`;
+  img.style.height = `${heightVideo * scaleY}px`;
+  img.style.transformOrigin = 'center center';
+  img.style.transform = `rotate(${a}deg)`;
+
+  if (!isNaN(radius) && radius > 0) {
+    const radiusPx = radius * scaleX;
+    img.style.borderRadius = `${radiusPx}px`;
+    img.style.overflow = 'hidden';
+  } else {
+    img.style.borderRadius = '0px';
+    img.style.overflow = '';
+  }
 }
 
 function svbCollectOverlayData() {
@@ -1399,6 +1416,7 @@ function svb_generate() {
     svb_dbg_write($job_dir, 'env.ffmpeg_version', @shell_exec($ffmpeg.' -hide_banner -version 2>&1'));
     // --- (Сохранение фото - без изменений) ---
     $photos = [];
+    $photo_meta = [];
     $photo_keys = ['child1','child2','parent1','parent2'];
     foreach ($photo_keys as $pk) {
         $field = 'photo_' . $pk;
@@ -1415,6 +1433,13 @@ function svb_generate() {
                 $photos[$pk] = $destPng;
             } else {
                 $photos[$pk] = $tmp;
+            }
+
+            if (!empty($photos[$pk])) {
+                $meta = @getimagesize($photos[$pk]);
+                if ($meta && isset($meta[0], $meta[1])) {
+                    $photo_meta[$pk] = ['w' => (int)$meta[0], 'h' => (int)$meta[1]];
+                }
             }
         }
     }
@@ -1534,21 +1559,30 @@ function svb_generate() {
     $vcount = 0;
     $even = static function($n){ $n = (int)$n; return ($n & 1) ? $n - 1 : $n; };
 
-    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h){
+    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h, $photo_meta, $job_dir){
         if (!isset($imgIndexMap[$key])) return;
         $idx = $imgIndexMap[$key];
         // === ИСПРАВЛЕНИЕ: Добавляем defaults для angle и radius ===
         $p = $pos[$key] ?? ['x'=>0,'y'=>0,'s'=>100, 'angle'=>0, 'radius'=>0];
 
         // Позиция (X/Y) - в пикселях на целевом видео (854x480)
-        $x = $even( (int)($p['x'] * $scale_factor_x) );
-        $y = $even( (int)($p['y'] * $scale_factor_y) );
-        
+        $x_base = (float)($p['x'] * $scale_factor_x);
+        $y_base = (float)($p['y'] * $scale_factor_y);
+
         // Логика Масштаба (Scale)
         $scale_percent = max(10, min(200, (int)($p['s'] ?? 100)));
         $sx_perc = $scale_percent / 100.0; // e.g., 0.35
-        $scW = $even( (int)($target_w * $sx_perc) );
-        $scH = -2; // Сохранить пропорции
+        $scW = max(2, $even((int)round($target_w * $sx_perc)));
+
+        $meta = $photo_meta[$key] ?? null;
+        $src_w = ($meta['w'] ?? $target_w) ?: $target_w;
+        $src_h = ($meta['h'] ?? $target_h) ?: $target_h;
+        if ($src_w <= 0) $src_w = $target_w;
+        if ($src_h <= 0) $src_h = $target_h;
+
+        $scale_ratio = $scW / $src_w;
+        $scH_val = $src_h * $scale_ratio;
+        $scH = max(2, $even((int)round($scH_val)));
 
         // === ИСПРАВЛЕНИЕ: Получаем angle и radius из $p ===
         $angle_degrees = max(-180.0, min(180.0, (float)($p['angle'] ?? 0.0)));
@@ -1556,10 +1590,40 @@ function svb_generate() {
 
         // === ИСПРАВЛЕНИЕ (Угол): теперь используем тот же знак, что и CSS-превью ===
         $angle_radians = $angle_degrees * (M_PI / 180);
-        
-        $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba"; 
-        
-        $chain .= ",scale=w={$scW}:h={$scH}"; 
+
+        $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba";
+
+        $chain .= ",scale=w={$scW}:h={$scH}";
+
+        // Сохраняем реальный размер после scale для коррекции offset'ов
+        $scaled_w = $scW;
+        $scaled_h = $scH;
+
+        $rot_diag = sqrt(($scaled_w * $scaled_w) + ($scaled_h * $scaled_h));
+        $pad_mod = 16;
+        $pad_side = (int)ceil($rot_diag / $pad_mod) * $pad_mod;
+        if ($pad_side < $pad_mod) {
+            $pad_side = $pad_mod;
+        }
+
+        $offset_x = ($pad_side - $scaled_w) / 2.0;
+        $offset_y = ($pad_side - $scaled_h) / 2.0;
+
+        $x = $even((int)round($x_base - $offset_x));
+        $y = $even((int)round($y_base - $offset_y));
+
+        svb_dbg_write($job_dir, 'calc.overlay.' . $key, [
+            'input' => $p,
+            'scaled_w' => $scaled_w,
+            'scaled_h' => $scaled_h,
+            'pad_side' => $pad_side,
+            'offset_x' => $offset_x,
+            'offset_y' => $offset_y,
+            'x_base' => $x_base,
+            'y_base' => $y_base,
+            'final_x' => $x,
+            'final_y' => $y,
+        ]);
 
         // === ИСПРАВЛЕНИЕ (Радиус): Добавляем фильтр roundedcorners при наличии ===
         // (Примечание: этот фильтр может отсутствовать в старых версиях FFmpeg)
