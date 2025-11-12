@@ -508,32 +508,133 @@ function svb_render_form() {
     </div>
     <div class="svb-drop" data-photo="child2">
       <div class="svb-field"><span class="svb-label">Фото дитини 2</span><input class="svb-input" type="file" name="photo_child2" accept="image/*" required></div>
-      <div class="svb-preview" id="prev-child2"><img id="img-child2" alt="child2" /></div>
-      <div class="svb-controls" style="display:none;">
-        <label>X<input class="svb-range" type="number" name="child2_x" value="1156"/></label>
-        <label>Y<input class="svb-range" type="number" name="child2_y" value="250"/></label>
-        <label>Scale %<input class="svb-range" type="number" name="child2_scale" value="33"/></label>
-<label>Angle (deg)<input class="svb-range" type="number" name="child2_angle" value="10" step="any"/></label>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-child2">
+        <video id="svb-video-child2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-child2" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="child2" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="child2">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="child2" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-child2" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="child2">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="child2" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="child2" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-child2-x">1156</span>
+          <input class="svb-range svb-key-control" type="range" name="child2_x" value="1156" min="-1000" max="2500" step="5" data-val-id="val-child2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-child2-y">250</span>
+          <input class="svb-range svb-key-control" type="range" name="child2_y" value="250" min="-1000" max="2000" step="5" data-val-id="val-child2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-child2-scale">33</span>%
+          <input class="svb-range svb-key-control" type="range" name="child2_scale" value="33" min="10" max="200" step="1" data-val-id="val-child2-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-child2-angle">10</span>°
+          <input class="svb-range svb-key-control" type="range" name="child2_angle" value="10" min="-45" max="45" step="1" data-val-id="val-child2-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-child2-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="child2_radius" value="0" min="0" max="200" step="1" data-val-id="val-child2-radius" data-key-up="]" data-key-down="["/>
+        </label>
       </div>
       <span class="svb-note">Інтервали: 02:17:14–02:21:25 та 07:04:23–07:11:13</span>
     </div>
     <div class="svb-drop" data-photo="parent1">
       <div class="svb-field"><span class="svb-label">Фото батька</span><input class="svb-input" type="file" name="photo_parent1" accept="image/*" required></div>
-      <div class="svb-preview" id="prev-parent1"><img id="img-parent1" alt="parent1" /></div>
-      <div class="svb-controls" style="display:none;">
-        <label>X<input class="svb-range" type="number" name="parent1_x" value="166"/></label>
-        <label>Y<input class="svb-range" type="number" name="parent1_y" value="0"/></label>
-        <label>Scale %<input class="svb-range" type="number" name="parent1_scale" value="75"/></label>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-parent1">
+        <video id="svb-video-parent1" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-parent1" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="parent1" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent1">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent1" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-parent1" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent1">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent1" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent1" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-parent1-x">166</span>
+          <input class="svb-range svb-key-control" type="range" name="parent1_x" value="166" min="-1000" max="2500" step="5" data-val-id="val-parent1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-parent1-y">0</span>
+          <input class="svb-range svb-key-control" type="range" name="parent1_y" value="0" min="-1000" max="2000" step="5" data-val-id="val-parent1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-parent1-scale">75</span>%
+          <input class="svb-range svb-key-control" type="range" name="parent1_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent1-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-parent1-angle">0</span>°
+          <input class="svb-range svb-key-control" type="range" name="parent1_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent1-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-parent1-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="parent1_radius" value="0" min="0" max="200" step="1" data-val-id="val-parent1-radius" data-key-up="]" data-key-down="["/>
+        </label>
       </div>
       <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото матері)</span>
     </div>
     <div class="svb-drop" data-photo="parent2">
       <div class="svb-field"><span class="svb-label">Фото матері</span><input class="svb-input" type="file" name="photo_parent2" accept="image/*" required></div>
-      <div class="svb-preview" id="prev-parent2"><img id="img-parent2" alt="parent2" /></div>
-      <div class="svb-controls" style="display:none;">
-        <label>X<input class="svb-range" type="number" name="parent2_x" value="166"/></label>
-        <label>Y<input class="svb-range" type="number" name="parent2_y" value="0"/></label>
-        <label>Scale %<input class="svb-range" type="number" name="parent2_scale" value="75"/></label>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-parent2">
+        <video id="svb-video-parent2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-parent2" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="parent2" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent2">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent2" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-parent2" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent2">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent2" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent2" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-parent2-x">166</span>
+          <input class="svb-range svb-key-control" type="range" name="parent2_x" value="166" min="-1000" max="2500" step="5" data-val-id="val-parent2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-parent2-y">0</span>
+          <input class="svb-range svb-key-control" type="range" name="parent2_y" value="0" min="-1000" max="2000" step="5" data-val-id="val-parent2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-parent2-scale">75</span>%
+          <input class="svb-range svb-key-control" type="range" name="parent2_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent2-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-parent2-angle">0</span>°
+          <input class="svb-range svb-key-control" type="range" name="parent2_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent2-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-parent2-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="parent2_radius" value="0" min="0" max="200" step="1" data-val-id="val-parent2-radius" data-key-up="]" data-key-down="["/>
+        </label>
       </div>
       <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото батька)</span>
     </div>
@@ -653,118 +754,80 @@ function svbBindAudioPreview(){
 }
 
 function svbBindPhotoInputs(){
- const pairs = [['child1','img-child1','prev-child1'],['child2','img-child2','prev-child2'],['parent1','img-parent1','prev-parent1'],['parent2','img-parent2','prev-parent2']];
- 
- pairs.forEach(([key,imgId,prevId])=>{
-   svbMarkTouched(key); 
+ ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+   svbMarkTouched(key);
    const input = document.querySelector(`input[name="photo_${key}"]`);
-   if(!input) return; 
-   
+   if(!input) return;
+
    input.addEventListener('change', e=>{
      const f = e.target.files && e.target.files[0];
      if(!f) return;
-     
+
      const url = URL.createObjectURL(f);
-     const img = document.getElementById(imgId);
-     
-     if (img.src) {
+     const img = document.getElementById('img-' + key);
+
+     if (img && img.src) {
         URL.revokeObjectURL(img.src);
      }
-     
+
+     if (!img) return;
+
      img.onload = ()=>{
-       if (key === 'child1') {
-           svbUpdatePreviewTransform(key);
-       } else {
-           svbFitImageToPreview(key);
-       }
+       svbUpdatePreviewTransform(key);
      };
-     img.src = url; 
+     img.src = url;
    });
  });
- 
+
  ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
-   ['x','y','scale','angle','radius'].forEach(k=>{
-     const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
-     if(ctrl){ 
-       ctrl.addEventListener('input', (e)=> {
-         const valId = e.target.dataset.valId;
+  ['x','y','scale','angle','radius'].forEach(k=>{
+    const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
+    if(ctrl){
+      ctrl.addEventListener('input', (e)=> {
+        const valId = e.target.dataset.valId;
          if(valId) {
            const valEl = document.getElementById(valId);
            if(valEl) valEl.textContent = e.target.value;
          }
-         if (key === 'child1') {
-             svbUpdatePreviewTransform(key);
-         } else {
-             svbUpdatePreviewTransform_Static(key); 
-         }
-       }); 
+         svbUpdatePreviewTransform(key);
+       });
      }
    });
  });
 }
 
-// === ГЛАВНОЕ ИСПРАВЛЕНИЕ: НОВАЯ ЛОГИКА МАСШТАБА ===
 function svbUpdatePreviewTransform(key){
- if (key !== 'child1') return; 
- 
- const img = document.getElementById('img-' + key); 
- const previewBox = document.getElementById('svb-vid-preview-' + key); 
- 
- if(!img || !previewBox) return; 
+ const img = document.getElementById('img-' + key);
+ const previewBox = document.getElementById('svb-vid-preview-' + key);
 
- // 1. Получаем все значения
- const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0); 
- const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0); 
- const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100); 
+ if(!img || !previewBox) return;
+
+ const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
+ const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
+ const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
  const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
- 
- // 2. Базовые размеры
+ const radius = parseFloat(document.querySelector(`input[name="${key}_radius"]`)?.value||0);
+
  const original_w = 1920;
- const original_h = 1080; 
- 
- // 3. Рассчитываем ПОЗИЦИЮ (X/Y)
- // 'left' и 'top' будут в % от контейнера
+ const original_h = 1080;
+
  const final_x_perc = (x_raw / original_w) * 100;
- const final_y_perc = (y_raw / original_h) * 100; 
- 
+ const final_y_perc = (y_raw / original_h) * 100;
+
  img.style.left = `${final_x_perc}%`;
  img.style.top = `${final_y_perc}%`;
-
- // 4. Рассчитываем МАСШТАБ (Scale)
- // 'Scale' (s_raw) - это % от ширины ВИДЕО (1920)
- // Но мы применяем его как % от ширины КОНТЕЙНЕРА (854)
- // Это одно и то же!
  img.style.width = `${s_raw}%`;
- // Если картинка загружена, 'height: auto' сохранит пропорции
- // Если не загружена (плейсхолдер), 'height: auto' схлопнется.
- // Поэтому для :not([src]) в CSS мы задали 'min-height'.
- // Здесь мы должны задать 'auto'
  img.style.height = 'auto';
-  
- // 5. Вращение (Angle)
- img.style.transformOrigin = 'top left'; // Вращаем от левого верхнего угла
+ img.style.transformOrigin = 'top left';
  img.style.transform = `rotate(${a}deg)`;
- 
- // 6. Радиус (Radius)
- const radiusInput = document.querySelector(`input[name="child1_radius"]`);
- if (radiusInput) {
-   const radius = parseFloat(radiusInput.value || 0);
+
+ if (!isNaN(radius) && radius > 0) {
    img.style.borderRadius = `${radius}px`;
-   img.style.overflow = 'hidden'; 
+   img.style.overflow = 'hidden';
+ } else {
+   img.style.borderRadius = '0px';
+   img.style.overflow = '';
  }
-}
-// === КОНЕЦ ИСПРАВЛЕНИЯ ===
-
-
-function svbUpdatePreviewTransform_Static(key){
- const img = document.getElementById('img-' + key);
- const previewBox = document.getElementById('prev-' + key); 
- if(!img || !previewBox) return; 
- const x = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
- const y = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
- const s = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
- const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
- img.style.transform = `translate(${x}px, ${y}px) scale(${s/100}) rotate(${a}deg)`;
 }
 
 
@@ -1035,7 +1098,7 @@ function svbBindNameSuggest(){
   });
 }
 
-// ... (svbMarkTouched, svbFitImageToPreview - БЕЗ ИЗМЕНЕНИЙ) ...
+// ... (svbMarkTouched - БЕЗ ИЗМЕНЕНИЙ) ...
 function svbMarkTouched(key){
  ['x','y','scale','angle','radius'].forEach(k=>{
  const el = document.querySelector(`input[name="${key}_${k}"]`);
@@ -1045,143 +1108,114 @@ function svbMarkTouched(key){
  }
  });
 }
-function svbFitImageToPreview(key){
-  const img = document.getElementById('img-' + key);
-  const box = document.getElementById('prev-' + key);
-  if (!img || !box || !img.naturalWidth || !img.naturalHeight) return;
-  const r = box.getBoundingClientRect();
-  const sx = r.width  / img.naturalWidth;
-  const sy = r.height / img.naturalHeight;
-  const scale = Math.min(sx, sy);
-  const px = Math.round((r.width  - img.naturalWidth  * scale) / 2);
-  const py = Math.round((r.height - img.naturalHeight * scale) / 2);
-  const X = document.querySelector(`input[name="${key}_x"]`);
-  const Y = document.querySelector(`input[name="${key}_y"]`);
-  const S = document.querySelector(`input[name="${key}_scale"]`);
-  // if (X && !X.dataset.touched) X.value = px;
-  // if (Y && !Y.dataset.touched) Y.value = py;
-  // if (S && !S.dataset.touched) S.value = Math.max(10, Math.round(scale * 100));
-  svbUpdatePreviewTransform_Static(key);
-}
 
-// ... (svbBindRealtimeControls - БЕЗ ИЗМЕНЕНИЙ) ...
 function svbBindRealtimeControls() {
-    const key = 'child1';
-    
-    // 1. Находим все элементы
-    const vid = $(`#svb-video-${key}`);
-    const playBtn = $(`[data-vid-ctrl="play"][data-key="${key}"]`);
-    const pauseBtn = $(`[data-vid-ctrl="pause"][data-key="${key}"]`);
-    const timeEl = $(`#svb-vid-time-${key}`);
-    const muteBtn = $(`[data-vid-ctrl="mute"][data-key="${key}"]`);
-    const unmuteBtn = $(`[data-vid-ctrl="unmute"][data-key="${key}"]`);
-    const volumeSlider = $(`[data-vid-ctrl="volume"][data-key="${key}"]`);
-    const seekSlider = $(`[data-vid-ctrl="seek"][data-key="${key}"]`); 
+    ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+        const vid = document.getElementById(`svb-video-${key}`);
+        const playBtn = document.querySelector(`[data-vid-ctrl="play"][data-key="${key}"]`);
+        const pauseBtn = document.querySelector(`[data-vid-ctrl="pause"][data-key="${key}"]`);
+        const timeEl = document.getElementById(`svb-vid-time-${key}`);
+        const muteBtn = document.querySelector(`[data-vid-ctrl="mute"][data-key="${key}"]`);
+        const unmuteBtn = document.querySelector(`[data-vid-ctrl="unmute"][data-key="${key}"]`);
+        const volumeSlider = document.querySelector(`[data-vid-ctrl="volume"][data-key="${key}"]`);
+        const seekSlider = document.querySelector(`[data-vid-ctrl="seek"][data-key="${key}"]`);
 
-    if (!vid || !playBtn || !pauseBtn || !timeEl || !muteBtn || !unmuteBtn || !volumeSlider || !seekSlider) {
-        console.error("SVB: Не удалось найти все элементы плеера.");
-        return;
-    }
-    
-    // --- Управление Play/Pause ---
-    playBtn.addEventListener('click', () => {
-        if(svbCurrentSampleAudio) {
-            svbCurrentSampleAudio.pause();
-            svbCurrentSampleAudio = null;
+        if (!vid || !playBtn || !pauseBtn || !timeEl || !muteBtn || !unmuteBtn || !volumeSlider || !seekSlider) {
+            return;
         }
-        vid.play();
-    });
-    pauseBtn.addEventListener('click', () => {
-        vid.pause();
-    });
-    vid.addEventListener('play', () => {
-        playBtn.style.display = 'none';
-        pauseBtn.style.display = 'inline-flex';
-    });
-    vid.addEventListener('pause', () => {
-        playBtn.style.display = 'inline-flex';
-        pauseBtn.style.display = 'none';
-    });
 
-    
-    // --- Управление Прокруткой (Seek) ---
-    let totalDuration = 0;
-    vid.addEventListener('loadedmetadata', () => {
-        totalDuration = vid.duration;
-        seekSlider.max = totalDuration;
-        timeEl.textContent = `${svbFormatTime(0)} / ${svbFormatTime(totalDuration)}`;
-    });
-    
-    vid.addEventListener('timeupdate', () => {
-        const currentTime = vid.currentTime;
-        // Обновляем слайдер, только если пользователь его не двигает
-        if (!seekSlider.matches(':active')) {
-             seekSlider.value = currentTime;
-        }
-        timeEl.textContent = `${svbFormatTime(currentTime)} / ${svbFormatTime(totalDuration)}`;
-    });
-    
-    seekSlider.addEventListener('input', (e) => {
-        vid.currentTime = e.target.value;
-    });
-    // === КОНЕЦ БЛОКА ПРОКРУТКИ ===
-    
-    // --- Управление Mute/Volume ---
-    const updateMuteButtons = (isMuted) => {
-        muteBtn.style.display = isMuted ? 'none' : 'inline-flex';
-        unmuteBtn.style.display = isMuted ? 'inline-flex' : 'none';
-        
-        if (isMuted) {
-            volumeSlider.value = 0;
-        } else {
-            if (vid.volume < 0.05) {
-                vid.volume = 0.8;
+        playBtn.addEventListener('click', () => {
+            if(svbCurrentSampleAudio) {
+                svbCurrentSampleAudio.pause();
+                svbCurrentSampleAudio = null;
             }
-            volumeSlider.value = vid.volume;
-        }
-    };
-    muteBtn.addEventListener('click', () => {
-        vid.muted = true;
-    });
-    unmuteBtn.addEventListener('click', () => {
-        vid.muted = false;
-    });
-    volumeSlider.addEventListener('input', (e) => {
-        const vol = parseFloat(e.target.value);
-        vid.volume = vol;
-        vid.muted = (vol < 0.05); 
-    });
-    
-    // Синхронизация кнопок при изменении громкости
-    vid.addEventListener('volumechange', () => {
-         updateMuteButtons(vid.muted || vid.volume < 0.05);
-    });
-    // Инициализация
-    vid.volume = volumeSlider.value;
-    updateMuteButtons(vid.muted); 
-    
-    // --- Управление с клавиатуры (без изменений) ---
-    const controls = {};
-    $$(`.svb-key-control[name^="${key}_"]`).forEach(input => {
-        const keyUp = input.dataset.keyUp;
-        const keyDown = input.dataset.keyDown;
-        if (keyUp) controls[keyUp] = { input, dir: 1 };
-        if (keyDown) controls[keyDown] = { input, dir: -1 };
-    });
-    $$(`.svb-key-control[name^="${key}_"]`).forEach(slider => {
-        slider.addEventListener('keydown', (e) => {
-            const ctrl = controls[e.key];
-            if (!ctrl) return; 
-            e.preventDefault();
-            const input = ctrl.input;
-            const dir = ctrl.dir;
-            const step = parseFloat(input.step) || 1;
-            const min = parseFloat(input.min) || -Infinity;
-            const max = parseFloat(input.max) || Infinity;
-            let val = parseFloat(input.value) || 0;
-            val += dir * (e.shiftKey ? step * 10 : step);
-            input.value = Math.max(min, Math.min(max, val)).toFixed(0);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
+            vid.play();
+        });
+        pauseBtn.addEventListener('click', () => {
+            vid.pause();
+        });
+        vid.addEventListener('play', () => {
+            playBtn.style.display = 'none';
+            pauseBtn.style.display = 'inline-flex';
+        });
+        vid.addEventListener('pause', () => {
+            playBtn.style.display = 'inline-flex';
+            pauseBtn.style.display = 'none';
+        });
+
+        let totalDuration = 0;
+        vid.addEventListener('loadedmetadata', () => {
+            totalDuration = vid.duration;
+            seekSlider.max = totalDuration;
+            timeEl.textContent = `${svbFormatTime(0)} / ${svbFormatTime(totalDuration)}`;
+        });
+
+        vid.addEventListener('timeupdate', () => {
+            const currentTime = vid.currentTime;
+            if (!seekSlider.matches(':active')) {
+                seekSlider.value = currentTime;
+            }
+            timeEl.textContent = `${svbFormatTime(currentTime)} / ${svbFormatTime(totalDuration)}`;
+        });
+
+        seekSlider.addEventListener('input', (e) => {
+            vid.currentTime = parseFloat(e.target.value) || 0;
+        });
+
+        const updateMuteButtons = (isMuted) => {
+            muteBtn.style.display = isMuted ? 'none' : 'inline-flex';
+            unmuteBtn.style.display = isMuted ? 'inline-flex' : 'none';
+
+            if (isMuted) {
+                volumeSlider.value = 0;
+            } else {
+                if (vid.volume < 0.05) {
+                    vid.volume = 0.8;
+                }
+                volumeSlider.value = vid.volume;
+            }
+        };
+        muteBtn.addEventListener('click', () => {
+            vid.muted = true;
+        });
+        unmuteBtn.addEventListener('click', () => {
+            vid.muted = false;
+        });
+        volumeSlider.addEventListener('input', (e) => {
+            const vol = parseFloat(e.target.value);
+            vid.volume = isNaN(vol) ? vid.volume : vol;
+            vid.muted = (vol < 0.05);
+        });
+
+        vid.addEventListener('volumechange', () => {
+             updateMuteButtons(vid.muted || vid.volume < 0.05);
+        });
+        vid.volume = parseFloat(volumeSlider.value || '0.8');
+        vid.muted = vid.volume < 0.05;
+        updateMuteButtons(vid.muted);
+
+        const controls = {};
+        $$(`.svb-key-control[name^="${key}_"]`).forEach(input => {
+            const keyUp = input.dataset.keyUp;
+            const keyDown = input.dataset.keyDown;
+            if (keyUp) controls[keyUp] = { input, dir: 1 };
+            if (keyDown) controls[keyDown] = { input, dir: -1 };
+        });
+        $$(`.svb-key-control[name^="${key}_"]`).forEach(slider => {
+            slider.addEventListener('keydown', (e) => {
+                const ctrl = controls[e.key];
+                if (!ctrl) return;
+                e.preventDefault();
+                const input = ctrl.input;
+                const dir = ctrl.dir;
+                const step = parseFloat(input.step) || 1;
+                const min = parseFloat(input.min) || -Infinity;
+                const max = parseFloat(input.max) || Infinity;
+                let val = parseFloat(input.value) || 0;
+                val += dir * (e.shiftKey ? step * 10 : step);
+                input.value = Math.max(min, Math.min(max, val)).toFixed(0);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
         });
     });
 }
@@ -1198,11 +1232,9 @@ document.querySelector('input[name="name_text"]').addEventListener('input', auto
 document.querySelector('input[name="age_value"]').addEventListener('input', autoBindAgeAudio);
 
 // Обновляем позицию при загрузке
-svbUpdatePreviewTransform('child1'); 
-['child2', 'parent1', 'parent2'].forEach(key => {
+['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
   if (document.getElementById('img-' + key)) {
-     // Для старых превью (child2, parent1, parent2) используем другую функцию
-     svbUpdatePreviewTransform_Static(key);
+    svbUpdatePreviewTransform(key);
   }
 });
 
