@@ -211,198 +211,103 @@ function svb_transcode_image_to_png_rgba($ffmpeg, $src, $dst, $cropSize = 709, $
     return (bool)$result;
 }
 
-function svb_apply_manual_round_corners($file, $radiusCssPx, $scalePercent, $targetWidth, $job_dir = '') {
-    if ($radiusCssPx <= 0) return true;
-    if (!file_exists($file)) return false;
+if (!function_exists('svb_apply_manual_round_corners')) {
+    function svb_apply_manual_round_corners($file, $radiusCssPx, $scalePercent, $targetWidth, $job_dir = '') {
+        if ($radiusCssPx <= 0) return true;
+        if (!file_exists($file)) return false;
 
-    $info = @getimagesize($file);
-    if (!$info) return false;
-    [$width, $height] = $info;
-    if ($width <= 0 || $height <= 0) return false;
+        $info = @getimagesize($file);
+        if (!$info) return false;
+        [$width, $height] = $info;
+        if ($width <= 0 || $height <= 0) return false;
 
-    $scalePercent = max(1, (int)$scalePercent);
-    $scaledWidth = max(1, (int)round($targetWidth * ($scalePercent / 100.0)));
-    $scaleFactor = $scaledWidth > 0 ? ($width / $scaledWidth) : 1.0;
-    $radius = (int)round($radiusCssPx * $scaleFactor);
-    $maxRadius = (int)floor((min($width, $height) - 1) / 2);
-    if ($maxRadius < 1) $maxRadius = 1;
-    $radius = max(1, min($radius, $maxRadius));
-    if ($radius <= 0) return true;
+        $scalePercent = max(1, (int)$scalePercent);
+        $scaledWidth = max(1, (int)round($targetWidth * ($scalePercent / 100.0)));
+        $scaleFactor = $scaledWidth > 0 ? ($width / $scaledWidth) : 1.0;
+        $radius = (int)round($radiusCssPx * $scaleFactor);
+        $maxRadius = (int)floor((min($width, $height) - 1) / 2);
+        if ($maxRadius < 1) $maxRadius = 1;
+        $radius = max(1, min($radius, $maxRadius));
+        if ($radius <= 0) return true;
 
-    if (class_exists('Imagick')) {
-        try {
-            $img = new Imagick($file);
-            $img->setImageFormat('png');
-            $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
-            $img->roundCorners($radius, $radius);
-            $img->writeImage($file);
-            $img->clear();
-            $img->destroy();
-            return true;
-        } catch (Throwable $e) {
-            svb_dbg_write($job_dir, 'warn.imagick_round', $e->getMessage());
+        if (class_exists('Imagick')) {
+            try {
+                $img = new Imagick($file);
+                $img->setImageFormat('png');
+                $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
+                $img->roundCorners($radius, $radius);
+                $img->writeImage($file);
+                $img->clear();
+                $img->destroy();
+                return true;
+            } catch (Throwable $e) {
+                svb_dbg_write($job_dir, 'warn.imagick_round', $e->getMessage());
+            }
         }
-    }
 
-    if (!function_exists('imagecreatetruecolor') || !function_exists('imagepng')) {
-        return false;
-    }
+        if (!function_exists('imagecreatetruecolor') || !function_exists('imagepng')) {
+            return false;
+        }
 
-    $img = @imagecreatefrompng($file);
-    if (!$img) return false;
+        $img = @imagecreatefrompng($file);
+        if (!$img) return false;
 
-    imagealphablending($img, false);
-    imagesavealpha($img, true);
+        imagealphablending($img, false);
+        imagesavealpha($img, true);
 
-    $mask = imagecreatetruecolor($width, $height);
-    if (!$mask) {
+        $mask = imagecreatetruecolor($width, $height);
+        if (!$mask) {
+            imagedestroy($img);
+            return false;
+        }
+
+        if (function_exists('imageantialias')) imageantialias($mask, true);
+
+        imagealphablending($mask, false);
+        imagesavealpha($mask, true);
+
+        $maskTransparent = imagecolorallocatealpha($mask, 0, 0, 0, 127);
+        $maskOpaque = imagecolorallocatealpha($mask, 0, 0, 0, 0);
+
+        imagefilledrectangle($mask, 0, 0, $width, $height, $maskTransparent);
+        imagefilledrectangle($mask, $radius, 0, $width - $radius, $height, $maskOpaque);
+        imagefilledrectangle($mask, 0, $radius, $width, $height - $radius, $maskOpaque);
+
+        $diameter = $radius * 2;
+        imagefilledellipse($mask, $radius, $radius, $diameter, $diameter, $maskOpaque);
+        imagefilledellipse($mask, $width - $radius - 1, $radius, $diameter, $diameter, $maskOpaque);
+        imagefilledellipse($mask, $radius, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
+        imagefilledellipse($mask, $width - $radius - 1, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
+
+        $transparentColor = imagecolorallocatealpha($img, 0, 0, 0, 127);
+        $cache = [];
+
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                $rgba = imagecolorat($mask, $x, $y);
+                $alpha = ($rgba & 0x7F000000) >> 24;
+                if ($alpha === 0) continue;
+                if ($alpha >= 127) {
+                    imagesetpixel($img, $x, $y, $transparentColor);
+                    continue;
+                }
+
+                $srcRGBA = imagecolorsforindex($img, imagecolorat($img, $x, $y));
+                $key = $srcRGBA['red'] . '_' . $srcRGBA['green'] . '_' . $srcRGBA['blue'] . '_' . $alpha;
+                if (!isset($cache[$key])) {
+                    $cache[$key] = imagecolorallocatealpha($img, $srcRGBA['red'], $srcRGBA['green'], $srcRGBA['blue'], $alpha);
+                }
+                imagesetpixel($img, $x, $y, $cache[$key]);
+            }
+        }
+
+        $ok = imagepng($img, $file);
+
         imagedestroy($img);
-        return false;
+        imagedestroy($mask);
+
+        return $ok;
     }
-
-    if (function_exists('imageantialias')) imageantialias($mask, true);
-
-    imagealphablending($mask, false);
-    imagesavealpha($mask, true);
-
-    $maskTransparent = imagecolorallocatealpha($mask, 0, 0, 0, 127);
-    $maskOpaque = imagecolorallocatealpha($mask, 0, 0, 0, 0);
-
-    imagefilledrectangle($mask, 0, 0, $width, $height, $maskTransparent);
-    imagefilledrectangle($mask, $radius, 0, $width - $radius, $height, $maskOpaque);
-    imagefilledrectangle($mask, 0, $radius, $width, $height - $radius, $maskOpaque);
-
-    $diameter = $radius * 2;
-    imagefilledellipse($mask, $radius, $radius, $diameter, $diameter, $maskOpaque);
-    imagefilledellipse($mask, $width - $radius - 1, $radius, $diameter, $diameter, $maskOpaque);
-    imagefilledellipse($mask, $radius, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
-    imagefilledellipse($mask, $width - $radius - 1, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
-
-    $transparentColor = imagecolorallocatealpha($img, 0, 0, 0, 127);
-    $cache = [];
-
-    for ($y = 0; $y < $height; $y++) {
-        for ($x = 0; $x < $width; $x++) {
-            $rgba = imagecolorat($mask, $x, $y);
-            $alpha = ($rgba & 0x7F000000) >> 24;
-            if ($alpha === 0) continue;
-            if ($alpha >= 127) {
-                imagesetpixel($img, $x, $y, $transparentColor);
-                continue;
-            }
-
-            $srcRGBA = imagecolorsforindex($img, imagecolorat($img, $x, $y));
-            $key = $srcRGBA['red'] . '_' . $srcRGBA['green'] . '_' . $srcRGBA['blue'] . '_' . $alpha;
-            if (!isset($cache[$key])) {
-                $cache[$key] = imagecolorallocatealpha($img, $srcRGBA['red'], $srcRGBA['green'], $srcRGBA['blue'], $alpha);
-            }
-            imagesetpixel($img, $x, $y, $cache[$key]);
-        }
-    }
-
-    $ok = imagepng($img, $file);
-
-    imagedestroy($img);
-    imagedestroy($mask);
-
-    return $ok;
-}
-
-function svb_apply_manual_round_corners($file, $radiusCssPx, $scalePercent, $targetWidth, $job_dir = '') {
-    if ($radiusCssPx <= 0) return true;
-    if (!file_exists($file)) return false;
-
-    $info = @getimagesize($file);
-    if (!$info) return false;
-    [$width, $height] = $info;
-    if ($width <= 0 || $height <= 0) return false;
-
-    $scalePercent = max(1, (int)$scalePercent);
-    $scaledWidth = max(1, (int)round($targetWidth * ($scalePercent / 100.0)));
-    $scaleFactor = $scaledWidth > 0 ? ($width / $scaledWidth) : 1.0;
-    $radius = (int)round($radiusCssPx * $scaleFactor);
-    $maxRadius = (int)floor((min($width, $height) - 1) / 2);
-    if ($maxRadius < 1) $maxRadius = 1;
-    $radius = max(1, min($radius, $maxRadius));
-    if ($radius <= 0) return true;
-
-    if (class_exists('Imagick')) {
-        try {
-            $img = new Imagick($file);
-            $img->setImageFormat('png');
-            $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
-            $img->roundCorners($radius, $radius);
-            $img->writeImage($file);
-            $img->clear();
-            $img->destroy();
-            return true;
-        } catch (Throwable $e) {
-            svb_dbg_write($job_dir, 'warn.imagick_round', $e->getMessage());
-        }
-    }
-
-    if (!function_exists('imagecreatetruecolor') || !function_exists('imagepng')) {
-        return false;
-    }
-
-    $img = @imagecreatefrompng($file);
-    if (!$img) return false;
-
-    imagealphablending($img, false);
-    imagesavealpha($img, true);
-
-    $mask = imagecreatetruecolor($width, $height);
-    if (!$mask) {
-        imagedestroy($img);
-        return false;
-    }
-
-    if (function_exists('imageantialias')) imageantialias($mask, true);
-
-    imagealphablending($mask, false);
-    imagesavealpha($mask, true);
-
-    $maskTransparent = imagecolorallocatealpha($mask, 0, 0, 0, 127);
-    $maskOpaque = imagecolorallocatealpha($mask, 0, 0, 0, 0);
-
-    imagefilledrectangle($mask, 0, 0, $width, $height, $maskTransparent);
-    imagefilledrectangle($mask, $radius, 0, $width - $radius, $height, $maskOpaque);
-    imagefilledrectangle($mask, 0, $radius, $width, $height - $radius, $maskOpaque);
-
-    $diameter = $radius * 2;
-    imagefilledellipse($mask, $radius, $radius, $diameter, $diameter, $maskOpaque);
-    imagefilledellipse($mask, $width - $radius - 1, $radius, $diameter, $diameter, $maskOpaque);
-    imagefilledellipse($mask, $radius, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
-    imagefilledellipse($mask, $width - $radius - 1, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
-
-    $transparentColor = imagecolorallocatealpha($img, 0, 0, 0, 127);
-    $cache = [];
-
-    for ($y = 0; $y < $height; $y++) {
-        for ($x = 0; $x < $width; $x++) {
-            $rgba = imagecolorat($mask, $x, $y);
-            $alpha = ($rgba & 0x7F000000) >> 24;
-            if ($alpha === 0) continue;
-            if ($alpha >= 127) {
-                imagesetpixel($img, $x, $y, $transparentColor);
-                continue;
-            }
-
-            $srcRGBA = imagecolorsforindex($img, imagecolorat($img, $x, $y));
-            $key = $srcRGBA['red'] . '_' . $srcRGBA['green'] . '_' . $srcRGBA['blue'] . '_' . $alpha;
-            if (!isset($cache[$key])) {
-                $cache[$key] = imagecolorallocatealpha($img, $srcRGBA['red'], $srcRGBA['green'], $srcRGBA['blue'], $alpha);
-            }
-            imagesetpixel($img, $x, $y, $cache[$key]);
-        }
-    }
-
-    $ok = imagepng($img, $file);
-
-    imagedestroy($img);
-    imagedestroy($mask);
-
-    return $ok;
 }
 
 function svb_scan_audio_catalog() {
