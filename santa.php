@@ -412,6 +412,11 @@ function svb_render_form() {
     $ajax_url = admin_url('admin-ajax.php');
     $nonce = wp_create_nonce('svb_nonce');
 
+    $ffmpeg_path = svb_exec_find('ffmpeg');
+    $preview_caps = [
+        'perspective' => $ffmpeg_path ? svb_ff_has_filter($ffmpeg_path, 'perspective') : false,
+    ];
+
     ob_start(); ?>
 <style>
 /* ... (ВСЕ СТИЛИ ДО .svb-screenlock__spinner) ... */
@@ -493,10 +498,14 @@ function svb_render_form() {
   transform-origin: center center;
   z-index: 2; /* Картинка поверх видео */
   will-change: transform, top, left, width, height;
-  
+
+  /* Отражаем то, что сервер обрезает фото в квадрат 709x709 */
+  object-fit: cover;
+  object-position: 50% 50%;
+
   /* === ИСПРАВЛЕНИЕ: Плейсхолдер больше не 100px === */
   /* Он будет 0px, пока JS не задаст ему % ширины */
-  width: 0; 
+  width: 0;
   height: auto;
 }
 /* Стили плейсхолдера (когда src="" пустой) */
@@ -967,6 +976,8 @@ const SVB_AJAX  = {
     nonce: <?php echo wp_json_encode($nonce); ?>,
     video_template: <?php echo wp_json_encode($template_url); ?>
 };
+const SVB_PROCESSED_PHOTO_SIZE = 709; // ширина/высота PNG после препроцессинга на сервере
+const SVB_PREVIEW_CAPS = <?php echo wp_json_encode($preview_caps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
 
 const $  = (sel,root=document) => root.querySelector(sel);
 const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
@@ -1089,67 +1100,122 @@ function svbBindPhotoInputs(){
 }
 
 function svbUpdatePreviewTransform(key){
- const img = document.getElementById('img-' + key);
- const previewBox = document.getElementById('svb-vid-preview-' + key);
+  const img = document.getElementById('img-' + key);
+  const previewBox = document.getElementById('svb-vid-preview-' + key);
 
- if(!img || !previewBox) return;
+  if(!img || !previewBox) return;
 
- const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
- const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
- const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
- const scaleY_raw = parseFloat(document.querySelector(`input[name="${key}_scale_y"]`)?.value||100);
- const skewX_raw = parseFloat(document.querySelector(`input[name="${key}_skew"]`)?.value||0);
- const skewY_raw = parseFloat(document.querySelector(`input[name="${key}_skew_y"]`)?.value||0);
- const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
- const radius = parseFloat(document.querySelector(`input[name="${key}_radius"]`)?.value||0);
+  const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
+  const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
+  const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
+  const scaleY_raw = parseFloat(document.querySelector(`input[name="${key}_scale_y"]`)?.value||100);
+  const skewX_raw = parseFloat(document.querySelector(`input[name="${key}_skew"]`)?.value||0);
+  const skewY_raw = parseFloat(document.querySelector(`input[name="${key}_skew_y"]`)?.value||0);
+  const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
+  const radius = parseFloat(document.querySelector(`input[name="${key}_radius"]`)?.value||0);
 
- const original_w = 1920;
- const original_h = 1080;
+  const original_w = 1920;
+  const original_h = 1080;
   const target_w = 854;
   const target_h = 480;
 
-  const previewWidth = previewBox.clientWidth || previewBox.offsetWidth || target_w;
-  const previewHeight = previewBox.clientHeight || previewBox.offsetHeight || (previewWidth * (target_h / target_w));
+  const previewRect = previewBox.getBoundingClientRect();
+  const previewWidth = previewRect.width || previewBox.clientWidth || previewBox.offsetWidth || target_w;
+  const previewHeight = previewRect.height || previewBox.clientHeight || previewBox.offsetHeight || (previewWidth * (target_h / target_w));
 
- const previewScaleX = previewWidth / target_w;
- const previewScaleY = previewHeight / target_h;
- const safePreviewScaleY = previewScaleY || previewScaleX || 1;
+  const previewScaleX = previewWidth / target_w;
+  const previewScaleY = previewHeight / target_h;
+  const safePreviewScaleX = previewScaleX || previewScaleY || 1;
+  const safePreviewScaleY = previewScaleY || previewScaleX || 1;
 
- const safeScale = Math.max(10, s_raw);
- const widthVideo = target_w * (safeScale / 100);
- const safeScaleYPercent = Math.max(10, scaleY_raw);
-  const naturalW = img.naturalWidth || target_w;
-  const naturalH = img.naturalHeight || target_h;
-  const aspect = (naturalW > 0 && naturalH > 0) ? (naturalH / naturalW) : (target_h / target_w);
- const heightVideo = widthVideo * aspect * (safeScaleYPercent / 100);
+  const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+  const toEven = (val) => {
+    if (!Number.isFinite(val)) return 0;
+    const n = Math.trunc(val);
+    if (!Number.isFinite(n)) return 0;
+    if ((n & 1) !== 0) {
+      return n > 0 ? n - 1 : n - 1;
+    }
+    return n;
+  };
+  const evenFromRound = (val) => toEven(Math.round(val));
+
+  const safeScale = clamp(s_raw, 10, 200);
+  const safeScaleYPercent = clamp(scaleY_raw, 10, 200);
+
+  const processedSize = Number.isFinite(SVB_PROCESSED_PHOTO_SIZE) && SVB_PROCESSED_PHOTO_SIZE > 0 ? SVB_PROCESSED_PHOTO_SIZE : 0;
+  const naturalWidth = img.naturalWidth || 0;
+  const naturalHeight = img.naturalHeight || 0;
+  let sourceW = processedSize || (naturalWidth > 0 ? naturalWidth : target_w);
+  let sourceH = processedSize || (naturalHeight > 0 ? naturalHeight : target_h);
+  if (!processedSize && naturalWidth > 0 && naturalHeight > 0) {
+    sourceW = naturalWidth;
+    sourceH = naturalHeight;
+  } else if (processedSize && (!sourceW || !sourceH)) {
+    sourceW = processedSize;
+    sourceH = processedSize;
+  }
+
+  const scaledWVideo = Math.max(2, evenFromRound(target_w * (safeScale / 100)));
+  const scaleRatio = sourceW > 0 ? (scaledWVideo / sourceW) : 1;
+  const scaledHVideo = Math.max(2, evenFromRound(sourceH * scaleRatio * (safeScaleYPercent / 100)));
+
+  const widthVideo = scaledWVideo;
+  const heightVideo = scaledHVideo;
 
   const baseX = (x_raw / original_w) * target_w;
   const baseY = (y_raw / original_h) * target_h;
 
-  const angleRad = (a || 0) * Math.PI / 180;
+  const angleDeg = clamp(a || 0, -180, 180);
+  const angleRad = angleDeg * Math.PI / 180;
   const cosA = Math.cos(angleRad);
   const sinA = Math.sin(angleRad);
-  const skewVideoX = Number.isFinite(skewX_raw) ? skewX_raw : 0;
-  const skewVideoY = Number.isFinite(skewY_raw) ? skewY_raw : 0;
 
- const widthPreview = widthVideo * previewScaleX;
- const heightPreview = heightVideo * previewScaleY;
+  const previewCaps = typeof SVB_PREVIEW_CAPS === 'object' && SVB_PREVIEW_CAPS ? SVB_PREVIEW_CAPS : {};
+  const hasPerspective = !!previewCaps.perspective;
 
- const safePreviewScaleX = previewScaleX || safePreviewScaleY || 1;
+  const skewInputX = clamp(Number.isFinite(skewX_raw) ? skewX_raw : 0, -1000, 1000);
+  const skewInputY = clamp(Number.isFinite(skewY_raw) ? skewY_raw : 0, -1000, 1000);
+  const skewVideoX = hasPerspective ? skewInputX : 0;
+  const skewVideoY = hasPerspective ? skewInputY : 0;
+
   const kVideoX = heightVideo !== 0 ? (skewVideoX / heightVideo) : 0;
   const kVideoY = widthVideo !== 0 ? (skewVideoY / widthVideo) : 0;
- const kPreviewX = safePreviewScaleY !== 0 ? kVideoX * (previewScaleX / safePreviewScaleY) : 0;
- const kPreviewY = safePreviewScaleX !== 0 ? kVideoY * (safePreviewScaleY / safePreviewScaleX) : 0;
+
+  const cornersForPad = [
+    [0, 0],
+    [widthVideo, skewVideoY],
+    [skewVideoX, (1 + kVideoX * kVideoY) * heightVideo],
+    [widthVideo + skewVideoX, skewVideoY + (1 + kVideoX * kVideoY) * heightVideo],
+  ];
+
+  let minCornerX = Infinity, maxCornerX = -Infinity, minCornerY = Infinity, maxCornerY = -Infinity;
+  cornersForPad.forEach(([cx, cy]) => {
+    if (cx < minCornerX) minCornerX = cx;
+    if (cx > maxCornerX) maxCornerX = cx;
+    if (cy < minCornerY) minCornerY = cy;
+    if (cy > maxCornerY) maxCornerY = cy;
+  });
+
+  let padLeft = 0, padRight = 0, padTop = 0, padBottom = 0;
+  if (hasPerspective && (Math.abs(skewVideoX) > 0.01 || Math.abs(skewVideoY) > 0.01)) {
+    padLeft = minCornerX < 0 ? Math.ceil(-minCornerX) : 0;
+    padRight = maxCornerX > widthVideo ? Math.ceil(maxCornerX - widthVideo) : 0;
+    padTop = minCornerY < 0 ? Math.ceil(-minCornerY) : 0;
+    padBottom = maxCornerY > heightVideo ? Math.ceil(maxCornerY - heightVideo) : 0;
+  }
+
+  let appliedPadLeft = 0;
+  let appliedPadTop = 0;
+  if (padLeft > 0 || padRight > 0 || padTop > 0 || padBottom > 0) {
+    appliedPadLeft = padLeft;
+    appliedPadTop = padTop;
+  }
 
   const halfW = widthVideo / 2;
   const halfH = heightVideo / 2;
-  const halfWPx = widthPreview / 2;
-  const halfHPx = heightPreview / 2;
-
   const centerVideoX = halfW + kVideoX * halfH;
   const centerVideoY = kVideoY * halfW + (1 + kVideoX * kVideoY) * halfH;
-  const centerPreviewX = halfWPx + kPreviewX * halfHPx;
-  const centerPreviewY = kPreviewY * halfWPx + (1 + kPreviewX * kPreviewY) * halfHPx;
 
   const aVideo = cosA - sinA * kVideoY;
   const bVideo = sinA + cosA * kVideoY;
@@ -1158,37 +1224,29 @@ function svbUpdatePreviewTransform(key){
   const txVideo = centerVideoX * (1 - cosA) + sinA * centerVideoY;
   const tyVideo = centerVideoY * (1 - cosA) - sinA * centerVideoX;
 
-  const aPx = cosA - sinA * kPreviewY;
-  const bPx = sinA + cosA * kPreviewY;
-  const cPx = cosA * kPreviewX - sinA * (1 + kPreviewX * kPreviewY);
-  const dPx = sinA * kPreviewX + cosA * (1 + kPreviewX * kPreviewY);
-  const txPx = centerPreviewX * (1 - cosA) + sinA * centerPreviewY;
-  const tyPx = centerPreviewY * (1 - cosA) - sinA * centerPreviewX;
-
-  const transformVideo = (x, y) => {
-    const rx = aVideo * x + cVideo * y + txVideo;
-    const ry = bVideo * x + dVideo * y + tyVideo;
-    return [rx, ry];
-  };
-
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  [[0,0],[widthVideo,0],[0,heightVideo],[widthVideo,heightVideo]].forEach(([cx, cy]) => {
-    const [rx, ry] = transformVideo(cx, cy);
-    if (rx < minX) minX = rx;
-    if (rx > maxX) maxX = rx;
-    if (ry < minY) minY = ry;
-    if (ry > maxY) maxY = ry;
-  });
-
- const leftPx = (baseX + minX) * previewScaleX;
- const topPx = (baseY + minY) * previewScaleY;
+  const leftPx = baseX * previewScaleX;
+  const topPx = baseY * previewScaleY;
 
   img.style.left = `${leftPx}px`;
   img.style.top = `${topPx}px`;
 
- img.style.width = `${widthPreview}px`;
- img.style.height = `${heightPreview}px`;
+  const widthPreview = widthVideo * previewScaleX;
+  const heightPreview = heightVideo * previewScaleY;
+  img.style.width = `${widthPreview}px`;
+  img.style.height = `${heightPreview}px`;
   img.style.transformOrigin = '0 0';
+  img.style.objectFit = 'cover';
+  img.style.objectPosition = '50% 50%';
+
+  const scaleRatioXY = safePreviewScaleY / safePreviewScaleX;
+  const scaleRatioYX = safePreviewScaleX / safePreviewScaleY;
+  const aPx = aVideo;
+  const bPx = bVideo * scaleRatioXY;
+  const cPx = cVideo * scaleRatioYX;
+  const dPx = dVideo;
+  const txPx = (txVideo + appliedPadLeft) * safePreviewScaleX;
+  const tyPx = (tyVideo + appliedPadTop) * safePreviewScaleY;
+
   img.style.transform = `matrix(${aPx.toFixed(6)}, ${bPx.toFixed(6)}, ${cPx.toFixed(6)}, ${dPx.toFixed(6)}, ${txPx.toFixed(2)}, ${tyPx.toFixed(2)})`;
 
   if (!isNaN(radius) && radius > 0) {
