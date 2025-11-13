@@ -1892,12 +1892,16 @@ function svb_generate() {
             svb_dbg_write($job_dir, 'warn.skew.filter', "perspective filter missing; skew ignored for {$key}");
         }
 
-        $angle_degrees = max(-180.0, min(180.0, (float)($p['angle'] ?? 0.0)));
+        $angle_degrees_input = max(-180.0, min(180.0, (float)($p['angle'] ?? 0.0)));
         $radius = max(0, (int)($p['radius'] ?? 0));
 
-        $angle_radians = $angle_degrees * (M_PI / 180);
-        $cosA = cos($angle_radians);
-        $sinA = sin($angle_radians);
+        $angle_radians_input = $angle_degrees_input * (M_PI / 180);
+        // FFmpeg treats positive values as counter-clockwise, whereas the UI
+        // rotates clockwise. Negate here so rendered overlays match the preview.
+        $angle_degrees_video = -$angle_degrees_input;
+        $angle_radians_video = -$angle_radians_input;
+        $cosA = cos($angle_radians_video);
+        $sinA = sin($angle_radians_video);
 
         $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba";
         $chain .= ",scale=w={$scW}:h={$scH}";
@@ -2036,6 +2040,10 @@ function svb_generate() {
             'skew_x_applied' => $skew_x_effective,
             'skew_y_input' => $skew_y_input,
             'skew_y_applied' => $skew_y_effective,
+            'angle_input_deg' => $angle_degrees_input,
+            'angle_input_rad' => $angle_radians_input,
+            'angle_applied_deg' => $angle_degrees_video,
+            'angle_applied_rad' => $angle_radians_video,
             'scaled_w' => $scaled_w,
             'scaled_h' => $scaled_h,
             'pad_left' => $applied_pad_left,
@@ -2081,8 +2089,8 @@ function svb_generate() {
         }
         // === КОНЕЦ ИСПРАВЛЕНИЯ ===
 
-        if ($angle_radians != 0) {
-            $chain .= ",rotate={$angle_radians}:ow=rotw(iw):oh=roth(ih):c=none";
+        if ($angle_radians_video != 0.0) {
+            $chain .= ",rotate={$angle_radians_video}:ow=rotw(iw):oh=roth(ih):c=none";
         }
 
         $chain .= ",pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0";
