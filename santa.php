@@ -1896,10 +1896,8 @@ function svb_generate() {
         $radius = max(0, (int)($p['radius'] ?? 0));
 
         $angle_radians_input = $angle_degrees_input * (M_PI / 180);
-        // FFmpeg treats positive values as counter-clockwise, whereas the UI
-        // rotates clockwise. Negate here so rendered overlays match the preview.
-        $angle_degrees_video = -$angle_degrees_input;
-        $angle_radians_video = -$angle_radians_input;
+        $angle_degrees_video = $angle_degrees_input;
+        $angle_radians_video = $angle_radians_input;
         $cosA = cos($angle_radians_video);
         $sinA = sin($angle_radians_video);
 
