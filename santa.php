@@ -1934,6 +1934,7 @@ function svb_generate() {
         $applied_pad_left = 0;
         $applied_pad_top = 0;
 
+        $map_points = null;
         if ($HAS_PERSPECTIVE && (abs($skew_x_effective) > 0.01 || abs($skew_y_effective) > 0.01)) {
             $padded_w = $even((int)ceil($content_w + $pad_left + $pad_right));
             if ($padded_w < 2) { $padded_w = 2; }
@@ -1945,17 +1946,42 @@ function svb_generate() {
             $map_top_left = [$pad_left + 0.0, $pad_top + 0.0];
             $map_top_right = [$pad_left + $content_w, $pad_top + $skew_y_effective];
             $map_bottom_left = [$pad_left + $skew_x_effective, $pad_top + (1.0 + $kVideoX * $kVideoY) * $content_h];
-            $map_bottom_right = [$pad_left + $content_w + $skew_x_effective, $pad_top + $skew_y_effective + (1.0 + $kVideoX * $kVideoY) * $content_h];
-            $norm = static function($val, $den) { return $den > 0 ? $val / $den : 0.0; };
-            $chain .= sprintf(",perspective=x0=%0.6f:y0=%0.6f:x1=%0.6f:y1=%0.6f:x2=%0.6f:y2=%0.6f:x3=%0.6f:y3=%0.6f",
-                $norm($map_top_left[0], $padded_w),
-                $norm($map_top_left[1], $padded_h),
-                $norm($map_top_right[0], $padded_w),
-                $norm($map_top_right[1], $padded_h),
-                $norm($map_bottom_left[0], $padded_w),
-                $norm($map_bottom_left[1], $padded_h),
-                $norm($map_bottom_right[0], $padded_w),
-                $norm($map_bottom_right[1], $padded_h)
+            $map_bottom_right = [
+                $pad_left + $content_w + $skew_x_effective,
+                $pad_top + $skew_y_effective + (1.0 + $kVideoX * $kVideoY) * $content_h
+            ];
+            $map_points = [
+                'tl' => $map_top_left,
+                'tr' => $map_top_right,
+                'bl' => $map_bottom_left,
+                'br' => $map_bottom_right,
+                'w'  => $padded_w,
+                'h'  => $padded_h,
+            ];
+
+            $clampCoord = static function($value, $max) {
+                if ($max <= 0) {
+                    return 0.0;
+                }
+                if ($value < 0.0) {
+                    return 0.0;
+                }
+                if ($value > $max) {
+                    return (float)$max;
+                }
+                return (float)$value;
+            };
+
+            $chain .= sprintf(
+                ",perspective=x0=%0.6f:y0=%0.6f:x1=%0.6f:y1=%0.6f:x2=%0.6f:y2=%0.6f:x3=%0.6f:y3=%0.6f",
+                $clampCoord($map_top_left[0], $padded_w),
+                $clampCoord($map_top_left[1], $padded_h),
+                $clampCoord($map_top_right[0], $padded_w),
+                $clampCoord($map_top_right[1], $padded_h),
+                $clampCoord($map_bottom_left[0], $padded_w),
+                $clampCoord($map_bottom_left[1], $padded_h),
+                $clampCoord($map_bottom_right[0], $padded_w),
+                $clampCoord($map_bottom_right[1], $padded_h)
             );
             $scaled_w = $padded_w;
             $scaled_h = $padded_h;
@@ -2016,6 +2042,7 @@ function svb_generate() {
             'pad_right' => $pad_right,
             'pad_top' => $applied_pad_top,
             'pad_bottom' => $pad_bottom,
+            'perspective' => $map_points,
             'rotated_w' => $rotated_w,
             'rotated_h' => $rotated_h,
             'prepad_x' => $x_base + $min_x,
