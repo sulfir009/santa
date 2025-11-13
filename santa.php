@@ -1080,7 +1080,6 @@ function svbUpdatePreviewTransform(key){
   const cosA = Math.cos(angleRad);
   const sinA = Math.sin(angleRad);
 
-<<<<<<< HEAD
   const halfW = widthVideo / 2;
   const halfH = heightVideo / 2;
 
@@ -1106,7 +1105,6 @@ function svbUpdatePreviewTransform(key){
 
   img.style.left = `${(centerX + minX) * scaleX}px`;
   img.style.top = `${(centerY + minY) * scaleY}px`;
-=======
   const rotatedW = Math.abs(widthVideo * cosA) + Math.abs(heightVideo * sinA);
   const rotatedH = Math.abs(widthVideo * sinA) + Math.abs(heightVideo * cosA);
 
@@ -1115,8 +1113,6 @@ function svbUpdatePreviewTransform(key){
 
   img.style.left = `${(baseX - offsetX) * scaleX}px`;
   img.style.top = `${(baseY - offsetY) * scaleY}px`;
->>>>>>> c64f0b8 (Single-commit snapshot of repository)
-
   img.style.width = `${widthVideo * scaleX}px`;
   img.style.height = `${heightVideo * scaleY}px`;
   img.style.transformOrigin = 'center center';
@@ -1796,7 +1792,7 @@ function svb_generate() {
         $cosA = cos($angle_radians);
         $sinA = sin($angle_radians);
 
-<<<<<<< HEAD
+
         $half_w = $scaled_w / 2.0;
         $half_h = $scaled_h / 2.0;
 
@@ -1833,7 +1829,6 @@ function svb_generate() {
 
         $x = $even((int)round($center_x + $min_x - $pad_offset_x));
         $y = $even((int)round($center_y + $min_y - $pad_offset_y));
-=======
         if (abs($angle_radians) > 0.0001) {
             $rotated_w = abs($scaled_w * $cosA) + abs($scaled_h * $sinA);
             $rotated_h = abs($scaled_w * $sinA) + abs($scaled_h * $cosA);
@@ -1847,7 +1842,7 @@ function svb_generate() {
 
         $x = $even((int)round($x_base - $offset_x));
         $y = $even((int)round($y_base - $offset_y));
->>>>>>> c64f0b8 (Single-commit snapshot of repository)
+
 
         svb_dbg_write($job_dir, 'calc.overlay.' . $key, [
             'input' => $p,
@@ -1855,13 +1850,10 @@ function svb_generate() {
             'scaled_h' => $scaled_h,
             'rotated_w' => $rotated_w,
             'rotated_h' => $rotated_h,
-<<<<<<< HEAD
             'prepad_x' => $center_x + $min_x,
             'prepad_y' => $center_y + $min_y,
-=======
             'offset_x' => $offset_x,
             'offset_y' => $offset_y,
->>>>>>> c64f0b8 (Single-commit snapshot of repository)
             'x_base' => $x_base,
             'y_base' => $y_base,
             'final_x' => $x,
