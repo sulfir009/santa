@@ -105,13 +105,216 @@ function svb_ffprobe_duration($file) {
 }
 
 // === Санитайз/транскод картинки в «ровный» PNG RGBA ===
-function svb_transcode_image_to_png_rgba($ffmpeg, $src, $dst){
-    // Гарантируем, что файл станет одиночным кадром PNG RGBA (sRGB) без «экзотики» профилей/битности
+function svb_transcode_image_to_png_rgba($ffmpeg, $src, $dst, $cropSize = 709, $job_dir = ''){
+    $filters = 'format=rgba,setsar=1';
+    if ($cropSize > 0) {
+        $filters .= ',scale=' . $cropSize . ':' . $cropSize . ':force_original_aspect_ratio=increase';
+        $filters .= ',crop=' . $cropSize . ':' . $cropSize;
+    }
+
     $cmd = $ffmpeg . ' -y -v error -i ' . escapeshellarg($src)
-         . ' -frames:v 1 -vf "format=rgba,setsar=1" -f image2 '
+         . ' -frames:v 1 -vf "' . $filters . '" -f image2 '
          . escapeshellarg($dst) . ' 2>&1';
     @exec($cmd, $o, $rc);
-    return ($rc === 0) && file_exists($dst);
+    if ($rc === 0 && file_exists($dst)) {
+        return true;
+    }
+
+    svb_dbg_write($job_dir, 'warn.ffmpeg_transcode', [
+        'src' => $src,
+        'dst' => $dst,
+        'rc'  => $rc,
+        'out' => isset($o) ? implode("\n", $o) : '',
+    ]);
+
+    if (class_exists('Imagick')) {
+        try {
+            $img = new Imagick($src);
+            $img->setImageFormat('png');
+            $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
+            if ($cropSize > 0) {
+                $img->setImageGravity(Imagick::GRAVITY_CENTER);
+                $img->cropThumbnailImage($cropSize, $cropSize);
+            }
+            $img->writeImage($dst);
+            $img->clear();
+            $img->destroy();
+            return file_exists($dst);
+        } catch (Throwable $e) {
+            svb_dbg_write($job_dir, 'warn.imagick_transcode', $e->getMessage());
+        }
+    }
+
+    $data = @file_get_contents($src);
+    if ($data === false) {
+        return false;
+    }
+
+    $srcImg = @imagecreatefromstring($data);
+    if (!$srcImg) {
+        return false;
+    }
+
+    $srcW = imagesx($srcImg);
+    $srcH = imagesy($srcImg);
+    if ($srcW <= 0 || $srcH <= 0) {
+        imagedestroy($srcImg);
+        return false;
+    }
+
+    if ($cropSize > 0) {
+        $scale = max($cropSize / $srcW, $cropSize / $srcH);
+        $scaledW = (int)ceil($srcW * $scale);
+        $scaledH = (int)ceil($srcH * $scale);
+    } else {
+        $scale = 1.0;
+        $scaledW = $srcW;
+        $scaledH = $srcH;
+    }
+
+    $scaled = imagecreatetruecolor($scaledW, $scaledH);
+    if (!$scaled) {
+        imagedestroy($srcImg);
+        return false;
+    }
+
+    imagealphablending($scaled, false);
+    imagesavealpha($scaled, true);
+    $transparent = imagecolorallocatealpha($scaled, 0, 0, 0, 127);
+    imagefilledrectangle($scaled, 0, 0, $scaledW, $scaledH, $transparent);
+
+    imagecopyresampled($scaled, $srcImg, 0, 0, 0, 0, $scaledW, $scaledH, $srcW, $srcH);
+    imagedestroy($srcImg);
+
+    if ($cropSize > 0) {
+        $crop = imagecreatetruecolor($cropSize, $cropSize);
+        if (!$crop) {
+            imagedestroy($scaled);
+            return false;
+        }
+        imagealphablending($crop, false);
+        imagesavealpha($crop, true);
+        $transparentCrop = imagecolorallocatealpha($crop, 0, 0, 0, 127);
+        imagefilledrectangle($crop, 0, 0, $cropSize, $cropSize, $transparentCrop);
+
+        $offsetX = (int)max(0, floor(($scaledW - $cropSize) / 2));
+        $offsetY = (int)max(0, floor(($scaledH - $cropSize) / 2));
+        imagecopy($crop, $scaled, 0, 0, $offsetX, $offsetY, $cropSize, $cropSize);
+        imagedestroy($scaled);
+        $result = imagepng($crop, $dst);
+        imagedestroy($crop);
+        return (bool)$result;
+    }
+
+    $result = imagepng($scaled, $dst);
+    imagedestroy($scaled);
+    return (bool)$result;
+}
+
+if (!function_exists('svb_apply_manual_round_corners')) {
+    function svb_apply_manual_round_corners($file, $radiusCssPx, $scalePercent, $targetWidth, $job_dir = '') {
+        if ($radiusCssPx <= 0) return true;
+        if (!file_exists($file)) return false;
+
+        $info = @getimagesize($file);
+        if (!$info) return false;
+        [$width, $height] = $info;
+        if ($width <= 0 || $height <= 0) return false;
+
+        $scalePercent = max(1, (int)$scalePercent);
+        $scaledWidth = max(1, (int)round($targetWidth * ($scalePercent / 100.0)));
+        $scaleFactor = $scaledWidth > 0 ? ($width / $scaledWidth) : 1.0;
+        $radius = (int)round($radiusCssPx * $scaleFactor);
+        $maxRadius = (int)floor((min($width, $height) - 1) / 2);
+        if ($maxRadius < 1) $maxRadius = 1;
+        $radius = max(1, min($radius, $maxRadius));
+        if ($radius <= 0) return true;
+
+        if (class_exists('Imagick')) {
+            try {
+                $img = new Imagick($file);
+                $img->setImageFormat('png');
+                $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
+                $img->roundCorners($radius, $radius);
+                $img->writeImage($file);
+                $img->clear();
+                $img->destroy();
+                return true;
+            } catch (Throwable $e) {
+                svb_dbg_write($job_dir, 'warn.imagick_round', $e->getMessage());
+            }
+        }
+
+        if (!function_exists('imagecreatetruecolor') || !function_exists('imagepng')) {
+            return false;
+        }
+
+        $imgData = @file_get_contents($file);
+        if ($imgData === false) return false;
+
+        $img = @imagecreatefromstring($imgData);
+        if (!$img) return false;
+
+        if (function_exists('imagepalettetotruecolor')) {
+            @imagepalettetotruecolor($img);
+        }
+
+        imagealphablending($img, false);
+        imagesavealpha($img, true);
+
+        $mask = imagecreatetruecolor($width, $height);
+        if (!$mask) {
+            imagedestroy($img);
+            return false;
+        }
+
+        if (function_exists('imageantialias')) imageantialias($mask, true);
+
+        imagealphablending($mask, false);
+        imagesavealpha($mask, true);
+
+        $maskTransparent = imagecolorallocatealpha($mask, 0, 0, 0, 127);
+        $maskOpaque = imagecolorallocatealpha($mask, 0, 0, 0, 0);
+
+        imagefilledrectangle($mask, 0, 0, $width, $height, $maskTransparent);
+        imagefilledrectangle($mask, $radius, 0, $width - $radius, $height, $maskOpaque);
+        imagefilledrectangle($mask, 0, $radius, $width, $height - $radius, $maskOpaque);
+
+        $diameter = $radius * 2;
+        imagefilledellipse($mask, $radius, $radius, $diameter, $diameter, $maskOpaque);
+        imagefilledellipse($mask, $width - $radius - 1, $radius, $diameter, $diameter, $maskOpaque);
+        imagefilledellipse($mask, $radius, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
+        imagefilledellipse($mask, $width - $radius - 1, $height - $radius - 1, $diameter, $diameter, $maskOpaque);
+
+        $transparentColor = imagecolorallocatealpha($img, 0, 0, 0, 127);
+        $cache = [];
+
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                $rgba = imagecolorat($mask, $x, $y);
+                $alpha = ($rgba & 0x7F000000) >> 24;
+                if ($alpha === 0) continue;
+                if ($alpha >= 127) {
+                    imagesetpixel($img, $x, $y, $transparentColor);
+                    continue;
+                }
+
+                $srcRGBA = imagecolorsforindex($img, imagecolorat($img, $x, $y));
+                $key = $srcRGBA['red'] . '_' . $srcRGBA['green'] . '_' . $srcRGBA['blue'] . '_' . $alpha;
+                if (!isset($cache[$key])) {
+                    $cache[$key] = imagecolorallocatealpha($img, $srcRGBA['red'], $srcRGBA['green'], $srcRGBA['blue'], $alpha);
+                }
+                imagesetpixel($img, $x, $y, $cache[$key]);
+            }
+        }
+
+        $ok = imagepng($img, $file);
+
+        imagedestroy($img);
+        imagedestroy($mask);
+
+        return $ok;
+    }
 }
 
 function svb_scan_audio_catalog() {
@@ -287,9 +490,9 @@ function svb_render_form() {
   position: absolute;
   top: 0; /* ИСПОЛЬЗУЕМ TOP/LEFT ДЛЯ ПОЗИЦИОНИРОВАНИЯ */
   left: 0; /* ИСПОЛЬЗУЕМ TOP/LEFT ДЛЯ ПОЗИЦИОНИРОВАНИЯ */
-  transform-origin: top left;
+  transform-origin: center center;
   z-index: 2; /* Картинка поверх видео */
-  will-change: transform, top, left, width, height; 
+  will-change: transform, top, left, width, height;
   
   /* === ИСПРАВЛЕНИЕ: Плейсхолдер больше не 100px === */
   /* Он будет 0px, пока JS не задаст ему % ширины */
@@ -488,14 +691,14 @@ function svb_render_form() {
         </div>
 
         <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-            <label>X<span class="svb-val" id="val-child1-x">650</span>
-                <input class="svb-range svb-key-control" type="range" name="child1_x" value="650" min="-1000" max="2500" step="5" data-val-id="val-child1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+            <label>X<span class="svb-val" id="val-child1-x">785</span>
+                <input class="svb-range svb-key-control" type="range" name="child1_x" value="785" min="-1000" max="2500" step="5" data-val-id="val-child1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
             </label>
-            <label>Y<span class="svb-val" id="val-child1-y">210</span>
-                <input class="svb-range svb-key-control" type="range" name="child1_y" value="210" min="-1000" max="2000" step="5" data-val-id="val-child1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+            <label>Y<span class="svb-val" id="val-child1-y">315</span>
+                <input class="svb-range svb-key-control" type="range" name="child1_y" value="315" min="-1000" max="2000" step="5" data-val-id="val-child1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
             </label>
-            <label>Scale<span class="svb-val" id="val-child1-scale">35</span>%
-                <input class="svb-range svb-key-control" type="range" name="child1_scale" value="35" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
+            <label>Scale<span class="svb-val" id="val-child1-scale">29</span>%
+                <input class="svb-range svb-key-control" type="range" name="child1_scale" value="29" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
             </label>
             <label>Angle<span class="svb-val" id="val-child1-angle">4</span>°
                 <input class="svb-range svb-key-control" type="range" name="child1_angle" value="4" min="-45" max="45" step="1" data-val-id="val-child1-angle" data-key-up="." data-key-down=","/>
@@ -508,34 +711,179 @@ function svb_render_form() {
     </div>
     <div class="svb-drop" data-photo="child2">
       <div class="svb-field"><span class="svb-label">Фото дитини 2</span><input class="svb-input" type="file" name="photo_child2" accept="image/*" required></div>
-      <div class="svb-preview" id="prev-child2"><img id="img-child2" alt="child2" /></div>
-      <div class="svb-controls" style="display:none;">
-        <label>X<input class="svb-range" type="number" name="child2_x" value="1156"/></label>
-        <label>Y<input class="svb-range" type="number" name="child2_y" value="250"/></label>
-        <label>Scale %<input class="svb-range" type="number" name="child2_scale" value="33"/></label>
-<label>Angle (deg)<input class="svb-range" type="number" name="child2_angle" value="10" step="any"/></label>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-child2">
+        <video id="svb-video-child2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-child2" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="child2" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="child2">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="child2" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-child2" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="child2">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="child2" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="child2" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-child2-x">1156</span>
+          <input class="svb-range svb-key-control" type="range" name="child2_x" value="1156" min="-1000" max="2500" step="5" data-val-id="val-child2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-child2-y">250</span>
+          <input class="svb-range svb-key-control" type="range" name="child2_y" value="250" min="-1000" max="2000" step="5" data-val-id="val-child2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-child2-scale">33</span>%
+          <input class="svb-range svb-key-control" type="range" name="child2_scale" value="33" min="10" max="200" step="1" data-val-id="val-child2-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-child2-angle">10</span>°
+          <input class="svb-range svb-key-control" type="range" name="child2_angle" value="10" min="-45" max="45" step="1" data-val-id="val-child2-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-child2-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="child2_radius" value="0" min="0" max="200" step="1" data-val-id="val-child2-radius" data-key-up="]" data-key-down="["/>
+        </label>
       </div>
       <span class="svb-note">Інтервали: 02:17:14–02:21:25 та 07:04:23–07:11:13</span>
     </div>
     <div class="svb-drop" data-photo="parent1">
       <div class="svb-field"><span class="svb-label">Фото батька</span><input class="svb-input" type="file" name="photo_parent1" accept="image/*" required></div>
-      <div class="svb-preview" id="prev-parent1"><img id="img-parent1" alt="parent1" /></div>
-      <div class="svb-controls" style="display:none;">
-        <label>X<input class="svb-range" type="number" name="parent1_x" value="166"/></label>
-        <label>Y<input class="svb-range" type="number" name="parent1_y" value="0"/></label>
-        <label>Scale %<input class="svb-range" type="number" name="parent1_scale" value="75"/></label>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-parent1">
+        <video id="svb-video-parent1" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-parent1" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="parent1" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent1">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent1" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-parent1" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent1">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent1" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent1" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-parent1-x">166</span>
+          <input class="svb-range svb-key-control" type="range" name="parent1_x" value="166" min="-1000" max="2500" step="5" data-val-id="val-parent1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-parent1-y">0</span>
+          <input class="svb-range svb-key-control" type="range" name="parent1_y" value="0" min="-1000" max="2000" step="5" data-val-id="val-parent1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-parent1-scale">75</span>%
+          <input class="svb-range svb-key-control" type="range" name="parent1_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent1-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-parent1-angle">0</span>°
+          <input class="svb-range svb-key-control" type="range" name="parent1_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent1-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-parent1-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="parent1_radius" value="0" min="0" max="200" step="1" data-val-id="val-parent1-radius" data-key-up="]" data-key-down="["/>
+        </label>
       </div>
       <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото матері)</span>
     </div>
     <div class="svb-drop" data-photo="parent2">
       <div class="svb-field"><span class="svb-label">Фото матері</span><input class="svb-input" type="file" name="photo_parent2" accept="image/*" required></div>
-      <div class="svb-preview" id="prev-parent2"><img id="img-parent2" alt="parent2" /></div>
-      <div class="svb-controls" style="display:none;">
-        <label>X<input class="svb-range" type="number" name="parent2_x" value="166"/></label>
-        <label>Y<input class="svb-range" type="number" name="parent2_y" value="0"/></label>
-        <label>Scale %<input class="svb-range" type="number" name="parent2_scale" value="75"/></label>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-parent2">
+        <video id="svb-video-parent2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-parent2" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="parent2" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent2">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent2" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-parent2" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent2">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent2" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent2" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-parent2-x">166</span>
+          <input class="svb-range svb-key-control" type="range" name="parent2_x" value="166" min="-1000" max="2500" step="5" data-val-id="val-parent2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-parent2-y">0</span>
+          <input class="svb-range svb-key-control" type="range" name="parent2_y" value="0" min="-1000" max="2000" step="5" data-val-id="val-parent2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-parent2-scale">75</span>%
+          <input class="svb-range svb-key-control" type="range" name="parent2_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent2-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-parent2-angle">0</span>°
+          <input class="svb-range svb-key-control" type="range" name="parent2_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent2-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-parent2-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="parent2_radius" value="0" min="0" max="200" step="1" data-val-id="val-parent2-radius" data-key-up="]" data-key-down="["/>
+        </label>
       </div>
       <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото батька)</span>
+    </div>
+    <div class="svb-drop" data-photo="extra">
+      <div class="svb-field"><span class="svb-label">Додаткове фото</span><input class="svb-input" type="file" name="photo_extra" accept="image/*"></div>
+
+      <div class="svb-vid-preview" id="svb-vid-preview-extra">
+        <video id="svb-video-extra" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+        <img id="img-extra" alt="Фото тут" />
+      </div>
+
+      <div class="svb-vid-seek-bar-container">
+        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="extra" min="0" value="0" step="0.1">
+      </div>
+      <div class="svb-vid-controls">
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="extra">► Play</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="extra" style="display:none;">❚❚ Pause</button>
+        <div id="svb-vid-time-extra" class="svb-btn ghost">00:00 / 00:00</div>
+
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="extra">🔇 Mute</button>
+        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="extra" style="display:none;">🔈 Unmute</button>
+        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="extra" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="svb-note" style="margin-top: 4px;">
+        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+      </div>
+
+      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+        <label>X<span class="svb-val" id="val-extra-x">775</span>
+          <input class="svb-range svb-key-control" type="range" name="extra_x" value="775" min="-1000" max="2500" step="5" data-val-id="val-extra-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
+        </label>
+        <label>Y<span class="svb-val" id="val-extra-y">405</span>
+          <input class="svb-range svb-key-control" type="range" name="extra_y" value="405" min="-1000" max="2000" step="5" data-val-id="val-extra-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
+        </label>
+        <label>Scale<span class="svb-val" id="val-extra-scale">31</span>%
+          <input class="svb-range svb-key-control" type="range" name="extra_scale" value="31" min="10" max="200" step="1" data-val-id="val-extra-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Angle<span class="svb-val" id="val-extra-angle">0</span>°
+          <input class="svb-range svb-key-control" type="range" name="extra_angle" value="0" min="-45" max="45" step="1" data-val-id="val-extra-angle" data-key-up="." data-key-down=","/>
+        </label>
+        <label>Radius<span class="svb-val" id="val-extra-radius">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="extra_radius" value="0" min="0" max="200" step="1" data-val-id="val-extra-radius" data-key-up="]" data-key-down="["/>
+        </label>
+      </div>
+      <span class="svb-note">Інтервал: 06:35:03–06:43:13 (додаткове фото у цій сцені)</span>
     </div>
   </div>
 
@@ -653,118 +1001,145 @@ function svbBindAudioPreview(){
 }
 
 function svbBindPhotoInputs(){
- const pairs = [['child1','img-child1','prev-child1'],['child2','img-child2','prev-child2'],['parent1','img-parent1','prev-parent1'],['parent2','img-parent2','prev-parent2']];
- 
- pairs.forEach(([key,imgId,prevId])=>{
-   svbMarkTouched(key); 
+ ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
+   svbMarkTouched(key);
    const input = document.querySelector(`input[name="photo_${key}"]`);
-   if(!input) return; 
-   
+   if(!input) return;
+
    input.addEventListener('change', e=>{
      const f = e.target.files && e.target.files[0];
      if(!f) return;
-     
+
      const url = URL.createObjectURL(f);
-     const img = document.getElementById(imgId);
-     
-     if (img.src) {
+     const img = document.getElementById('img-' + key);
+
+     if (img && img.src) {
         URL.revokeObjectURL(img.src);
      }
-     
+
+     if (!img) return;
+
      img.onload = ()=>{
-       if (key === 'child1') {
-           svbUpdatePreviewTransform(key);
-       } else {
-           svbFitImageToPreview(key);
-       }
+       svbUpdatePreviewTransform(key);
      };
-     img.src = url; 
+     img.src = url;
    });
  });
- 
- ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
-   ['x','y','scale','angle','radius'].forEach(k=>{
-     const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
-     if(ctrl){ 
-       ctrl.addEventListener('input', (e)=> {
-         const valId = e.target.dataset.valId;
+
+ ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
+  ['x','y','scale','angle','radius'].forEach(k=>{
+    const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
+    if(ctrl){
+      ctrl.addEventListener('input', (e)=> {
+        const valId = e.target.dataset.valId;
          if(valId) {
            const valEl = document.getElementById(valId);
            if(valEl) valEl.textContent = e.target.value;
          }
-         if (key === 'child1') {
-             svbUpdatePreviewTransform(key);
-         } else {
-             svbUpdatePreviewTransform_Static(key); 
-         }
-       }); 
+         svbUpdatePreviewTransform(key);
+       });
      }
    });
  });
 }
 
-// === ГЛАВНОЕ ИСПРАВЛЕНИЕ: НОВАЯ ЛОГИКА МАСШТАБА ===
 function svbUpdatePreviewTransform(key){
- if (key !== 'child1') return; 
- 
- const img = document.getElementById('img-' + key); 
- const previewBox = document.getElementById('svb-vid-preview-' + key); 
- 
- if(!img || !previewBox) return; 
-
- // 1. Получаем все значения
- const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0); 
- const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0); 
- const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100); 
- const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
- 
- // 2. Базовые размеры
- const original_w = 1920;
- const original_h = 1080; 
- 
- // 3. Рассчитываем ПОЗИЦИЮ (X/Y)
- // 'left' и 'top' будут в % от контейнера
- const final_x_perc = (x_raw / original_w) * 100;
- const final_y_perc = (y_raw / original_h) * 100; 
- 
- img.style.left = `${final_x_perc}%`;
- img.style.top = `${final_y_perc}%`;
-
- // 4. Рассчитываем МАСШТАБ (Scale)
- // 'Scale' (s_raw) - это % от ширины ВИДЕО (1920)
- // Но мы применяем его как % от ширины КОНТЕЙНЕРА (854)
- // Это одно и то же!
- img.style.width = `${s_raw}%`;
- // Если картинка загружена, 'height: auto' сохранит пропорции
- // Если не загружена (плейсхолдер), 'height: auto' схлопнется.
- // Поэтому для :not([src]) в CSS мы задали 'min-height'.
- // Здесь мы должны задать 'auto'
- img.style.height = 'auto';
-  
- // 5. Вращение (Angle)
- img.style.transformOrigin = 'top left'; // Вращаем от левого верхнего угла
- img.style.transform = `rotate(${a}deg)`;
- 
- // 6. Радиус (Radius)
- const radiusInput = document.querySelector(`input[name="child1_radius"]`);
- if (radiusInput) {
-   const radius = parseFloat(radiusInput.value || 0);
-   img.style.borderRadius = `${radius}px`;
-   img.style.overflow = 'hidden'; 
- }
-}
-// === КОНЕЦ ИСПРАВЛЕНИЯ ===
-
-
-function svbUpdatePreviewTransform_Static(key){
  const img = document.getElementById('img-' + key);
- const previewBox = document.getElementById('prev-' + key); 
- if(!img || !previewBox) return; 
- const x = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
- const y = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
- const s = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
+ const previewBox = document.getElementById('svb-vid-preview-' + key);
+
+ if(!img || !previewBox) return;
+
+ const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
+ const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
+ const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
  const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
- img.style.transform = `translate(${x}px, ${y}px) scale(${s/100}) rotate(${a}deg)`;
+ const radius = parseFloat(document.querySelector(`input[name="${key}_radius"]`)?.value||0);
+
+ const original_w = 1920;
+ const original_h = 1080;
+  const target_w = 854;
+  const target_h = 480;
+
+  const previewWidth = previewBox.clientWidth || previewBox.offsetWidth || target_w;
+  const previewHeight = previewBox.clientHeight || previewBox.offsetHeight || (previewWidth * (target_h / target_w));
+
+  const scaleX = previewWidth / target_w;
+  const scaleY = previewHeight / target_h;
+
+  const safeScale = Math.max(10, s_raw);
+  const widthVideo = target_w * (safeScale / 100);
+  const naturalW = img.naturalWidth || target_w;
+  const naturalH = img.naturalHeight || target_h;
+  const aspect = (naturalW > 0 && naturalH > 0) ? (naturalH / naturalW) : (target_h / target_w);
+  const heightVideo = widthVideo * aspect;
+
+  const baseX = (x_raw / original_w) * target_w;
+  const baseY = (y_raw / original_h) * target_h;
+
+  const angleRad = (a || 0) * Math.PI / 180;
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+
+  const halfW = widthVideo / 2;
+  const halfH = heightVideo / 2;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const corners = [
+    [-halfW, -halfH],
+    [ halfW, -halfH],
+    [-halfW,  halfH],
+    [ halfW,  halfH],
+  ];
+
+  corners.forEach(([cx, cy]) => {
+    const rx = cx * cosA - cy * sinA;
+    const ry = cx * sinA + cy * cosA;
+    if (rx < minX) minX = rx;
+    if (rx > maxX) maxX = rx;
+    if (ry < minY) minY = ry;
+    if (ry > maxY) maxY = ry;
+  });
+
+  const centerX = baseX + halfW;
+  const centerY = baseY + halfH;
+
+  img.style.left = `${(centerX + minX) * scaleX}px`;
+  img.style.top = `${(centerY + minY) * scaleY}px`;
+
+  img.style.width = `${widthVideo * scaleX}px`;
+  img.style.height = `${heightVideo * scaleY}px`;
+  img.style.transformOrigin = 'center center';
+  img.style.transform = `rotate(${a}deg)`;
+
+  if (!isNaN(radius) && radius > 0) {
+    const radiusPx = radius * scaleX;
+    img.style.borderRadius = `${radiusPx}px`;
+    img.style.overflow = 'hidden';
+  } else {
+    img.style.borderRadius = '0px';
+    img.style.overflow = '';
+  }
+}
+
+function svbCollectOverlayData() {
+  const keys = ['child1', 'child2', 'parent1', 'parent2', 'extra'];
+  const payload = {};
+  keys.forEach(key => {
+    const pick = (suffix, fallback = 0) => {
+      const el = document.querySelector(`input[name="${key}_${suffix}"]`);
+      if (!el) return fallback;
+      const num = parseFloat(el.value);
+      return Number.isFinite(num) ? num : fallback;
+    };
+    payload[key] = {
+      x: pick('x'),
+      y: pick('y'),
+      scale: pick('scale', 100),
+      angle: pick('angle'),
+      radius: pick('radius')
+    };
+  });
+  return payload;
 }
 
 
@@ -903,7 +1278,7 @@ function svbLock(on){
   document.documentElement.style.overflow = on ? 'hidden' : '';
 }
 async function svbStartGenerate(){
-  if(svbGenerating) return; 
+  if(svbGenerating) return;
   svbGenerating = true;
   svbLock(true);
   $('#svb-lock-percent').textContent = '0%';
@@ -911,6 +1286,11 @@ async function svbStartGenerate(){
   $('#svb-status').textContent = 'Запускаємо процес...';
   const form = document.getElementById('svb-form');
   const fd = new FormData(form);
+  try {
+    fd.append('overlay_json', JSON.stringify(svbCollectOverlayData()));
+  } catch (jsonErr) {
+    console.error('overlay_json encode failed', jsonErr);
+  }
   fd.append('action', 'svb_generate');
   try {
     const response = await fetch(SVB_AJAX.url, { method:'POST', body:fd });
@@ -1035,7 +1415,7 @@ function svbBindNameSuggest(){
   });
 }
 
-// ... (svbMarkTouched, svbFitImageToPreview - БЕЗ ИЗМЕНЕНИЙ) ...
+// ... (svbMarkTouched - БЕЗ ИЗМЕНЕНИЙ) ...
 function svbMarkTouched(key){
  ['x','y','scale','angle','radius'].forEach(k=>{
  const el = document.querySelector(`input[name="${key}_${k}"]`);
@@ -1045,143 +1425,114 @@ function svbMarkTouched(key){
  }
  });
 }
-function svbFitImageToPreview(key){
-  const img = document.getElementById('img-' + key);
-  const box = document.getElementById('prev-' + key);
-  if (!img || !box || !img.naturalWidth || !img.naturalHeight) return;
-  const r = box.getBoundingClientRect();
-  const sx = r.width  / img.naturalWidth;
-  const sy = r.height / img.naturalHeight;
-  const scale = Math.min(sx, sy);
-  const px = Math.round((r.width  - img.naturalWidth  * scale) / 2);
-  const py = Math.round((r.height - img.naturalHeight * scale) / 2);
-  const X = document.querySelector(`input[name="${key}_x"]`);
-  const Y = document.querySelector(`input[name="${key}_y"]`);
-  const S = document.querySelector(`input[name="${key}_scale"]`);
-  // if (X && !X.dataset.touched) X.value = px;
-  // if (Y && !Y.dataset.touched) Y.value = py;
-  // if (S && !S.dataset.touched) S.value = Math.max(10, Math.round(scale * 100));
-  svbUpdatePreviewTransform_Static(key);
-}
 
-// ... (svbBindRealtimeControls - БЕЗ ИЗМЕНЕНИЙ) ...
 function svbBindRealtimeControls() {
-    const key = 'child1';
-    
-    // 1. Находим все элементы
-    const vid = $(`#svb-video-${key}`);
-    const playBtn = $(`[data-vid-ctrl="play"][data-key="${key}"]`);
-    const pauseBtn = $(`[data-vid-ctrl="pause"][data-key="${key}"]`);
-    const timeEl = $(`#svb-vid-time-${key}`);
-    const muteBtn = $(`[data-vid-ctrl="mute"][data-key="${key}"]`);
-    const unmuteBtn = $(`[data-vid-ctrl="unmute"][data-key="${key}"]`);
-    const volumeSlider = $(`[data-vid-ctrl="volume"][data-key="${key}"]`);
-    const seekSlider = $(`[data-vid-ctrl="seek"][data-key="${key}"]`); 
+    ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
+        const vid = document.getElementById(`svb-video-${key}`);
+        const playBtn = document.querySelector(`[data-vid-ctrl="play"][data-key="${key}"]`);
+        const pauseBtn = document.querySelector(`[data-vid-ctrl="pause"][data-key="${key}"]`);
+        const timeEl = document.getElementById(`svb-vid-time-${key}`);
+        const muteBtn = document.querySelector(`[data-vid-ctrl="mute"][data-key="${key}"]`);
+        const unmuteBtn = document.querySelector(`[data-vid-ctrl="unmute"][data-key="${key}"]`);
+        const volumeSlider = document.querySelector(`[data-vid-ctrl="volume"][data-key="${key}"]`);
+        const seekSlider = document.querySelector(`[data-vid-ctrl="seek"][data-key="${key}"]`);
 
-    if (!vid || !playBtn || !pauseBtn || !timeEl || !muteBtn || !unmuteBtn || !volumeSlider || !seekSlider) {
-        console.error("SVB: Не удалось найти все элементы плеера.");
-        return;
-    }
-    
-    // --- Управление Play/Pause ---
-    playBtn.addEventListener('click', () => {
-        if(svbCurrentSampleAudio) {
-            svbCurrentSampleAudio.pause();
-            svbCurrentSampleAudio = null;
+        if (!vid || !playBtn || !pauseBtn || !timeEl || !muteBtn || !unmuteBtn || !volumeSlider || !seekSlider) {
+            return;
         }
-        vid.play();
-    });
-    pauseBtn.addEventListener('click', () => {
-        vid.pause();
-    });
-    vid.addEventListener('play', () => {
-        playBtn.style.display = 'none';
-        pauseBtn.style.display = 'inline-flex';
-    });
-    vid.addEventListener('pause', () => {
-        playBtn.style.display = 'inline-flex';
-        pauseBtn.style.display = 'none';
-    });
 
-    
-    // --- Управление Прокруткой (Seek) ---
-    let totalDuration = 0;
-    vid.addEventListener('loadedmetadata', () => {
-        totalDuration = vid.duration;
-        seekSlider.max = totalDuration;
-        timeEl.textContent = `${svbFormatTime(0)} / ${svbFormatTime(totalDuration)}`;
-    });
-    
-    vid.addEventListener('timeupdate', () => {
-        const currentTime = vid.currentTime;
-        // Обновляем слайдер, только если пользователь его не двигает
-        if (!seekSlider.matches(':active')) {
-             seekSlider.value = currentTime;
-        }
-        timeEl.textContent = `${svbFormatTime(currentTime)} / ${svbFormatTime(totalDuration)}`;
-    });
-    
-    seekSlider.addEventListener('input', (e) => {
-        vid.currentTime = e.target.value;
-    });
-    // === КОНЕЦ БЛОКА ПРОКРУТКИ ===
-    
-    // --- Управление Mute/Volume ---
-    const updateMuteButtons = (isMuted) => {
-        muteBtn.style.display = isMuted ? 'none' : 'inline-flex';
-        unmuteBtn.style.display = isMuted ? 'inline-flex' : 'none';
-        
-        if (isMuted) {
-            volumeSlider.value = 0;
-        } else {
-            if (vid.volume < 0.05) {
-                vid.volume = 0.8;
+        playBtn.addEventListener('click', () => {
+            if(svbCurrentSampleAudio) {
+                svbCurrentSampleAudio.pause();
+                svbCurrentSampleAudio = null;
             }
-            volumeSlider.value = vid.volume;
-        }
-    };
-    muteBtn.addEventListener('click', () => {
-        vid.muted = true;
-    });
-    unmuteBtn.addEventListener('click', () => {
-        vid.muted = false;
-    });
-    volumeSlider.addEventListener('input', (e) => {
-        const vol = parseFloat(e.target.value);
-        vid.volume = vol;
-        vid.muted = (vol < 0.05); 
-    });
-    
-    // Синхронизация кнопок при изменении громкости
-    vid.addEventListener('volumechange', () => {
-         updateMuteButtons(vid.muted || vid.volume < 0.05);
-    });
-    // Инициализация
-    vid.volume = volumeSlider.value;
-    updateMuteButtons(vid.muted); 
-    
-    // --- Управление с клавиатуры (без изменений) ---
-    const controls = {};
-    $$(`.svb-key-control[name^="${key}_"]`).forEach(input => {
-        const keyUp = input.dataset.keyUp;
-        const keyDown = input.dataset.keyDown;
-        if (keyUp) controls[keyUp] = { input, dir: 1 };
-        if (keyDown) controls[keyDown] = { input, dir: -1 };
-    });
-    $$(`.svb-key-control[name^="${key}_"]`).forEach(slider => {
-        slider.addEventListener('keydown', (e) => {
-            const ctrl = controls[e.key];
-            if (!ctrl) return; 
-            e.preventDefault();
-            const input = ctrl.input;
-            const dir = ctrl.dir;
-            const step = parseFloat(input.step) || 1;
-            const min = parseFloat(input.min) || -Infinity;
-            const max = parseFloat(input.max) || Infinity;
-            let val = parseFloat(input.value) || 0;
-            val += dir * (e.shiftKey ? step * 10 : step);
-            input.value = Math.max(min, Math.min(max, val)).toFixed(0);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
+            vid.play();
+        });
+        pauseBtn.addEventListener('click', () => {
+            vid.pause();
+        });
+        vid.addEventListener('play', () => {
+            playBtn.style.display = 'none';
+            pauseBtn.style.display = 'inline-flex';
+        });
+        vid.addEventListener('pause', () => {
+            playBtn.style.display = 'inline-flex';
+            pauseBtn.style.display = 'none';
+        });
+
+        let totalDuration = 0;
+        vid.addEventListener('loadedmetadata', () => {
+            totalDuration = vid.duration;
+            seekSlider.max = totalDuration;
+            timeEl.textContent = `${svbFormatTime(0)} / ${svbFormatTime(totalDuration)}`;
+        });
+
+        vid.addEventListener('timeupdate', () => {
+            const currentTime = vid.currentTime;
+            if (!seekSlider.matches(':active')) {
+                seekSlider.value = currentTime;
+            }
+            timeEl.textContent = `${svbFormatTime(currentTime)} / ${svbFormatTime(totalDuration)}`;
+        });
+
+        seekSlider.addEventListener('input', (e) => {
+            vid.currentTime = parseFloat(e.target.value) || 0;
+        });
+
+        const updateMuteButtons = (isMuted) => {
+            muteBtn.style.display = isMuted ? 'none' : 'inline-flex';
+            unmuteBtn.style.display = isMuted ? 'inline-flex' : 'none';
+
+            if (isMuted) {
+                volumeSlider.value = 0;
+            } else {
+                if (vid.volume < 0.05) {
+                    vid.volume = 0.8;
+                }
+                volumeSlider.value = vid.volume;
+            }
+        };
+        muteBtn.addEventListener('click', () => {
+            vid.muted = true;
+        });
+        unmuteBtn.addEventListener('click', () => {
+            vid.muted = false;
+        });
+        volumeSlider.addEventListener('input', (e) => {
+            const vol = parseFloat(e.target.value);
+            vid.volume = isNaN(vol) ? vid.volume : vol;
+            vid.muted = (vol < 0.05);
+        });
+
+        vid.addEventListener('volumechange', () => {
+             updateMuteButtons(vid.muted || vid.volume < 0.05);
+        });
+        vid.volume = parseFloat(volumeSlider.value || '0.8');
+        vid.muted = vid.volume < 0.05;
+        updateMuteButtons(vid.muted);
+
+        const controls = {};
+        $$(`.svb-key-control[name^="${key}_"]`).forEach(input => {
+            const keyUp = input.dataset.keyUp;
+            const keyDown = input.dataset.keyDown;
+            if (keyUp) controls[keyUp] = { input, dir: 1 };
+            if (keyDown) controls[keyDown] = { input, dir: -1 };
+        });
+        $$(`.svb-key-control[name^="${key}_"]`).forEach(slider => {
+            slider.addEventListener('keydown', (e) => {
+                const ctrl = controls[e.key];
+                if (!ctrl) return;
+                e.preventDefault();
+                const input = ctrl.input;
+                const dir = ctrl.dir;
+                const step = parseFloat(input.step) || 1;
+                const min = parseFloat(input.min) || -Infinity;
+                const max = parseFloat(input.max) || Infinity;
+                let val = parseFloat(input.value) || 0;
+                val += dir * (e.shiftKey ? step * 10 : step);
+                input.value = Math.max(min, Math.min(max, val)).toFixed(0);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
         });
     });
 }
@@ -1198,11 +1549,9 @@ document.querySelector('input[name="name_text"]').addEventListener('input', auto
 document.querySelector('input[name="age_value"]').addEventListener('input', autoBindAgeAudio);
 
 // Обновляем позицию при загрузке
-svbUpdatePreviewTransform('child1'); 
-['child2', 'parent1', 'parent2'].forEach(key => {
+['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
   if (document.getElementById('img-' + key)) {
-     // Для старых превью (child2, parent1, parent2) используем другую функцию
-     svbUpdatePreviewTransform_Static(key);
+    svbUpdatePreviewTransform(key);
   }
 });
 
@@ -1238,27 +1587,42 @@ function svb_generate() {
     }
     $ffmpeg  = svb_exec_find('ffmpeg'); if (!$ffmpeg) $ffmpeg = '/opt/homebrew/bin/ffmpeg';
     $ffprobe = svb_exec_find('ffprobe'); if (!$ffprobe) $ffprobe = '/opt/homebrew/bin/ffprobe';
-    $HAS_FIFO  = svb_ff_has_filter($ffmpeg, 'fifo');
-    $HAS_AFIFO = svb_ff_has_filter($ffmpeg, 'afifo');
+    $HAS_FIFO     = svb_ff_has_filter($ffmpeg, 'fifo');
+    $HAS_AFIFO    = svb_ff_has_filter($ffmpeg, 'afifo');
+    $HAS_ROUNDED  = svb_ff_has_filter($ffmpeg, 'roundedcorners');
     svb_dbg_write($job_dir, 'env.ffmpeg_version', @shell_exec($ffmpeg.' -hide_banner -version 2>&1'));
     // --- (Сохранение фото - без изменений) ---
     $photos = [];
-    $photo_keys = ['child1','child2','parent1','parent2'];
+    $photo_meta = [];
+    $photo_keys = ['child1','child2','parent1','parent2','extra'];
     foreach ($photo_keys as $pk) {
         $field = 'photo_' . $pk;
         if (!empty($_FILES[$field]['name']) && $_FILES[$field]['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES[$field]['name'], PATHINFO_EXTENSION));
             if (!in_array($ext, ['png','jpg','jpeg','webp'])) $ext = 'jpg';
-            $tmp = $job_dir . '/' . $field . '.' . $ext;
+            $base = $job_dir . '/' . $field;
+            $tmp = $base . '_orig.' . $ext;
             if (!@move_uploaded_file($_FILES[$field]['tmp_name'], $tmp)) {
                 wp_send_json_error('cannot save photo ' . $field);
             }
-            $destPng = $job_dir . '/' . $field . '.png';
-            if (svb_transcode_image_to_png_rgba($ffmpeg, $tmp, $destPng)) {
+            $destPng = $base . '.png';
+            if (svb_transcode_image_to_png_rgba($ffmpeg, $tmp, $destPng, 709, $job_dir)) {
+                if ($tmp !== $destPng && file_exists($tmp)) {
+                    @unlink($tmp);
+                }
+                $photos[$pk] = $destPng;
+            } elseif (file_exists($destPng)) {
                 @unlink($tmp);
                 $photos[$pk] = $destPng;
             } else {
                 $photos[$pk] = $tmp;
+            }
+
+            if (!empty($photos[$pk])) {
+                $meta = @getimagesize($photos[$pk]);
+                if ($meta && isset($meta[0], $meta[1])) {
+                    $photo_meta[$pk] = ['w' => (int)$meta[0], 'h' => (int)$meta[1]];
+                }
             }
         }
     }
@@ -1269,13 +1633,61 @@ function svb_generate() {
         $pos[$pk] = [
             'x' => isset($_POST[$pk . '_x']) ? intval($_POST[$pk . '_x']) : 0,
             'y' => isset($_POST[$pk . '_y']) ? intval($_POST[$pk . '_y']) : 0,
-            's' => isset($_POST[$pk . '_scale']) ? max(10,intval($_POST[$pk . '_scale'])) : 100,
-            'angle' => isset($_POST[$pk . '_angle']) ? floatval($_POST[$pk . '_angle']) : 0,
+            's' => isset($_POST[$pk . '_scale']) ? max(10, intval($_POST[$pk . '_scale'])) : 100,
+            'angle' => isset($_POST[$pk . '_angle']) ? floatval($_POST[$pk . '_angle']) : 0.0,
             'radius' => isset($_POST[$pk . '_radius']) ? intval($_POST[$pk . '_radius']) : 0,
         ];
     }
+
+    if (!empty($_POST['overlay_json'])) {
+        $overlay_raw = wp_unslash($_POST['overlay_json']);
+        $overlay_decoded = json_decode($overlay_raw, true);
+        if (is_array($overlay_decoded)) {
+            foreach ($photo_keys as $pk) {
+                if (empty($overlay_decoded[$pk]) || !is_array($overlay_decoded[$pk])) continue;
+                $record = $overlay_decoded[$pk];
+                if (isset($record['x']) && is_numeric($record['x'])) {
+                    $pos[$pk]['x'] = (int)round($record['x']);
+                }
+                if (isset($record['y']) && is_numeric($record['y'])) {
+                    $pos[$pk]['y'] = (int)round($record['y']);
+                }
+                if (isset($record['scale']) && is_numeric($record['scale'])) {
+                    $pos[$pk]['s'] = max(10, (int)round($record['scale']));
+                }
+                if (isset($record['angle']) && is_numeric($record['angle'])) {
+                    $pos[$pk]['angle'] = (float)$record['angle'];
+                }
+                if (isset($record['radius']) && is_numeric($record['radius'])) {
+                    $pos[$pk]['radius'] = max(0, (int)round($record['radius']));
+                }
+            }
+        }
+    }
+    svb_dbg_write($job_dir, 'req.overlay', $pos);
     // === КОНЕЦ ИСПРАВЛЕНИЯ ===
-    
+
+    $original_w = 1920; // Исходная ширина, от которой считаем X
+    $original_h = 1080; // Исходная высота, от которой считаем Y
+    $target_w   = 854;  // Новая ширина (480p)
+    $target_h   = 480;  // Новая высота (480p)
+
+    if (!$HAS_ROUNDED) {
+        svb_dbg_write($job_dir, 'info.round_fallback', 'roundedcorners filter missing, applying manual mask');
+        foreach ($photo_keys as $pk) {
+            if (empty($photos[$pk])) continue;
+            $radius = $pos[$pk]['radius'] ?? 0;
+            if ($radius <= 0) continue;
+            $scalePercent = min(200, max(10, $pos[$pk]['s'] ?? 100));
+            if (!svb_apply_manual_round_corners($photos[$pk], $radius, $scalePercent, $target_w, $job_dir)) {
+                svb_dbg_write($job_dir, 'warn.round_fallback', "Manual corner radius failed for {$pk}");
+            }
+        }
+    }
+
+    $scale_factor_x = $target_w / $original_w;
+    $scale_factor_y = $target_h / $original_h;
+
     $audio_cats = ['name','age','facts','hobby','praise','request'];
     $audio_sel  = [];
     foreach($audio_cats as $cat){
@@ -1323,51 +1735,110 @@ function svb_generate() {
 
     /* === FILTER COMPLEX === */
     
-    // === (Константы размеров - без изменений) ===
-    $original_w = 1920; // Исходная ширина, от которой считаем X
-    $original_h = 1080; // Исходная высота, от которой считаем Y
-    $target_w = 854;    // Новая ширина (480p)
-    $target_h = 480;    // Новая высота (480p)
-
-    $scale_factor_x = $target_w / $original_w; 
-    $scale_factor_y = $target_h / $original_h; 
-    
     $filter = [];
     $filter[] = "[0:v]fps=30,format=yuv420p,setsar=1,setpts=PTS-STARTPTS[vbase]";
-    
+
     $vlabel = "[vbase]";
     $vcount = 0;
     $even = static function($n){ $n = (int)$n; return ($n & 1) ? $n - 1 : $n; };
-    
-    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h){ 
+
+    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h, $photo_meta, $job_dir){
         if (!isset($imgIndexMap[$key])) return;
         $idx = $imgIndexMap[$key];
         // === ИСПРАВЛЕНИЕ: Добавляем defaults для angle и radius ===
         $p = $pos[$key] ?? ['x'=>0,'y'=>0,'s'=>100, 'angle'=>0, 'radius'=>0];
 
         // Позиция (X/Y) - в пикселях на целевом видео (854x480)
-        $x = $even( (int)($p['x'] * $scale_factor_x) );
-        $y = $even( (int)($p['y'] * $scale_factor_y) );
-        
-        // Логика Масштаба (Scale)
-        $sx_perc = max(10, (int)($p['s'] ?? 100)) / 100.0; // e.g., 0.35
-        $scW = $even( (int)($target_w * $sx_perc) );
-        $scH = -2; // Сохранить пропорции
-        
-        // === ИСПРАВЛЕНИЕ: Получаем angle и radius из $p ===
-        $angle_degrees = $p['angle'];
-        $radius = $p['radius'];
-        
-        // === ИСПРАВЛЕНИЕ (Угол): Добавлен знак МИНУС для синхронизации с CSS ===
-        $angle_radians = -($angle_degrees * (M_PI / 180));
-        
-        $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba"; 
-        
-        $chain .= ",scale=w={$scW}:h={$scH}"; 
+        $x_base = (float)($p['x'] * $scale_factor_x);
+        $y_base = (float)($p['y'] * $scale_factor_y);
 
-        // === ИСПРАВЛЕНИЕ (Радиус): Добавляем фильтр roundedcorners ===
+        // Логика Масштаба (Scale)
+        $scale_percent = max(10, min(200, (int)($p['s'] ?? 100)));
+        $sx_perc = $scale_percent / 100.0; // e.g., 0.35
+        $scW = max(2, $even((int)round($target_w * $sx_perc)));
+
+        $meta = $photo_meta[$key] ?? null;
+        $src_w = ($meta['w'] ?? $target_w) ?: $target_w;
+        $src_h = ($meta['h'] ?? $target_h) ?: $target_h;
+        if ($src_w <= 0) $src_w = $target_w;
+        if ($src_h <= 0) $src_h = $target_h;
+
+        $scale_ratio = $scW / $src_w;
+        $scH_val = $src_h * $scale_ratio;
+        $scH = max(2, $even((int)round($scH_val)));
+
+        // === ИСПРАВЛЕНИЕ: Получаем angle и radius из $p ===
+        $angle_degrees = max(-180.0, min(180.0, (float)($p['angle'] ?? 0.0)));
+        $radius = max(0, (int)($p['radius'] ?? 0));
+
+        // === ИСПРАВЛЕНИЕ (Угол): теперь используем тот же знак, что и CSS-превью ===
+        $angle_radians = $angle_degrees * (M_PI / 180);
+
+        $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba";
+
+        $chain .= ",scale=w={$scW}:h={$scH}";
+
+        // Сохраняем реальный размер после scale для коррекции offset'ов
+        $scaled_w = $scW;
+        $scaled_h = $scH;
+
+        $cosA = cos($angle_radians);
+        $sinA = sin($angle_radians);
+
+        $half_w = $scaled_w / 2.0;
+        $half_h = $scaled_h / 2.0;
+
+        $corners = [
+            [-$half_w, -$half_h],
+            [ $half_w, -$half_h],
+            [-$half_w,  $half_h],
+            [ $half_w,  $half_h],
+        ];
+
+        $min_x = $min_y = PHP_FLOAT_MAX;
+        $max_x = $max_y = -PHP_FLOAT_MAX;
+
+        foreach ($corners as [$cx, $cy]) {
+            $rx = $cx * $cosA - $cy * $sinA;
+            $ry = $cx * $sinA + $cy * $cosA;
+            if ($rx < $min_x) $min_x = $rx;
+            if ($rx > $max_x) $max_x = $rx;
+            if ($ry < $min_y) $min_y = $ry;
+            if ($ry > $max_y) $max_y = $ry;
+        }
+
+        $rotated_w = $max_x - $min_x;
+        $rotated_h = $max_y - $min_y;
+
+        $center_x = $x_base + $half_w;
+        $center_y = $y_base + $half_h;
+
+        $pad_w = max(2.0, (float)($even((int)ceil($rotated_w))));
+        $pad_h = max(2.0, (float)($even((int)ceil($rotated_h))));
+
+        $pad_offset_x = max(0.0, ($pad_w - $rotated_w) / 2.0);
+        $pad_offset_y = max(0.0, ($pad_h - $rotated_h) / 2.0);
+
+        $x = $even((int)round($center_x + $min_x - $pad_offset_x));
+        $y = $even((int)round($center_y + $min_y - $pad_offset_y));
+
+        svb_dbg_write($job_dir, 'calc.overlay.' . $key, [
+            'input' => $p,
+            'scaled_w' => $scaled_w,
+            'scaled_h' => $scaled_h,
+            'rotated_w' => $rotated_w,
+            'rotated_h' => $rotated_h,
+            'prepad_x' => $center_x + $min_x,
+            'prepad_y' => $center_y + $min_y,
+            'x_base' => $x_base,
+            'y_base' => $y_base,
+            'final_x' => $x,
+            'final_y' => $y,
+        ]);
+
+        // === ИСПРАВЛЕНИЕ (Радиус): Добавляем фильтр roundedcorners при наличии ===
         // (Примечание: этот фильтр может отсутствовать в старых версиях FFmpeg)
-        if ($radius > 0) {
+        if ($HAS_ROUNDED && $radius > 0) {
             // Мы масштабировали ширину до $scW, который равен $target_w * $sx_perc
             // CSS применяет 'px' радиус до scale.
             // FFmpeg применяет 'px' радиус после scale.
@@ -1393,12 +1864,11 @@ function svb_generate() {
         }
         // === КОНЕЦ ИСПРАВЛЕНИЯ ===
 
-        if ($angle_radians != 0) { 
-            $chain .= ",rotate={$angle_radians}:ow='hypot(iw,ih)':oh='hypot(iw,ih)':c=none"; 
+        if ($angle_radians != 0) {
+            $chain .= ",rotate={$angle_radians}:ow=rotw(iw):oh=roth(ih):c=none";
         }
-        
-        $mod = 16; $modW = "ceil(iw/{$mod})*{$mod}"; $modH = "ceil(ih/{$mod})*{$mod}";
-        $chain .= ",pad=w={$modW}:h={$modH}:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0";
+
+        $chain .= ",pad=w=ceil(iw/2)*2:h=ceil(ih/2)*2:x=(ow-iw)/2:y=(oh-ih)/2:color=black@0";
 
         $chain .= ",format=yuva420p"; 
         
@@ -1420,7 +1890,7 @@ function svb_generate() {
     };
 
     $addOverlay('child1', $P_CHILD1); $addOverlay('child2', $P_CHILD2);
-    $addOverlay('parent1', $P_PARENTS); $addOverlay('parent2', $P_PARENTS);
+    $addOverlay('parent1', $P_PARENTS); $addOverlay('parent2', $P_PARENTS); $addOverlay('extra', $P_PARENTS);
     $finalV = $vlabel;
     
     // --- Аудио (Без изменений) ---
