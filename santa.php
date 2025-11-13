@@ -1080,14 +1080,31 @@ function svbUpdatePreviewTransform(key){
   const cosA = Math.cos(angleRad);
   const sinA = Math.sin(angleRad);
 
-  const rotatedW = Math.abs(widthVideo * cosA) + Math.abs(heightVideo * sinA);
-  const rotatedH = Math.abs(widthVideo * sinA) + Math.abs(heightVideo * cosA);
+  const halfW = widthVideo / 2;
+  const halfH = heightVideo / 2;
 
-  const offsetX = Math.max(0, (rotatedW - widthVideo) / 2);
-  const offsetY = Math.max(0, (rotatedH - heightVideo) / 2);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const corners = [
+    [-halfW, -halfH],
+    [ halfW, -halfH],
+    [-halfW,  halfH],
+    [ halfW,  halfH],
+  ];
 
-  img.style.left = `${(baseX - offsetX) * scaleX}px`;
-  img.style.top = `${(baseY - offsetY) * scaleY}px`;
+  corners.forEach(([cx, cy]) => {
+    const rx = cx * cosA - cy * sinA;
+    const ry = cx * sinA + cy * cosA;
+    if (rx < minX) minX = rx;
+    if (rx > maxX) maxX = rx;
+    if (ry < minY) minY = ry;
+    if (ry > maxY) maxY = ry;
+  });
+
+  const centerX = baseX + halfW;
+  const centerY = baseY + halfH;
+
+  img.style.left = `${(centerX + minX) * scaleX}px`;
+  img.style.top = `${(centerY + minY) * scaleY}px`;
 
   img.style.width = `${widthVideo * scaleX}px`;
   img.style.height = `${heightVideo * scaleY}px`;
@@ -1768,19 +1785,42 @@ function svb_generate() {
         $cosA = cos($angle_radians);
         $sinA = sin($angle_radians);
 
-        if (abs($angle_radians) > 0.0001) {
-            $rotated_w = abs($scaled_w * $cosA) + abs($scaled_h * $sinA);
-            $rotated_h = abs($scaled_w * $sinA) + abs($scaled_h * $cosA);
-        } else {
-            $rotated_w = $scaled_w;
-            $rotated_h = $scaled_h;
+        $half_w = $scaled_w / 2.0;
+        $half_h = $scaled_h / 2.0;
+
+        $corners = [
+            [-$half_w, -$half_h],
+            [ $half_w, -$half_h],
+            [-$half_w,  $half_h],
+            [ $half_w,  $half_h],
+        ];
+
+        $min_x = $min_y = PHP_FLOAT_MAX;
+        $max_x = $max_y = -PHP_FLOAT_MAX;
+
+        foreach ($corners as [$cx, $cy]) {
+            $rx = $cx * $cosA - $cy * $sinA;
+            $ry = $cx * $sinA + $cy * $cosA;
+            if ($rx < $min_x) $min_x = $rx;
+            if ($rx > $max_x) $max_x = $rx;
+            if ($ry < $min_y) $min_y = $ry;
+            if ($ry > $max_y) $max_y = $ry;
         }
 
-        $offset_x = max(0.0, ($rotated_w - $scaled_w) / 2.0);
-        $offset_y = max(0.0, ($rotated_h - $scaled_h) / 2.0);
+        $rotated_w = $max_x - $min_x;
+        $rotated_h = $max_y - $min_y;
 
-        $x = $even((int)round($x_base - $offset_x));
-        $y = $even((int)round($y_base - $offset_y));
+        $center_x = $x_base + $half_w;
+        $center_y = $y_base + $half_h;
+
+        $pad_w = max(2.0, (float)($even((int)ceil($rotated_w))));
+        $pad_h = max(2.0, (float)($even((int)ceil($rotated_h))));
+
+        $pad_offset_x = max(0.0, ($pad_w - $rotated_w) / 2.0);
+        $pad_offset_y = max(0.0, ($pad_h - $rotated_h) / 2.0);
+
+        $x = $even((int)round($center_x + $min_x - $pad_offset_x));
+        $y = $even((int)round($center_y + $min_y - $pad_offset_y));
 
         svb_dbg_write($job_dir, 'calc.overlay.' . $key, [
             'input' => $p,
@@ -1788,8 +1828,8 @@ function svb_generate() {
             'scaled_h' => $scaled_h,
             'rotated_w' => $rotated_w,
             'rotated_h' => $rotated_h,
-            'offset_x' => $offset_x,
-            'offset_y' => $offset_y,
+            'prepad_x' => $center_x + $min_x,
+            'prepad_y' => $center_y + $min_y,
             'x_base' => $x_base,
             'y_base' => $y_base,
             'final_x' => $x,
