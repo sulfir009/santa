@@ -493,10 +493,14 @@ function svb_render_form() {
   transform-origin: center center;
   z-index: 2; /* Картинка поверх видео */
   will-change: transform, top, left, width, height;
-  
+
+  /* Отражаем то, что сервер обрезает фото в квадрат 709x709 */
+  object-fit: cover;
+  object-position: 50% 50%;
+
   /* === ИСПРАВЛЕНИЕ: Плейсхолдер больше не 100px === */
   /* Он будет 0px, пока JS не задаст ему % ширины */
-  width: 0; 
+  width: 0;
   height: auto;
 }
 /* Стили плейсхолдера (когда src="" пустой) */
@@ -967,6 +971,7 @@ const SVB_AJAX  = {
     nonce: <?php echo wp_json_encode($nonce); ?>,
     video_template: <?php echo wp_json_encode($template_url); ?>
 };
+const SVB_PROCESSED_PHOTO_SIZE = 709; // ширина/высота PNG после препроцессинга на сервере
 
 const $  = (sel,root=document) => root.querySelector(sel);
 const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
@@ -1118,9 +1123,10 @@ function svbUpdatePreviewTransform(key){
  const safeScale = Math.max(10, s_raw);
  const widthVideo = target_w * (safeScale / 100);
  const safeScaleYPercent = Math.max(10, scaleY_raw);
-  const naturalW = img.naturalWidth || target_w;
-  const naturalH = img.naturalHeight || target_h;
-  const aspect = (naturalW > 0 && naturalH > 0) ? (naturalH / naturalW) : (target_h / target_w);
+
+  const processedBaseW = SVB_PROCESSED_PHOTO_SIZE || target_w;
+  const processedBaseH = SVB_PROCESSED_PHOTO_SIZE || target_h;
+  const aspect = processedBaseW > 0 ? (processedBaseH / processedBaseW) : (target_h / target_w);
  const heightVideo = widthVideo * aspect * (safeScaleYPercent / 100);
 
   const baseX = (x_raw / original_w) * target_w;
@@ -1189,6 +1195,10 @@ function svbUpdatePreviewTransform(key){
  img.style.width = `${widthPreview}px`;
  img.style.height = `${heightPreview}px`;
   img.style.transformOrigin = '0 0';
+  if (!img.style.objectFit) {
+    img.style.objectFit = 'cover';
+    img.style.objectPosition = '50% 50%';
+  }
   img.style.transform = `matrix(${aPx.toFixed(6)}, ${bPx.toFixed(6)}, ${cPx.toFixed(6)}, ${dPx.toFixed(6)}, ${txPx.toFixed(2)}, ${tyPx.toFixed(2)})`;
 
   if (!isNaN(radius) && radius > 0) {
