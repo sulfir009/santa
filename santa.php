@@ -700,6 +700,9 @@ function svb_render_form() {
             <label>Scale<span class="svb-val" id="val-child1-scale">29</span>%
                 <input class="svb-range svb-key-control" type="range" name="child1_scale" value="29" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
             </label>
+            <label>Skew X<span class="svb-val" id="val-child1-skew">0</span>px
+                <input class="svb-range svb-key-control" type="range" name="child1_skew" value="0" min="-600" max="600" step="1" data-val-id="val-child1-skew"/>
+            </label>
             <label>Angle<span class="svb-val" id="val-child1-angle">4</span>°
                 <input class="svb-range svb-key-control" type="range" name="child1_angle" value="4" min="-45" max="45" step="1" data-val-id="val-child1-angle" data-key-up="." data-key-down=","/>
             </label>
@@ -743,6 +746,9 @@ function svb_render_form() {
         </label>
         <label>Scale<span class="svb-val" id="val-child2-scale">33</span>%
           <input class="svb-range svb-key-control" type="range" name="child2_scale" value="33" min="10" max="200" step="1" data-val-id="val-child2-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Skew X<span class="svb-val" id="val-child2-skew">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="child2_skew" value="0" min="-600" max="600" step="1" data-val-id="val-child2-skew"/>
         </label>
         <label>Angle<span class="svb-val" id="val-child2-angle">10</span>°
           <input class="svb-range svb-key-control" type="range" name="child2_angle" value="10" min="-45" max="45" step="1" data-val-id="val-child2-angle" data-key-up="." data-key-down=","/>
@@ -788,6 +794,9 @@ function svb_render_form() {
         <label>Scale<span class="svb-val" id="val-parent1-scale">75</span>%
           <input class="svb-range svb-key-control" type="range" name="parent1_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent1-scale" data-key-up="=" data-key-down="-"/>
         </label>
+        <label>Skew X<span class="svb-val" id="val-parent1-skew">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="parent1_skew" value="0" min="-600" max="600" step="1" data-val-id="val-parent1-skew"/>
+        </label>
         <label>Angle<span class="svb-val" id="val-parent1-angle">0</span>°
           <input class="svb-range svb-key-control" type="range" name="parent1_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent1-angle" data-key-up="." data-key-down=","/>
         </label>
@@ -832,6 +841,9 @@ function svb_render_form() {
         <label>Scale<span class="svb-val" id="val-parent2-scale">75</span>%
           <input class="svb-range svb-key-control" type="range" name="parent2_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent2-scale" data-key-up="=" data-key-down="-"/>
         </label>
+        <label>Skew X<span class="svb-val" id="val-parent2-skew">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="parent2_skew" value="0" min="-600" max="600" step="1" data-val-id="val-parent2-skew"/>
+        </label>
         <label>Angle<span class="svb-val" id="val-parent2-angle">0</span>°
           <input class="svb-range svb-key-control" type="range" name="parent2_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent2-angle" data-key-up="." data-key-down=","/>
         </label>
@@ -875,6 +887,9 @@ function svb_render_form() {
         </label>
         <label>Scale<span class="svb-val" id="val-extra-scale">31</span>%
           <input class="svb-range svb-key-control" type="range" name="extra_scale" value="31" min="10" max="200" step="1" data-val-id="val-extra-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Skew X<span class="svb-val" id="val-extra-skew">0</span>px
+          <input class="svb-range svb-key-control" type="range" name="extra_skew" value="0" min="-600" max="600" step="1" data-val-id="val-extra-skew"/>
         </label>
         <label>Angle<span class="svb-val" id="val-extra-angle">0</span>°
           <input class="svb-range svb-key-control" type="range" name="extra_angle" value="0" min="-45" max="45" step="1" data-val-id="val-extra-angle" data-key-up="." data-key-down=","/>
@@ -1027,7 +1042,7 @@ function svbBindPhotoInputs(){
  });
 
  ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
-  ['x','y','scale','angle','radius'].forEach(k=>{
+  ['x','y','scale','skew','angle','radius'].forEach(k=>{
     const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
     if(ctrl){
       ctrl.addEventListener('input', (e)=> {
@@ -1052,6 +1067,7 @@ function svbUpdatePreviewTransform(key){
  const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
  const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
  const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
+ const skew_raw = parseFloat(document.querySelector(`input[name="${key}_skew"]`)?.value||0);
  const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
  const radius = parseFloat(document.querySelector(`input[name="${key}_radius"]`)?.value||0);
 
@@ -1065,6 +1081,7 @@ function svbUpdatePreviewTransform(key){
 
   const scaleX = previewWidth / target_w;
   const scaleY = previewHeight / target_h;
+  const safeScaleY = scaleY || scaleX || 1;
 
   const safeScale = Math.max(10, s_raw);
   const widthVideo = target_w * (safeScale / 100);
@@ -1079,44 +1096,61 @@ function svbUpdatePreviewTransform(key){
   const angleRad = (a || 0) * Math.PI / 180;
   const cosA = Math.cos(angleRad);
   const sinA = Math.sin(angleRad);
+  const skewVideo = Number.isFinite(skew_raw) ? skew_raw : 0;
+
+  const widthPreview = widthVideo * scaleX;
+  const heightPreview = heightVideo * scaleY;
+
+  const kVideo = heightVideo !== 0 ? (skewVideo / heightVideo) : 0;
+  const kPreview = heightVideo !== 0 ? kVideo * (scaleX / safeScaleY) : 0;
 
   const halfW = widthVideo / 2;
   const halfH = heightVideo / 2;
+  const halfWPx = widthPreview / 2;
+  const halfHPx = heightPreview / 2;
+
+  const centerVideoX = halfW + kVideo * halfH;
+  const centerPreviewX = halfWPx + kPreview * halfHPx;
+
+  const aVideo = cosA;
+  const bVideo = sinA;
+  const cVideo = cosA * kVideo - sinA;
+  const dVideo = sinA * kVideo + cosA;
+  const txVideo = centerVideoX * (1 - cosA) + sinA * halfH;
+  const tyVideo = halfH * (1 - cosA) - sinA * centerVideoX;
+
+  const aPx = cosA;
+  const bPx = sinA;
+  const cPx = cosA * kPreview - sinA;
+  const dPx = sinA * kPreview + cosA;
+  const txPx = centerPreviewX * (1 - cosA) + sinA * halfHPx;
+  const tyPx = halfHPx * (1 - cosA) - sinA * centerPreviewX;
+
+  const transformVideo = (x, y) => {
+    const rx = aVideo * x + cVideo * y + txVideo;
+    const ry = bVideo * x + dVideo * y + tyVideo;
+    return [rx, ry];
+  };
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  const corners = [
-    [-halfW, -halfH],
-    [ halfW, -halfH],
-    [-halfW,  halfH],
-    [ halfW,  halfH],
-  ];
-
-  corners.forEach(([cx, cy]) => {
-    const rx = cx * cosA - cy * sinA;
-    const ry = cx * sinA + cy * cosA;
+  [[0,0],[widthVideo,0],[0,heightVideo],[widthVideo,heightVideo]].forEach(([cx, cy]) => {
+    const [rx, ry] = transformVideo(cx, cy);
     if (rx < minX) minX = rx;
     if (rx > maxX) maxX = rx;
     if (ry < minY) minY = ry;
     if (ry > maxY) maxY = ry;
   });
 
-  const centerX = baseX + halfW;
-  const centerY = baseY + halfH;
+  const leftPx = (baseX + minX) * scaleX;
+  const topPx = (baseY + minY) * scaleY;
 
-  img.style.left = `${(centerX + minX) * scaleX}px`;
-  img.style.top = `${(centerY + minY) * scaleY}px`;
-  const rotatedW = Math.abs(widthVideo * cosA) + Math.abs(heightVideo * sinA);
-  const rotatedH = Math.abs(widthVideo * sinA) + Math.abs(heightVideo * cosA);
+  img.style.left = `${leftPx}px`;
+  img.style.top = `${topPx}px`;
 
-  const offsetX = Math.max(0, (rotatedW - widthVideo) / 2);
-  const offsetY = Math.max(0, (rotatedH - heightVideo) / 2);
-
-  img.style.left = `${(baseX - offsetX) * scaleX}px`;
-  img.style.top = `${(baseY - offsetY) * scaleY}px`;
-  img.style.width = `${widthVideo * scaleX}px`;
-  img.style.height = `${heightVideo * scaleY}px`;
-  img.style.transformOrigin = 'center center';
-  img.style.transform = `rotate(${a}deg)`;
+  img.style.width = `${widthPreview}px`;
+  img.style.height = `${heightPreview}px`;
+  img.style.transformOrigin = '0 0';
+  img.style.transform = `matrix(${aPx.toFixed(6)}, ${bPx.toFixed(6)}, ${cPx.toFixed(6)}, ${dPx.toFixed(6)}, ${txPx.toFixed(2)}, ${tyPx.toFixed(2)})`;
 
   if (!isNaN(radius) && radius > 0) {
     const radiusPx = radius * scaleX;
@@ -1142,6 +1176,7 @@ function svbCollectOverlayData() {
       x: pick('x'),
       y: pick('y'),
       scale: pick('scale', 100),
+      skew: pick('skew'),
       angle: pick('angle'),
       radius: pick('radius')
     };
@@ -1424,7 +1459,7 @@ function svbBindNameSuggest(){
 
 // ... (svbMarkTouched - БЕЗ ИЗМЕНЕНИЙ) ...
 function svbMarkTouched(key){
- ['x','y','scale','angle','radius'].forEach(k=>{
+ ['x','y','scale','skew','angle','radius'].forEach(k=>{
  const el = document.querySelector(`input[name="${key}_${k}"]`);
  if (el && !el.__svb_bound) {
  el.addEventListener('input', ()=> el.dataset.touched = '1');
@@ -1594,9 +1629,10 @@ function svb_generate() {
     }
     $ffmpeg  = svb_exec_find('ffmpeg'); if (!$ffmpeg) $ffmpeg = '/opt/homebrew/bin/ffmpeg';
     $ffprobe = svb_exec_find('ffprobe'); if (!$ffprobe) $ffprobe = '/opt/homebrew/bin/ffprobe';
-    $HAS_FIFO     = svb_ff_has_filter($ffmpeg, 'fifo');
-    $HAS_AFIFO    = svb_ff_has_filter($ffmpeg, 'afifo');
-    $HAS_ROUNDED  = svb_ff_has_filter($ffmpeg, 'roundedcorners');
+    $HAS_FIFO       = svb_ff_has_filter($ffmpeg, 'fifo');
+    $HAS_AFIFO      = svb_ff_has_filter($ffmpeg, 'afifo');
+    $HAS_ROUNDED    = svb_ff_has_filter($ffmpeg, 'roundedcorners');
+    $HAS_PERSPECTIVE = svb_ff_has_filter($ffmpeg, 'perspective');
     svb_dbg_write($job_dir, 'env.ffmpeg_version', @shell_exec($ffmpeg.' -hide_banner -version 2>&1'));
     // --- (Сохранение фото - без изменений) ---
     $photos = [];
@@ -1641,6 +1677,7 @@ function svb_generate() {
             'x' => isset($_POST[$pk . '_x']) ? intval($_POST[$pk . '_x']) : 0,
             'y' => isset($_POST[$pk . '_y']) ? intval($_POST[$pk . '_y']) : 0,
             's' => isset($_POST[$pk . '_scale']) ? max(10, intval($_POST[$pk . '_scale'])) : 100,
+            'skew' => isset($_POST[$pk . '_skew']) ? floatval($_POST[$pk . '_skew']) : 0.0,
             'angle' => isset($_POST[$pk . '_angle']) ? floatval($_POST[$pk . '_angle']) : 0.0,
             'radius' => isset($_POST[$pk . '_radius']) ? intval($_POST[$pk . '_radius']) : 0,
         ];
@@ -1661,6 +1698,9 @@ function svb_generate() {
                 }
                 if (isset($record['scale']) && is_numeric($record['scale'])) {
                     $pos[$pk]['s'] = max(10, (int)round($record['scale']));
+                }
+                if (isset($record['skew']) && is_numeric($record['skew'])) {
+                    $pos[$pk]['skew'] = (float)$record['skew'];
                 }
                 if (isset($record['angle']) && is_numeric($record['angle'])) {
                     $pos[$pk]['angle'] = (float)$record['angle'];
@@ -1749,7 +1789,7 @@ function svb_generate() {
     $vcount = 0;
     $even = static function($n){ $n = (int)$n; return ($n & 1) ? $n - 1 : $n; };
 
-    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h, $photo_meta, $job_dir){
+    $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $HAS_PERSPECTIVE, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h, $photo_meta, $job_dir){
         if (!isset($imgIndexMap[$key])) return;
         $idx = $imgIndexMap[$key];
         // === ИСПРАВЛЕНИЕ: Добавляем defaults для angle и radius ===
@@ -1774,41 +1814,73 @@ function svb_generate() {
         $scH_val = $src_h * $scale_ratio;
         $scH = max(2, $even((int)round($scH_val)));
 
-        // === ИСПРАВЛЕНИЕ: Получаем angle и radius из $p ===
+        $skew_input = isset($p['skew']) ? (float)$p['skew'] : 0.0;
+        $skew_input = max(-1000.0, min(1000.0, $skew_input));
+        $skew_effective = $HAS_PERSPECTIVE ? $skew_input : 0.0;
+        if (!$HAS_PERSPECTIVE && abs($skew_input) > 0.01) {
+            svb_dbg_write($job_dir, 'warn.skew.filter', "perspective filter missing; skew ignored for {$key}");
+        }
+
         $angle_degrees = max(-180.0, min(180.0, (float)($p['angle'] ?? 0.0)));
         $radius = max(0, (int)($p['radius'] ?? 0));
 
-        // === ИСПРАВЛЕНИЕ (Угол): теперь используем тот же знак, что и CSS-превью ===
         $angle_radians = $angle_degrees * (M_PI / 180);
-
-        $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba";
-
-        $chain .= ",scale=w={$scW}:h={$scH}";
-
-        // Сохраняем реальный размер после scale для коррекции offset'ов
-        $scaled_w = $scW;
-        $scaled_h = $scH;
-
         $cosA = cos($angle_radians);
         $sinA = sin($angle_radians);
 
+        $chain = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba";
+        $chain .= ",scale=w={$scW}:h={$scH}";
 
-        $half_w = $scaled_w / 2.0;
+        $content_w = $scW;
+        $scaled_h = $scH;
+        $pad_left = $skew_effective < 0 ? (int)ceil(abs($skew_effective)) : 0;
+        $pad_right = $skew_effective > 0 ? (int)ceil($skew_effective) : 0;
+        $applied_pad_left = 0;
+        $scaled_w = $content_w;
+
+        if ($HAS_PERSPECTIVE && abs($skew_effective) > 0.01) {
+            $padded_w = $even((int)ceil($content_w + $pad_left + $pad_right));
+            if ($padded_w < 2) { $padded_w = 2; }
+            if ($padded_w !== $content_w || $pad_left > 0 || $pad_right > 0) {
+                $chain .= ",pad=w={$padded_w}:h={$scH}:x={$pad_left}:y=0:color=black@0";
+            }
+            $map_left = $pad_left;
+            $map_right = $pad_left + $content_w;
+            $map_bottom_left = $pad_left + $skew_effective;
+            $map_bottom_right = $pad_left + $content_w + $skew_effective;
+            $norm = static function($val, $den) { return $den > 0 ? $val / $den : 0.0; };
+            $chain .= sprintf(",perspective=x0=%0.6f:y0=0:x1=%0.6f:y1=0:x2=%0.6f:y2=1:x3=%0.6f:y3=1",
+                $norm($map_left, $padded_w),
+                $norm($map_right, $padded_w),
+                $norm($map_bottom_left, $padded_w),
+                $norm($map_bottom_right, $padded_w)
+            );
+            $scaled_w = $padded_w;
+            $applied_pad_left = $pad_left;
+        }
+
+        $kVideo = ($scaled_h != 0.0) ? ($skew_effective / $scaled_h) : 0.0;
+        $half_w = $content_w / 2.0;
         $half_h = $scaled_h / 2.0;
+        $centerVideoX = $half_w + $kVideo * $half_h;
 
-        $corners = [
-            [-$half_w, -$half_h],
-            [ $half_w, -$half_h],
-            [-$half_w,  $half_h],
-            [ $half_w,  $half_h],
-        ];
+        $aVideo = $cosA;
+        $bVideo = $sinA;
+        $cVideo = $cosA * $kVideo - $sinA;
+        $dVideo = $sinA * $kVideo + $cosA;
+        $txVideo = $centerVideoX * (1 - $cosA) + $sinA * $half_h;
+        $tyVideo = $half_h * (1 - $cosA) - $sinA * $centerVideoX;
+
+        $transformPoint = function($x, $y) use ($aVideo, $bVideo, $cVideo, $dVideo, $txVideo, $tyVideo, $applied_pad_left) {
+            $rx = $aVideo * $x + $cVideo * $y + $txVideo + $applied_pad_left;
+            $ry = $bVideo * $x + $dVideo * $y + $tyVideo;
+            return [$rx, $ry];
+        };
 
         $min_x = $min_y = PHP_FLOAT_MAX;
         $max_x = $max_y = -PHP_FLOAT_MAX;
-
-        foreach ($corners as [$cx, $cy]) {
-            $rx = $cx * $cosA - $cy * $sinA;
-            $ry = $cx * $sinA + $cy * $cosA;
+        foreach ([[0.0, 0.0], [$content_w, 0.0], [0.0, $scaled_h], [$content_w, $scaled_h]] as $corner) {
+            [$rx, $ry] = $transformPoint($corner[0], $corner[1]);
             if ($rx < $min_x) $min_x = $rx;
             if ($rx > $max_x) $max_x = $rx;
             if ($ry < $min_y) $min_y = $ry;
@@ -1818,42 +1890,25 @@ function svb_generate() {
         $rotated_w = $max_x - $min_x;
         $rotated_h = $max_y - $min_y;
 
-        $center_x = $x_base + $half_w;
-        $center_y = $y_base + $half_h;
-
-        $pad_w = max(2.0, (float)($even((int)ceil($rotated_w))));
-        $pad_h = max(2.0, (float)($even((int)ceil($rotated_h))));
-
+        $pad_w = max(2.0, (float)$even((int)ceil($rotated_w)));
+        $pad_h = max(2.0, (float)$even((int)ceil($rotated_h)));
         $pad_offset_x = max(0.0, ($pad_w - $rotated_w) / 2.0);
         $pad_offset_y = max(0.0, ($pad_h - $rotated_h) / 2.0);
 
-        $x = $even((int)round($center_x + $min_x - $pad_offset_x));
-        $y = $even((int)round($center_y + $min_y - $pad_offset_y));
-        if (abs($angle_radians) > 0.0001) {
-            $rotated_w = abs($scaled_w * $cosA) + abs($scaled_h * $sinA);
-            $rotated_h = abs($scaled_w * $sinA) + abs($scaled_h * $cosA);
-        } else {
-            $rotated_w = $scaled_w;
-            $rotated_h = $scaled_h;
-        }
-
-        $offset_x = max(0.0, ($rotated_w - $scaled_w) / 2.0);
-        $offset_y = max(0.0, ($rotated_h - $scaled_h) / 2.0);
-
-        $x = $even((int)round($x_base - $offset_x));
-        $y = $even((int)round($y_base - $offset_y));
-
+        $x = $even((int)round($x_base + $min_x - $pad_offset_x));
+        $y = $even((int)round($y_base + $min_y - $pad_offset_y));
 
         svb_dbg_write($job_dir, 'calc.overlay.' . $key, [
             'input' => $p,
+            'skew_input' => $skew_input,
+            'skew_applied' => $skew_effective,
             'scaled_w' => $scaled_w,
             'scaled_h' => $scaled_h,
+            'pad_left' => $applied_pad_left,
             'rotated_w' => $rotated_w,
             'rotated_h' => $rotated_h,
-            'prepad_x' => $center_x + $min_x,
-            'prepad_y' => $center_y + $min_y,
-            'offset_x' => $offset_x,
-            'offset_y' => $offset_y,
+            'prepad_x' => $x_base + $min_x,
+            'prepad_y' => $y_base + $min_y,
             'x_base' => $x_base,
             'y_base' => $y_base,
             'final_x' => $x,
