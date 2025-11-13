@@ -700,6 +700,9 @@ function svb_render_form() {
             <label>Scale<span class="svb-val" id="val-child1-scale">29</span>%
                 <input class="svb-range svb-key-control" type="range" name="child1_scale" value="29" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
             </label>
+            <label>Scale Y<span class="svb-val" id="val-child1-scale-y">100</span>%
+                <input class="svb-range svb-key-control" type="range" name="child1_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-child1-scale-y"/>
+            </label>
             <label>Skew X<span class="svb-val" id="val-child1-skew">0</span>px
                 <input class="svb-range svb-key-control" type="range" name="child1_skew" value="0" min="-600" max="600" step="1" data-val-id="val-child1-skew"/>
             </label>
@@ -749,6 +752,9 @@ function svb_render_form() {
         </label>
         <label>Scale<span class="svb-val" id="val-child2-scale">33</span>%
           <input class="svb-range svb-key-control" type="range" name="child2_scale" value="33" min="10" max="200" step="1" data-val-id="val-child2-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Scale Y<span class="svb-val" id="val-child2-scale-y">100</span>%
+          <input class="svb-range svb-key-control" type="range" name="child2_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-child2-scale-y"/>
         </label>
         <label>Skew X<span class="svb-val" id="val-child2-skew">0</span>px
           <input class="svb-range svb-key-control" type="range" name="child2_skew" value="0" min="-600" max="600" step="1" data-val-id="val-child2-skew"/>
@@ -800,6 +806,9 @@ function svb_render_form() {
         <label>Scale<span class="svb-val" id="val-parent1-scale">75</span>%
           <input class="svb-range svb-key-control" type="range" name="parent1_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent1-scale" data-key-up="=" data-key-down="-"/>
         </label>
+        <label>Scale Y<span class="svb-val" id="val-parent1-scale-y">100</span>%
+          <input class="svb-range svb-key-control" type="range" name="parent1_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-parent1-scale-y"/>
+        </label>
         <label>Skew X<span class="svb-val" id="val-parent1-skew">0</span>px
           <input class="svb-range svb-key-control" type="range" name="parent1_skew" value="0" min="-600" max="600" step="1" data-val-id="val-parent1-skew"/>
         </label>
@@ -850,6 +859,9 @@ function svb_render_form() {
         <label>Scale<span class="svb-val" id="val-parent2-scale">75</span>%
           <input class="svb-range svb-key-control" type="range" name="parent2_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent2-scale" data-key-up="=" data-key-down="-"/>
         </label>
+        <label>Scale Y<span class="svb-val" id="val-parent2-scale-y">100</span>%
+          <input class="svb-range svb-key-control" type="range" name="parent2_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-parent2-scale-y"/>
+        </label>
         <label>Skew X<span class="svb-val" id="val-parent2-skew">0</span>px
           <input class="svb-range svb-key-control" type="range" name="parent2_skew" value="0" min="-600" max="600" step="1" data-val-id="val-parent2-skew"/>
         </label>
@@ -899,6 +911,9 @@ function svb_render_form() {
         </label>
         <label>Scale<span class="svb-val" id="val-extra-scale">31</span>%
           <input class="svb-range svb-key-control" type="range" name="extra_scale" value="31" min="10" max="200" step="1" data-val-id="val-extra-scale" data-key-up="=" data-key-down="-"/>
+        </label>
+        <label>Scale Y<span class="svb-val" id="val-extra-scale-y">100</span>%
+          <input class="svb-range svb-key-control" type="range" name="extra_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-extra-scale-y"/>
         </label>
         <label>Skew X<span class="svb-val" id="val-extra-skew">0</span>px
           <input class="svb-range svb-key-control" type="range" name="extra_skew" value="0" min="-600" max="600" step="1" data-val-id="val-extra-skew"/>
@@ -1057,7 +1072,7 @@ function svbBindPhotoInputs(){
  });
 
  ['child1', 'child2', 'parent1', 'parent2', 'extra'].forEach(key => {
-  ['x','y','scale','skew','skew_y','angle','radius'].forEach(k=>{
+  ['x','y','scale','scale_y','skew','skew_y','angle','radius'].forEach(k=>{
     const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
     if(ctrl){
       ctrl.addEventListener('input', (e)=> {
@@ -1082,6 +1097,7 @@ function svbUpdatePreviewTransform(key){
  const x_raw = parseFloat(document.querySelector(`input[name="${key}_x"]`)?.value||0);
  const y_raw = parseFloat(document.querySelector(`input[name="${key}_y"]`)?.value||0);
  const s_raw = parseFloat(document.querySelector(`input[name="${key}_scale"]`)?.value||100);
+ const scaleY_raw = parseFloat(document.querySelector(`input[name="${key}_scale_y"]`)?.value||100);
  const skewX_raw = parseFloat(document.querySelector(`input[name="${key}_skew"]`)?.value||0);
  const skewY_raw = parseFloat(document.querySelector(`input[name="${key}_skew_y"]`)?.value||0);
  const a = parseFloat(document.querySelector(`input[name="${key}_angle"]`)?.value||0);
@@ -1095,16 +1111,17 @@ function svbUpdatePreviewTransform(key){
   const previewWidth = previewBox.clientWidth || previewBox.offsetWidth || target_w;
   const previewHeight = previewBox.clientHeight || previewBox.offsetHeight || (previewWidth * (target_h / target_w));
 
-  const scaleX = previewWidth / target_w;
-  const scaleY = previewHeight / target_h;
-  const safeScaleY = scaleY || scaleX || 1;
+ const previewScaleX = previewWidth / target_w;
+ const previewScaleY = previewHeight / target_h;
+ const safePreviewScaleY = previewScaleY || previewScaleX || 1;
 
-  const safeScale = Math.max(10, s_raw);
-  const widthVideo = target_w * (safeScale / 100);
+ const safeScale = Math.max(10, s_raw);
+ const widthVideo = target_w * (safeScale / 100);
+ const safeScaleYPercent = Math.max(10, scaleY_raw);
   const naturalW = img.naturalWidth || target_w;
   const naturalH = img.naturalHeight || target_h;
   const aspect = (naturalW > 0 && naturalH > 0) ? (naturalH / naturalW) : (target_h / target_w);
-  const heightVideo = widthVideo * aspect;
+ const heightVideo = widthVideo * aspect * (safeScaleYPercent / 100);
 
   const baseX = (x_raw / original_w) * target_w;
   const baseY = (y_raw / original_h) * target_h;
@@ -1115,14 +1132,14 @@ function svbUpdatePreviewTransform(key){
   const skewVideoX = Number.isFinite(skewX_raw) ? skewX_raw : 0;
   const skewVideoY = Number.isFinite(skewY_raw) ? skewY_raw : 0;
 
-  const widthPreview = widthVideo * scaleX;
-  const heightPreview = heightVideo * scaleY;
+ const widthPreview = widthVideo * previewScaleX;
+ const heightPreview = heightVideo * previewScaleY;
 
-  const safeScaleX = scaleX || safeScaleY || 1;
+ const safePreviewScaleX = previewScaleX || safePreviewScaleY || 1;
   const kVideoX = heightVideo !== 0 ? (skewVideoX / heightVideo) : 0;
   const kVideoY = widthVideo !== 0 ? (skewVideoY / widthVideo) : 0;
-  const kPreviewX = safeScaleY !== 0 ? kVideoX * (scaleX / safeScaleY) : 0;
-  const kPreviewY = safeScaleX !== 0 ? kVideoY * (safeScaleY / safeScaleX) : 0;
+ const kPreviewX = safePreviewScaleY !== 0 ? kVideoX * (previewScaleX / safePreviewScaleY) : 0;
+ const kPreviewY = safePreviewScaleX !== 0 ? kVideoY * (safePreviewScaleY / safePreviewScaleX) : 0;
 
   const halfW = widthVideo / 2;
   const halfH = heightVideo / 2;
@@ -1163,19 +1180,19 @@ function svbUpdatePreviewTransform(key){
     if (ry > maxY) maxY = ry;
   });
 
-  const leftPx = (baseX + minX) * scaleX;
-  const topPx = (baseY + minY) * scaleY;
+ const leftPx = (baseX + minX) * previewScaleX;
+ const topPx = (baseY + minY) * previewScaleY;
 
   img.style.left = `${leftPx}px`;
   img.style.top = `${topPx}px`;
 
-  img.style.width = `${widthPreview}px`;
-  img.style.height = `${heightPreview}px`;
+ img.style.width = `${widthPreview}px`;
+ img.style.height = `${heightPreview}px`;
   img.style.transformOrigin = '0 0';
   img.style.transform = `matrix(${aPx.toFixed(6)}, ${bPx.toFixed(6)}, ${cPx.toFixed(6)}, ${dPx.toFixed(6)}, ${txPx.toFixed(2)}, ${tyPx.toFixed(2)})`;
 
   if (!isNaN(radius) && radius > 0) {
-    const radiusPx = radius * scaleX;
+    const radiusPx = radius * previewScaleX;
     img.style.borderRadius = `${radiusPx}px`;
     img.style.overflow = 'hidden';
   } else {
@@ -1198,6 +1215,7 @@ function svbCollectOverlayData() {
       x: pick('x'),
       y: pick('y'),
       scale: pick('scale', 100),
+      scaleY: pick('scale_y', 100),
       skew: pick('skew'),
       skewY: pick('skew_y'),
       angle: pick('angle'),
@@ -1482,7 +1500,7 @@ function svbBindNameSuggest(){
 
 // ... (svbMarkTouched - БЕЗ ИЗМЕНЕНИЙ) ...
 function svbMarkTouched(key){
-  ['x','y','scale','skew','skew_y','angle','radius'].forEach(k=>{
+  ['x','y','scale','scale_y','skew','skew_y','angle','radius'].forEach(k=>{
     const el = document.querySelector(`input[name="${key}_${k}"]`);
     if (el && !el.__svb_bound) {
       el.addEventListener('input', ()=> el.dataset.touched = '1');
@@ -1692,6 +1710,17 @@ function svb_generate() {
             }
         }
     }
+
+    foreach (['child1','child2','parent1','parent2'] as $required_pk) {
+        if (empty($photos[$required_pk]) || !file_exists($photos[$required_pk])) {
+            svb_dbg_write($job_dir, 'error.photo_missing.' . $required_pk, 'required photo missing after preprocessing');
+            wp_send_json_error([
+                'msg' => sprintf(__('Не вдалося обробити %s. Спробуйте ще раз завантажити фото.', 'svb'), $required_pk),
+                'code' => 'photo_missing',
+                'photo' => $required_pk,
+            ]);
+        }
+    }
     
     // === ИСПРАВЛЕНИЕ: Добавляем 'angle' и 'radius' в массив $pos ===
     $pos = [];
@@ -1700,6 +1729,7 @@ function svb_generate() {
             'x' => isset($_POST[$pk . '_x']) ? intval($_POST[$pk . '_x']) : 0,
             'y' => isset($_POST[$pk . '_y']) ? intval($_POST[$pk . '_y']) : 0,
             's' => isset($_POST[$pk . '_scale']) ? max(10, intval($_POST[$pk . '_scale'])) : 100,
+            'sy' => isset($_POST[$pk . '_scale_y']) ? max(10, intval($_POST[$pk . '_scale_y'])) : 100,
             'skew' => isset($_POST[$pk . '_skew']) ? floatval($_POST[$pk . '_skew']) : 0.0,
             'skew_y' => isset($_POST[$pk . '_skew_y']) ? floatval($_POST[$pk . '_skew_y']) : 0.0,
             'angle' => isset($_POST[$pk . '_angle']) ? floatval($_POST[$pk . '_angle']) : 0.0,
@@ -1722,6 +1752,11 @@ function svb_generate() {
                 }
                 if (isset($record['scale']) && is_numeric($record['scale'])) {
                     $pos[$pk]['s'] = max(10, (int)round($record['scale']));
+                }
+                if (isset($record['scaleY']) && is_numeric($record['scaleY'])) {
+                    $pos[$pk]['sy'] = max(10, (int)round($record['scaleY']));
+                } elseif (isset($record['scale_y']) && is_numeric($record['scale_y'])) {
+                    $pos[$pk]['sy'] = max(10, (int)round($record['scale_y']));
                 }
                 if (isset($record['skew']) && is_numeric($record['skew'])) {
                     $pos[$pk]['skew'] = (float)$record['skew'];
@@ -1819,10 +1854,13 @@ function svb_generate() {
     $even = static function($n){ $n = (int)$n; return ($n & 1) ? $n - 1 : $n; };
 
     $addOverlay = function($key, $intervals) use (&$filter, &$vlabel, &$vcount, $imgIndexMap, $pos, $HAS_FIFO, $HAS_ROUNDED, $HAS_PERSPECTIVE, $even, $scale_factor_x, $scale_factor_y, $target_w, $target_h, $photo_meta, $job_dir){
-        if (!isset($imgIndexMap[$key])) return;
+        if (!isset($imgIndexMap[$key])) {
+            svb_dbg_write($job_dir, 'skip.overlay.' . $key, 'no processed image available, skipping overlay');
+            return;
+        }
         $idx = $imgIndexMap[$key];
         // === ИСПРАВЛЕНИЕ: Добавляем defaults для angle и radius ===
-        $p = $pos[$key] ?? ['x'=>0,'y'=>0,'s'=>100, 'skew'=>0, 'skew_y'=>0, 'angle'=>0, 'radius'=>0];
+        $p = $pos[$key] ?? ['x'=>0,'y'=>0,'s'=>100, 'sy'=>100, 'skew'=>0, 'skew_y'=>0, 'angle'=>0, 'radius'=>0];
 
         // Позиция (X/Y) - в пикселях на целевом видео (854x480)
         $x_base = (float)($p['x'] * $scale_factor_x);
@@ -1830,6 +1868,7 @@ function svb_generate() {
 
         // Логика Масштаба (Scale)
         $scale_percent = max(10, min(200, (int)($p['s'] ?? 100)));
+        $scale_percent_y = max(10, min(200, (int)($p['sy'] ?? 100)));
         $sx_perc = $scale_percent / 100.0; // e.g., 0.35
         $scW = max(2, $even((int)round($target_w * $sx_perc)));
 
@@ -1840,7 +1879,7 @@ function svb_generate() {
         if ($src_h <= 0) $src_h = $target_h;
 
         $scale_ratio = $scW / $src_w;
-        $scH_val = $src_h * $scale_ratio;
+        $scH_val = $src_h * $scale_ratio * ($scale_percent_y / 100.0);
         $scH = max(2, $even((int)round($scH_val)));
 
         $skew_x_input = isset($p['skew']) ? (float)$p['skew'] : 0.0;
@@ -1965,6 +2004,8 @@ function svb_generate() {
 
         svb_dbg_write($job_dir, 'calc.overlay.' . $key, [
             'input' => $p,
+            'scale_percent_x' => $scale_percent,
+            'scale_percent_y' => $scale_percent_y,
             'skew_x_input' => $skew_x_input,
             'skew_x_applied' => $skew_x_effective,
             'skew_y_input' => $skew_y_input,
