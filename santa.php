@@ -139,6 +139,30 @@ function svb_normalize_overlay_intervals(array $raw, array $defaults) {
     return $defaults;
 }
 
+function svb_build_intervals_from_post($prefix, $fallback) {
+    $result = [];
+    $expected = count($fallback);
+
+    for ($i = 1; $i <= $expected; $i++) {
+        $from_key = "interval_{$prefix}_{$i}_from";
+        $to_key   = "interval_{$prefix}_{$i}_to";
+
+        $from_raw = isset($_POST[$from_key]) ? sanitize_text_field(wp_unslash($_POST[$from_key])) : '';
+        $to_raw   = isset($_POST[$to_key]) ? sanitize_text_field(wp_unslash($_POST[$to_key])) : '';
+
+        $from_sec = svb_ts_to_seconds($from_raw);
+        $to_sec   = svb_ts_to_seconds($to_raw);
+
+        if ($from_raw !== '' && $to_raw !== '' && is_numeric($from_sec) && is_numeric($to_sec) && $to_sec > $from_sec) {
+            $result[] = [$from_raw, $to_raw];
+        } else {
+            $result[] = $fallback[$i-1];
+        }
+    }
+
+    return $result;
+}
+
 function svb_exec_find($bin) {
     $path = @shell_exec('command -v '.escapeshellarg($bin).' 2>/dev/null');
     if (!$path) $path = @shell_exec('which '.escapeshellarg($bin).' 2>/dev/null');
@@ -570,6 +594,15 @@ function svb_render_form() {
     // extra2 – новая сцена около 04:18
     $P_EXTRA2  = [ ['04:18:11','04:21:21'] ];
 
+    $OVER_DEFAULT_STR = [
+        'child1'  => $P_CHILD1,
+        'child2'  => $P_CHILD2,
+        'parent1' => $P_PARENTS,
+        'parent2' => $P_PARENTS,
+        'extra'   => $P_EXTRA,
+        'extra2'  => $P_EXTRA2,
+    ];
+
     // В хелпер конвертации в секунды используем уже определённую svb_ts_to_seconds()
     $to_sec = function($pairs){
         return array_map(function($a){
@@ -584,6 +617,42 @@ function svb_render_form() {
         'extra'   => $to_sec($P_EXTRA),
         'extra2'  => $to_sec($P_EXTRA2),
     ];
+
+    $renderIntervals = function($key, $fallback) {
+        $multiple = count($fallback) > 1;
+        ?>
+        <div class="svb-intervals" data-key="<?php echo esc_attr($key); ?>">
+          <label class="svb-label">Інтервали появи</label>
+          <div class="svb-interval-list">
+            <?php foreach ($fallback as $i => $pair): ?>
+              <div class="svb-interval-row">
+                <span class="svb-interval-prefix"><?php echo $multiple ? ($i === 0 ? 'Інтервали:' : 'та') : 'Інтервал:'; ?></span>
+                <input
+                  class="svb-input svb-interval-input"
+                  type="text"
+                  name="<?php echo esc_attr("interval_{$key}_" . ($i+1) . "_from"); ?>"
+                  value="<?php echo esc_attr($pair[0]); ?>"
+                  data-key="<?php echo esc_attr($key); ?>"
+                  data-idx="<?php echo esc_attr($i+1); ?>"
+                  data-part="from"
+                />
+                <span class="svb-interval-dash">–</span>
+                <input
+                  class="svb-input svb-interval-input"
+                  type="text"
+                  name="<?php echo esc_attr("interval_{$key}_" . ($i+1) . "_to"); ?>"
+                  value="<?php echo esc_attr($pair[1]); ?>"
+                  data-key="<?php echo esc_attr($key); ?>"
+                  data-idx="<?php echo esc_attr($i+1); ?>"
+                  data-part="to"
+                />
+              </div>
+            <?php endforeach; ?>
+          </div>
+          <span class="svb-note">Змініть час появи цього фото у відео.</span>
+        </div>
+        <?php
+    };
 
     ob_start(); ?>
 <style>
@@ -622,7 +691,11 @@ function svb_render_form() {
 
 .svb-note { color:#666; font-size:12px; }
 .svb-intervals { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
-.svb-intervals .svb-interval-input { font-family: monospace; font-size: 12px; min-height: 44px; }
+.svb-interval-list { display:flex; flex-direction:column; gap:8px; }
+.svb-interval-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.svb-interval-prefix { font-size: 12px; color:#333; min-width: 70px; }
+.svb-interval-dash { color:#444; }
+.svb-intervals .svb-interval-input { font-family: monospace; font-size: 12px; min-height: 38px; max-width: 140px; }
 .svb-intervals .svb-note { margin: 0; }
 .svb-interval-input--invalid { border-color: #D62828; }
 .svb-audio-row { display:flex; align-items:center; gap:8px; }
@@ -1185,15 +1258,7 @@ function svb_render_form() {
               </label>
             </div>
 
-            <div class="svb-intervals" data-key="child1">
-              <label class="svb-label">Інтервали появи</label>
-              <textarea
-                class="svb-input svb-interval-input"
-                data-key="child1"
-                placeholder="00:00:00-00:00:00&#10;00:00:00-00:00:00"
-              ></textarea>
-              <span class="svb-note">Змініть час появи цього фото у відео.</span>
-            </div>
+            <?php $renderIntervals('child1', $P_CHILD1); ?>
           </div>
 
           <!-- CHILD2 -->
@@ -1507,15 +1572,7 @@ function svb_render_form() {
               </label>
             </div>
 
-            <div class="svb-intervals" data-key="child2">
-              <label class="svb-label">Інтервали появи</label>
-              <textarea
-                class="svb-input svb-interval-input"
-                data-key="child2"
-                placeholder="00:00:00-00:00:00&#10;00:00:00-00:00:00"
-              ></textarea>
-              <span class="svb-note">Змініть час появи цього фото у відео.</span>
-            </div>
+            <?php $renderIntervals('child2', $P_CHILD2); ?>
           </div>
 
           <!-- PARENT1 -->
@@ -1829,15 +1886,7 @@ function svb_render_form() {
               </label>
             </div>
 
-            <div class="svb-intervals" data-key="parent1">
-              <label class="svb-label">Інтервали появи</label>
-              <textarea
-                class="svb-input svb-interval-input"
-                data-key="parent1"
-                placeholder="00:00:00-00:00:00"
-              ></textarea>
-              <span class="svb-note">Змініть час появи цього фото у відео.</span>
-            </div>
+            <?php $renderIntervals('parent1', $P_PARENTS); ?>
           </div>
 
           <!-- PARENT2 -->
@@ -2151,15 +2200,7 @@ function svb_render_form() {
               </label>
             </div>
 
-            <div class="svb-intervals" data-key="parent2">
-              <label class="svb-label">Інтервали появи</label>
-              <textarea
-                class="svb-input svb-interval-input"
-                data-key="parent2"
-                placeholder="00:00:00-00:00:00"
-              ></textarea>
-              <span class="svb-note">Змініть час появи цього фото у відео.</span>
-            </div>
+            <?php $renderIntervals('parent2', $P_PARENTS); ?>
           </div>
 
           <!-- EXTRA2 (04:18 scene) -->
@@ -2475,15 +2516,7 @@ function svb_render_form() {
               </label>
             </div>
 
-            <div class="svb-intervals" data-key="extra2">
-              <label class="svb-label">Інтервали появи</label>
-              <textarea
-                class="svb-input svb-interval-input"
-                data-key="extra2"
-                placeholder="00:00:00-00:00:00"
-              ></textarea>
-              <span class="svb-note">Додаткове фото у середині відео.</span>
-            </div>
+            <?php $renderIntervals('extra2', $P_EXTRA2); ?>
           </div>
 
           <!-- EXTRA (final scene) -->
@@ -2797,15 +2830,7 @@ function svb_render_form() {
               </label>
             </div>
 
-            <div class="svb-intervals" data-key="extra">
-              <label class="svb-label">Інтервали появи</label>
-              <textarea
-                class="svb-input svb-interval-input"
-                data-key="extra"
-                placeholder="00:00:00-00:00:00"
-              ></textarea>
-              <span class="svb-note">Додаткове фото у фінальній сцені.</span>
-            </div>
+            <?php $renderIntervals('extra', $P_EXTRA); ?>
           </div>
         </div>
 
@@ -2849,6 +2874,7 @@ const SVB_AJAX  = {
 const SVB_PROCESSED_PHOTO_SIZE = 709; // ширина/высота PNG после препроцессинга на сервере
 const SVB_PREVIEW_CAPS = <?php echo wp_json_encode($preview_caps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
 const SVB_OVERLAY_WINDOWS = <?php echo wp_json_encode($OVER, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
+const SVB_OVERLAY_WINDOW_DEFAULTS = <?php echo wp_json_encode($OVER_DEFAULT_STR, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
 const SVB_PHOTO_KEYS = ['child1', 'child2', 'parent1', 'parent2', 'extra', 'extra2'];
 const svbVisibilityUpdaters = {};
 
@@ -2863,43 +2889,61 @@ function svbSecondsToHms(sec){
     const s = total % 60;
     return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
 }
-function svbParseTsToSeconds(ts){
-    const parts = (ts||'').toString().trim().split(':').map(p=>p.trim());
-    if (parts.length !== 3) return NaN;
-    const [hh, mm, ss] = parts;
-    const h = parseInt(hh, 10), m = parseInt(mm, 10), s = parseInt(ss, 10);
-    if ([h,m,s].some(n => Number.isNaN(n) || n < 0)) return NaN;
-    return h * 3600 + m * 60 + s;
+function svbParseTs(tsStr){
+    const ts = (tsStr || '').toString().trim();
+    if (!ts) return NaN;
+
+    // 1) MM:SS:CC (центисекунды)
+    if (/^\d{1,2}:\d{2}:\d{2}$/.test(ts)) {
+        const [mm, ss, cc] = ts.split(':').map(Number);
+        return (mm * 60) + ss + (cc / 100);
+    }
+
+    // 2) HH:MM:SS.ss
+    const m1 = ts.match(/^(\d{2}):(\d{2}):(\d{2})\.(\d{2})$/);
+    if (m1) {
+        return (Number(m1[1]) * 3600) + (Number(m1[2]) * 60) + Number(m1[3]) + (Number(m1[4]) / 100);
+    }
+
+    // 3) [-][HH:]MM:SS[.m...]
+    if (/^-?(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?$/.test(ts)) {
+        const neg = ts[0] === '-';
+        const clean = ts.replace(/^-/, '');
+        const parts = clean.split(':');
+        let sec = 0;
+        if (parts.length === 3) {
+            const [hh, mm, ss] = parts;
+            sec = (Number(hh) * 3600) + (Number(mm) * 60) + Number(ss);
+        } else {
+            const [mm, ss] = parts;
+            sec = (Number(mm) * 60) + Number(ss);
+        }
+        return neg ? -sec : sec;
+    }
+
+    return NaN;
 }
-function svbGetOverlayWindows(key){
+function svbGetWindows(key){
     if (typeof SVB_OVERLAY_WINDOWS !== 'object' || !SVB_OVERLAY_WINDOWS[key]) return [];
     return SVB_OVERLAY_WINDOWS[key];
 }
-function svbIntervalsToText(windows){
-    if (!Array.isArray(windows)) return '';
-    return windows.map(w => `${svbSecondsToHms(w[0]||0)}-${svbSecondsToHms(w[1]||0)}`).join('\n');
-}
-function svbParseIntervalInput(text){
-    const lines = (text||'').toString().split(/\n|;/).map(l => l.trim()).filter(Boolean);
-    const out = [];
-    lines.forEach(line => {
-        const norm = line.replace(/[\u2013\u2014]/g, '-');
-        const [a,b] = norm.split('-').map(p => p.trim());
-        if (!a || !b) return;
-        const aSec = svbParseTsToSeconds(a);
-        const bSec = svbParseTsToSeconds(b);
-        if (!Number.isFinite(aSec) || !Number.isFinite(bSec)) return;
-        if (bSec <= aSec) return;
-        out.push([aSec, bSec]);
-    });
-    return out;
+function svbGetDefaultWindows(key){
+    const raw = (typeof SVB_OVERLAY_WINDOW_DEFAULTS === 'object' && SVB_OVERLAY_WINDOW_DEFAULTS[key]) ? SVB_OVERLAY_WINDOW_DEFAULTS[key] : [];
+    return raw
+        .map(pair => {
+            const st = svbParseTs(pair[0]);
+            const en = svbParseTs(pair[1]);
+            if (!Number.isFinite(st) || !Number.isFinite(en) || en <= st) return null;
+            return [st, en];
+        })
+        .filter(Boolean);
 }
 function svbSyncOverlayIntervalsField(){
     const hidden = document.getElementById('svb-overlay-windows-json');
     if (!hidden) return {};
     const payload = {};
     SVB_PHOTO_KEYS.forEach(key => {
-        const win = svbGetOverlayWindows(key);
+        const win = svbGetWindows(key);
         if (Array.isArray(win) && win.length) {
             payload[key] = win.map(w => [svbSecondsToHms(w[0]||0), svbSecondsToHms(w[1]||0)]);
         }
@@ -2911,18 +2955,61 @@ function svbTriggerVisibilityUpdate(key){
     const fn = svbVisibilityUpdaters[key];
     if (typeof fn === 'function') fn();
 }
+function svbRefreshIntervalsForKey(key){
+    const inputs = $$(`.svb-interval-input[data-key="${key}"]`);
+    const defaults = svbGetDefaultWindows(key);
+    const values = {};
+    inputs.forEach(inp => {
+        const idx = parseInt(inp.dataset.idx || '1', 10) || 1;
+        const part = inp.dataset.part === 'to' ? 'to' : 'from';
+        values[idx] = values[idx] || {};
+        values[idx][part] = inp.value;
+    });
+
+    const invalidIdx = new Set();
+    const maxIdx = Math.max(
+        defaults.length,
+        ...Object.keys(values).map(v => parseInt(v, 10) || 0),
+        0
+    );
+
+    const windows = [];
+    for (let i = 1; i <= maxIdx; i++) {
+        const fromStr = (values[i] && values[i].from) ? values[i].from : '';
+        const toStr = (values[i] && values[i].to) ? values[i].to : '';
+        const from = svbParseTs(fromStr);
+        const to = svbParseTs(toStr);
+        if (Number.isFinite(from) && Number.isFinite(to) && to > from) {
+            windows.push([from, to]);
+        } else if (defaults[i-1]) {
+            windows.push(defaults[i-1]);
+            invalidIdx.add(i);
+        } else {
+            invalidIdx.add(i);
+        }
+    }
+
+    inputs.forEach(inp => {
+        const idx = parseInt(inp.dataset.idx || '1', 10) || 1;
+        inp.classList.toggle('svb-interval-input--invalid', invalidIdx.has(idx));
+    });
+
+    SVB_OVERLAY_WINDOWS[key] = windows;
+    svbSyncOverlayIntervalsField();
+    svbTriggerVisibilityUpdate(key);
+}
 function svbInitIntervalInputs(){
-    $$('.svb-interval-input').forEach(inp => {
-        const key = inp.dataset.key;
-        if (!key) return;
-        inp.value = svbIntervalsToText(svbGetOverlayWindows(key));
-        inp.addEventListener('input', () => {
-            const parsed = svbParseIntervalInput(inp.value);
-            SVB_OVERLAY_WINDOWS[key] = parsed;
-            inp.classList.toggle('svb-interval-input--invalid', parsed.length === 0);
-            svbSyncOverlayIntervalsField();
-            svbTriggerVisibilityUpdate(key);
+    SVB_PHOTO_KEYS.forEach(key => {
+        const inputs = $$(`.svb-interval-input[data-key="${key}"]`);
+        inputs.forEach(inp => {
+            inp.addEventListener('input', () => svbRefreshIntervalsForKey(key));
+            inp.addEventListener('blur', () => svbRefreshIntervalsForKey(key));
         });
+        if (inputs.length) {
+            svbRefreshIntervalsForKey(key);
+        } else {
+            SVB_OVERLAY_WINDOWS[key] = svbGetDefaultWindows(key);
+        }
     });
     svbSyncOverlayIntervalsField();
 }
@@ -3684,7 +3771,7 @@ function svbBindRealtimeControls() {
                 // === ВКЛЮЧАЕМ ВИДИМОСТЬ КАРТИНКИ ПО ТАЙМИНГАМ ===
                 // === ВКЛЮЧАЕМ ВИДИМОСТЬ КАРТИНКИ ПО ТАЙМИНГАМ ===
         const img = document.getElementById('img-' + key);
-        const getWindows = () => svbGetOverlayWindows(key);
+        const getWindows = () => svbGetWindows(key);
         function isOn(t){
             const win = getWindows();
             for (let i = 0; i < win.length; i++){
@@ -4214,13 +4301,20 @@ foreach ($photo_keys as $pk) {
     $A_HOBBY  = [ ['02:32:00','02:36:27'] ];
     $A_PRAISE = [ ['05:54:10','05:57:15'] ];
     $A_REQUEST= [ ['06:19:04','06:22:27'] ];
-    $P_CHILD1 = [ ['00:54:20','00:58:25'] ];
-    $P_CHILD2 = [ ['02:17:14','02:21:25'] ];
-    $P_PARENTS= [ ['06:35:03','06:43:13'] ];
-    $P_PARENT1 = $P_PARENTS;
-    $P_PARENT2 = $P_PARENTS;
-    $P_EXTRA  = [ ['07:06:00','07:11:13'] ];
-    $P_EXTRA2 = [ ['04:18:11','04:21:21'] ];
+
+    $P_CHILD1_DEF  = [ ['00:54:20','00:58:25'] ];
+    $P_CHILD2_DEF  = [ ['02:17:14','02:21:25'] ];
+    $P_PARENTS_DEF = [ ['06:35:03','06:43:13'] ];
+    $P_EXTRA_DEF   = [ ['07:06:00','07:11:13'] ];
+    $P_EXTRA2_DEF  = [ ['04:18:11','04:21:21'] ];
+
+    $P_CHILD1  = svb_build_intervals_from_post('child1',  $P_CHILD1_DEF);
+    $P_CHILD2  = svb_build_intervals_from_post('child2',  $P_CHILD2_DEF);
+    $P_PARENT1 = svb_build_intervals_from_post('parent1', $P_PARENTS_DEF);
+    $P_PARENT2 = svb_build_intervals_from_post('parent2', $P_PARENTS_DEF);
+    $P_EXTRA   = svb_build_intervals_from_post('extra',   $P_EXTRA_DEF);
+    $P_EXTRA2  = svb_build_intervals_from_post('extra2',  $P_EXTRA2_DEF);
+    $P_PARENTS = $P_PARENT1;
 
     $overlay_sets = [
         'child1'  => $P_CHILD1,
@@ -4230,6 +4324,22 @@ foreach ($photo_keys as $pk) {
         'extra'   => $P_EXTRA,
         'extra2'  => $P_EXTRA2,
     ];
+
+    $interval_raw_keys = [];
+    $interval_counts = [
+        'child1'  => count($P_CHILD1_DEF),
+        'child2'  => count($P_CHILD2_DEF),
+        'parent1' => count($P_PARENTS_DEF),
+        'parent2' => count($P_PARENTS_DEF),
+        'extra'   => count($P_EXTRA_DEF),
+        'extra2'  => count($P_EXTRA2_DEF),
+    ];
+    foreach ($interval_counts as $pref => $cnt) {
+        for ($i = 1; $i <= $cnt; $i++) {
+            $interval_raw_keys[] = "interval_{$pref}_{$i}_from";
+            $interval_raw_keys[] = "interval_{$pref}_{$i}_to";
+        }
+    }
 
     $overlay_raw = [];
     if (!empty($_POST['overlay_windows_json'])) {
@@ -4247,6 +4357,17 @@ foreach ($photo_keys as $pk) {
     $P_PARENTS = $overlay_sets['parent1'];
     $P_EXTRA = $overlay_sets['extra'];
     $P_EXTRA2 = $overlay_sets['extra2'];
+
+    svb_align_log($job_dir, 'user_intervals', [
+        'child1'   => $P_CHILD1,
+        'child2'   => $P_CHILD2,
+        'parents'  => $P_PARENTS,
+        'parent1'  => $P_PARENT1,
+        'parent2'  => $P_PARENT2,
+        'extra'    => $P_EXTRA,
+        'extra2'   => $P_EXTRA2,
+        'raw_post' => array_intersect_key($_POST, array_flip($interval_raw_keys)),
+    ]);
 
     svb_dbg_write($job_dir, 'req.intervals.raw', $overlay_raw);
     svb_dbg_write($job_dir, 'req.intervals.final', $overlay_sets);
