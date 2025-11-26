@@ -574,6 +574,16 @@ function svb_render_form() {
 .svb-range { padding: 0; height: 22px; }
 .svb-controls label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .svb-controls .svb-val { font-weight: 700; min-width: 30px; text-align: right; }
+.svb-controls .svb-val-input {
+  border: 1px solid #E3E3E3;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  width: 70px;
+  text-align: right;
+  box-sizing: border-box;
+}
+
 .svb-note { color:#666; font-size:12px; }
 .svb-audio-row { display:flex; align-items:center; gap:8px; }
 .svb-play { border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:#EEE; cursor:pointer; }
@@ -821,534 +831,1900 @@ function svb_render_form() {
       </section>
 
       <section class="svb-step" data-step="2">
-  <div class="svb-photo-grid">
-    
-    <div class="svb-drop" data-photo="child1">
-        <div class="svb-field"><span class="svb-label">Фото дитини 1</span><input class="svb-input" type="file" name="photo_child1" accept="image/*" required></div>
-        
-        <div class="svb-vid-preview" id="svb-vid-preview-child1">
-            <video id="svb-video-child1" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
-            <img id="img-child1" alt="Фото тут" />
-        </div>
-        
-        <div class="svb-vid-seek-bar-container">
-            <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="child1" min="0" value="0" step="0.1">
-        </div>
-        <div class="svb-vid-controls">
-            <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="child1">► Play</button>
-            <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="child1" style="display:none;">❚❚ Pause</button>
-            <div id="svb-vid-time-child1" class="svb-btn ghost">00:00 / 00:00</div> 
+        <div class="svb-photo-grid">
+          
+          <!-- CHILD1 -->
+          <div class="svb-drop" data-photo="child1">
+            <div class="svb-field">
+              <span class="svb-label">Фото дитини 1</span>
+              <input class="svb-input" type="file" name="photo_child1" accept="image/*" required>
+            </div>
             
-            <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="child1">🔇 Mute</button>
-            <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="child1" style="display:none;">🔈 Unmute</button>
-            <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="child1" min="0" max="1" step="0.05" value="0.8">
-            <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="child1">📌 Log frame</button>
+            <div class="svb-vid-preview" id="svb-vid-preview-child1">
+              <video id="svb-video-child1" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+              <img id="img-child1" alt="Фото тут" />
+            </div>
+            
+            <div class="svb-vid-seek-bar-container">
+              <input
+                type="range"
+                class="svb-range svb-seek-bar"
+                data-vid-ctrl="seek"
+                data-key="child1"
+                min="0"
+                value="0"
+                step="0.001"
+              >
+              <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <span>Час, мс:</span>
+                <input
+                  type="number"
+                  class="svb-time-input"
+                  data-key="child1"
+                  value="0"
+                  min="0"
+                  step="1"
+                  style="width: 90px; padding: 2px 4px; font-size: 12px;"
+                >
+              </div>
+            </div>
+
+            <div class="svb-vid-controls">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="child1">► Play</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="child1" style="display:none;">❚❚ Pause</button>
+              <div id="svb-vid-time-child1" class="svb-btn ghost">00:00 / 00:00</div> 
+              
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="child1">🔇 Mute</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="child1" style="display:none;">🔈 Unmute</button>
+              <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="child1" min="0" max="1" step="0.05" value="0.8">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="child1">📌 Log frame</button>
+            </div>
+
+            <div class="svb-note" style="margin-top: 4px;">
+              <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+            </div>
+
+            <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+              <label>
+                X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-x"
+                  type="number"
+                  value="785"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-range-name="child1_x"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_x"
+                  value="785"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-val-id="val-child1-x"
+                  data-key-up="ArrowRight"
+                  data-key-down="ArrowLeft"
+                />
+              </label>
+
+              <label>
+                Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-y"
+                  type="number"
+                  value="315"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-range-name="child1_y"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_y"
+                  value="315"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-val-id="val-child1-y"
+                  data-key-up="ArrowDown"
+                  data-key-down="ArrowUp"
+                />
+              </label>
+
+              <label>
+                Scale
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-scale"
+                  type="number"
+                  value="29"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="child1_scale"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_scale"
+                  value="29"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-child1-scale"
+                  data-key-up="="
+                  data-key-down="-"
+                />
+              </label>
+
+              <label>
+                Scale Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-scale-y"
+                  type="number"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="child1_scale_y"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_scale_y"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-child1-scale-y"
+                />
+              </label>
+
+              <label>
+                Skew X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-skew"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="child1_skew"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_skew"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-child1-skew"
+                />
+              </label>
+
+              <label>
+                Skew Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-skew-y"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="child1_skew_y"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_skew_y"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-child1-skew-y"
+                />
+              </label>
+
+              <label>
+                Angle
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-angle"
+                  type="number"
+                  value="4"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="child1_angle"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_angle"
+                  value="4"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-child1-angle"
+                  data-key-up="."
+                  data-key-down=","
+                />
+              </label>
+
+              <label>
+                Radius
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-radius"
+                  type="number"
+                  value="30"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-range-name="child1_radius"
+                />
+                px
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_radius"
+                  value="30"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-val-id="val-child1-radius"
+                  data-key-up="]"
+                  data-key-down="["
+                />
+              </label>
+
+              <label>
+                Прозорість:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-opacity"
+                  type="number"
+                  value="100"
+                  min="30"
+                  max="100"
+                  step="1"
+                  data-range-name="child1_opacity"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_opacity"
+                  min="30"
+                  max="100"
+                  step="1"
+                  value="100"
+                  data-val-id="val-child1-opacity"
+                />
+              </label>
+
+              <label>
+                Світлі краї:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child1-glow"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-range-name="child1_glow"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child1_glow"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="0"
+                  data-val-id="val-child1-glow"
+                />
+              </label>
+            </div>
+
+            <span class="svb-note">Інтервали: 00:54:20–00:58:25 та 04:18:11–04:21:21</span>
+          </div>
+
+          <!-- CHILD2 -->
+          <div class="svb-drop" data-photo="child2">
+            <div class="svb-field">
+              <span class="svb-label">Фото дитини 2</span>
+              <input class="svb-input" type="file" name="photo_child2" accept="image/*" required>
+            </div>
+
+            <div class="svb-vid-preview" id="svb-vid-preview-child2">
+              <video id="svb-video-child2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+              <img id="img-child2" alt="Фото тут" />
+            </div>
+
+            <div class="svb-vid-seek-bar-container">
+              <input
+                type="range"
+                class="svb-range svb-seek-bar"
+                data-vid-ctrl="seek"
+                data-key="child2"
+                min="0"
+                value="0"
+                step="0.001"
+              >
+              <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <span>Час, мс:</span>
+                <input
+                  type="number"
+                  class="svb-time-input"
+                  data-key="child2"
+                  value="0"
+                  min="0"
+                  step="1"
+                  style="width: 90px; padding: 2px 4px; font-size: 12px;"
+                >
+              </div>
+            </div>
+
+            <div class="svb-vid-controls">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="child2">► Play</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="child2" style="display:none;">❚❚ Pause</button>
+              <div id="svb-vid-time-child2" class="svb-btn ghost">00:00 / 00:00</div>
+
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="child2">🔇 Mute</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="child2" style="display:none;">🔈 Unmute</button>
+              <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="child2" min="0" max="1" step="0.05" value="0.8">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="child2">📌 Log frame</button>
+            </div>
+
+            <div class="svb-note" style="margin-top: 4px;">
+              <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+            </div>
+
+            <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+              <label>
+                X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-x"
+                  type="number"
+                  value="1156"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-range-name="child2_x"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_x"
+                  value="1156"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-val-id="val-child2-x"
+                  data-key-up="ArrowRight"
+                  data-key-down="ArrowLeft"
+                />
+              </label>
+
+              <label>
+                Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-y"
+                  type="number"
+                  value="250"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-range-name="child2_y"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_y"
+                  value="250"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-val-id="val-child2-y"
+                  data-key-up="ArrowDown"
+                  data-key-down="ArrowUp"
+                />
+              </label>
+
+              <label>
+                Scale
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-scale"
+                  type="number"
+                  value="33"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="child2_scale"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_scale"
+                  value="33"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-child2-scale"
+                  data-key-up="="
+                  data-key-down="-"
+                />
+              </label>
+
+              <label>
+                Scale Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-scale-y"
+                  type="number"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="child2_scale_y"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_scale_y"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-child2-scale-y"
+                />
+              </label>
+
+              <label>
+                Skew X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-skew"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="child2_skew"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_skew"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-child2-skew"
+                />
+              </label>
+
+              <label>
+                Skew Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-skew-y"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="child2_skew_y"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_skew_y"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-child2-skew-y"
+                />
+              </label>
+
+              <label>
+                Angle
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-angle"
+                  type="number"
+                  value="10"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="child2_angle"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_angle"
+                  value="10"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-child2-angle"
+                  data-key-up="."
+                  data-key-down=","
+                />
+              </label>
+
+              <label>
+                Radius
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-radius"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-range-name="child2_radius"
+                />
+                px
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_radius"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-val-id="val-child2-radius"
+                  data-key-up="]"
+                  data-key-down="["
+                />
+              </label>
+
+              <label>
+                Прозорість:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-opacity"
+                  type="number"
+                  value="100"
+                  min="30"
+                  max="100"
+                  step="1"
+                  data-range-name="child2_opacity"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_opacity"
+                  min="30"
+                  max="100"
+                  step="1"
+                  value="100"
+                  data-val-id="val-child2-opacity"
+                />
+              </label>
+
+              <label>
+                Світлі краї:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-child2-glow"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-range-name="child2_glow"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="child2_glow"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="0"
+                  data-val-id="val-child2-glow"
+                />
+              </label>
+            </div>
+
+            <span class="svb-note">Інтервали: 02:17:14–02:21:25 та 07:04:23–07:11:13</span>
+          </div>
+
+          <!-- PARENT1 -->
+          <div class="svb-drop" data-photo="parent1">
+            <div class="svb-field">
+              <span class="svb-label">Фото батька</span>
+              <input class="svb-input" type="file" name="photo_parent1" accept="image/*" required>
+            </div>
+
+            <div class="svb-vid-preview" id="svb-vid-preview-parent1">
+              <video id="svb-video-parent1" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+              <img id="img-parent1" alt="Фото тут" />
+            </div>
+
+            <div class="svb-vid-seek-bar-container">
+              <input
+                type="range"
+                class="svb-range svb-seek-bar"
+                data-vid-ctrl="seek"
+                data-key="parent1"
+                min="0"
+                value="0"
+                step="0.001"
+              >
+              <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <span>Час, мс:</span>
+                <input
+                  type="number"
+                  class="svb-time-input"
+                  data-key="parent1"
+                  value="0"
+                  min="0"
+                  step="1"
+                  style="width: 90px; padding: 2px 4px; font-size: 12px;"
+                >
+              </div>
+            </div>
+
+            <div class="svb-vid-controls">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent1">► Play</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent1" style="display:none;">❚❚ Pause</button>
+              <div id="svb-vid-time-parent1" class="svb-btn ghost">00:00 / 00:00</div>
+
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent1">🔇 Mute</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent1" style="display:none;">🔈 Unmute</button>
+              <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent1" min="0" max="1" step="0.05" value="0.8">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="parent1">📌 Log frame</button>
+            </div>
+
+            <div class="svb-note" style="margin-top: 4px;">
+              <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+            </div>
+
+            <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+              <label>
+                X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-x"
+                  type="number"
+                  value="166"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-range-name="parent1_x"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_x"
+                  value="166"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-val-id="val-parent1-x"
+                  data-key-up="ArrowRight"
+                  data-key-down="ArrowLeft"
+                />
+              </label>
+
+              <label>
+                Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-y"
+                  type="number"
+                  value="0"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-range-name="parent1_y"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_y"
+                  value="0"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-val-id="val-parent1-y"
+                  data-key-up="ArrowDown"
+                  data-key-down="ArrowUp"
+                />
+              </label>
+
+              <label>
+                Scale
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-scale"
+                  type="number"
+                  value="75"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="parent1_scale"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_scale"
+                  value="75"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-parent1-scale"
+                  data-key-up="="
+                  data-key-down="-"
+                />
+              </label>
+
+              <label>
+                Scale Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-scale-y"
+                  type="number"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="parent1_scale_y"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_scale_y"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-parent1-scale-y"
+                />
+              </label>
+
+              <label>
+                Skew X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-skew"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="parent1_skew"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_skew"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-parent1-skew"
+                />
+              </label>
+
+              <label>
+                Skew Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-skew-y"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="parent1_skew_y"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_skew_y"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-parent1-skew-y"
+                />
+              </label>
+
+              <label>
+                Angle
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-angle"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="parent1_angle"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_angle"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-parent1-angle"
+                  data-key-up="."
+                  data-key-down=","
+                />
+              </label>
+
+              <label>
+                Radius
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-radius"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-range-name="parent1_radius"
+                />
+                px
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_radius"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-val-id="val-parent1-radius"
+                  data-key-up="]"
+                  data-key-down="["
+                />
+              </label>
+
+              <label>
+                Прозорість:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-opacity"
+                  type="number"
+                  value="100"
+                  min="30"
+                  max="100"
+                  step="1"
+                  data-range-name="parent1_opacity"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_opacity"
+                  min="30"
+                  max="100"
+                  step="1"
+                  value="100"
+                  data-val-id="val-parent1-opacity"
+                />
+              </label>
+
+              <label>
+                Світлі краї:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent1-glow"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-range-name="parent1_glow"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent1_glow"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="0"
+                  data-val-id="val-parent1-glow"
+                />
+              </label>
+            </div>
+
+            <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото матері)</span>
+          </div>
+
+          <!-- PARENT2 -->
+          <div class="svb-drop" data-photo="parent2">
+            <div class="svb-field">
+              <span class="svb-label">Фото матері</span>
+              <input class="svb-input" type="file" name="photo_parent2" accept="image/*" required>
+            </div>
+
+            <div class="svb-vid-preview" id="svb-vid-preview-parent2">
+              <video id="svb-video-parent2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+              <img id="img-parent2" alt="Фото тут" />
+            </div>
+
+            <div class="svb-vid-seek-bar-container">
+              <input
+                type="range"
+                class="svb-range svb-seek-bar"
+                data-vid-ctrl="seek"
+                data-key="parent2"
+                min="0"
+                value="0"
+                step="0.001"
+              >
+              <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <span>Час, мс:</span>
+                <input
+                  type="number"
+                  class="svb-time-input"
+                  data-key="parent2"
+                  value="0"
+                  min="0"
+                  step="1"
+                  style="width: 90px; padding: 2px 4px; font-size: 12px;"
+                >
+              </div>
+            </div>
+
+            <div class="svb-vid-controls">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent2">► Play</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent2" style="display:none;">❚❚ Pause</button>
+              <div id="svb-vid-time-parent2" class="svb-btn ghost">00:00 / 00:00</div>
+
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent2">🔇 Mute</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent2" style="display:none;">🔈 Unmute</button>
+              <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent2" min="0" max="1" step="0.05" value="0.8">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="parent2">📌 Log frame</button>
+            </div>
+
+            <div class="svb-note" style="margin-top: 4px;">
+              <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+            </div>
+
+            <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+              <label>
+                X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-x"
+                  type="number"
+                  value="166"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-range-name="parent2_x"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_x"
+                  value="166"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-val-id="val-parent2-x"
+                  data-key-up="ArrowRight"
+                  data-key-down="ArrowLeft"
+                />
+              </label>
+
+              <label>
+                Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-y"
+                  type="number"
+                  value="0"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-range-name="parent2_y"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_y"
+                  value="0"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-val-id="val-parent2-y"
+                  data-key-up="ArrowDown"
+                  data-key-down="ArrowUp"
+                />
+              </label>
+
+              <label>
+                Scale
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-scale"
+                  type="number"
+                  value="75"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="parent2_scale"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_scale"
+                  value="75"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-parent2-scale"
+                  data-key-up="="
+                  data-key-down="-"
+                />
+              </label>
+
+              <label>
+                Scale Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-scale-y"
+                  type="number"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="parent2_scale_y"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_scale_y"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-parent2-scale-y"
+                />
+              </label>
+
+              <label>
+                Skew X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-skew"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="parent2_skew"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_skew"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-parent2-skew"
+                />
+              </label>
+
+              <label>
+                Skew Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-skew-y"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="parent2_skew_y"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_skew_y"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-parent2-skew-y"
+                />
+              </label>
+
+              <label>
+                Angle
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-angle"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="parent2_angle"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_angle"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-parent2-angle"
+                  data-key-up="."
+                  data-key-down=","
+                />
+              </label>
+
+              <label>
+                Radius
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-radius"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-range-name="parent2_radius"
+                />
+                px
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_radius"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-val-id="val-parent2-radius"
+                  data-key-up="]"
+                  data-key-down="["
+                />
+              </label>
+
+              <label>
+                Прозорість:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-opacity"
+                  type="number"
+                  value="100"
+                  min="30"
+                  max="100"
+                  step="1"
+                  data-range-name="parent2_opacity"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_opacity"
+                  min="30"
+                  max="100"
+                  step="1"
+                  value="100"
+                  data-val-id="val-parent2-opacity"
+                />
+              </label>
+
+              <label>
+                Світлі краї:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-parent2-glow"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-range-name="parent2_glow"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="parent2_glow"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="0"
+                  data-val-id="val-parent2-glow"
+                />
+              </label>
+            </div>
+
+            <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото батька)</span>
+          </div>
+
+          <!-- EXTRA2 (04:18 scene) -->
+          <div class="svb-drop" data-photo="extra2">
+            <div class="svb-field">
+              <span class="svb-label">Додаткове фото (сцена 04:18)</span>
+              <input class="svb-input" type="file" name="photo_extra2" accept="image/*">
+            </div>
+
+            <div class="svb-vid-preview" id="svb-vid-preview-extra2">
+              <video id="svb-video-extra2"
+                     src="<?php echo esc_url($template_url); ?>"
+                     playsinline loop></video>
+              <img id="img-extra2" alt="Фото тут" />
+            </div>
+
+            <div class="svb-vid-seek-bar-container">
+              <input
+                type="range"
+                class="svb-range svb-seek-bar"
+                data-vid-ctrl="seek"
+                data-key="extra2"
+                min="0"
+                value="0"
+                step="0.001"
+              >
+              <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <span>Час, мс:</span>
+                <input
+                  type="number"
+                  class="svb-time-input"
+                  data-key="extra2"
+                  value="0"
+                  min="0"
+                  step="1"
+                  style="width: 90px; padding: 2px 4px; font-size: 12px;"
+                >
+              </div>
+            </div>
+
+            <div class="svb-vid-controls">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="play"  data-key="extra2">► Play</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="extra2" style="display:none;">❚❚ Pause</button>
+              <div id="svb-vid-time-extra2" class="svb-btn ghost">00:00 / 00:00</div>
+
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="mute"   data-key="extra2">🔇 Mute</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="extra2" style="display:none;">🔈 Unmute</button>
+              <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="extra2" min="0" max="1" step="0.05" value="0.8">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="extra2">📌 Log frame</button>
+            </div>
+
+            <div class="svb-note" style="margin-top: 4px;">
+              <b>Керування:</b> ті ж самі слайдери, що й для інших фото.
+            </div>
+
+            <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+              <label>
+                X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-x"
+                  type="number"
+                  value="775"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-range-name="extra2_x"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_x"
+                  value="775"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-val-id="val-extra2-x"
+                  data-key-up="ArrowRight"
+                  data-key-down="ArrowLeft"
+                />
+              </label>
+
+              <label>
+                Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-y"
+                  type="number"
+                  value="405"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-range-name="extra2_y"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_y"
+                  value="405"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-val-id="val-extra2-y"
+                  data-key-up="ArrowDown"
+                  data-key-down="ArrowUp"
+                />
+              </label>
+
+              <label>
+                Scale
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-scale"
+                  type="number"
+                  value="31"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="extra2_scale"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_scale"
+                  value="31"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-extra2-scale"
+                  data-key-up="="
+                  data-key-down="-"
+                />
+              </label>
+
+              <label>
+                Scale Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-scale-y"
+                  type="number"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="extra2_scale_y"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_scale_y"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-extra2-scale-y"
+                />
+              </label>
+
+              <label>
+                Skew X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-skew"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="extra2_skew"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_skew"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-extra2-skew"
+                />
+              </label>
+
+              <label>
+                Skew Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-skew-y"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="extra2_skew_y"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_skew_y"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-extra2-skew-y"
+                />
+              </label>
+
+              <label>
+                Angle
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-angle"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="extra2_angle"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_angle"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-extra2-angle"
+                  data-key-up="."
+                  data-key-down=","
+                />
+              </label>
+
+              <label>
+                Radius
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-radius"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-range-name="extra2_radius"
+                />
+                px
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_radius"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-val-id="val-extra2-radius"
+                  data-key-up="]"
+                  data-key-down="["
+                />
+              </label>
+
+              <label>
+                Прозорість:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-opacity"
+                  type="number"
+                  value="100"
+                  min="30"
+                  max="100"
+                  step="1"
+                  data-range-name="extra2_opacity"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_opacity"
+                  min="30"
+                  max="100"
+                  step="1"
+                  value="100"
+                  data-val-id="val-extra2-opacity"
+                />
+              </label>
+
+              <label>
+                Світлі краї:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra2-glow"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-range-name="extra2_glow"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra2_glow"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="0"
+                  data-val-id="val-extra2-glow"
+                />
+              </label>
+            </div>
+
+            <span class="svb-note">Інтервал: 04:18:11–04:21:21 (додаткове фото в середині відео)</span>
+          </div>
+
+          <!-- EXTRA (final scene) -->
+          <div class="svb-drop" data-photo="extra">
+            <div class="svb-field">
+              <span class="svb-label">Додаткове фото</span>
+              <input class="svb-input" type="file" name="photo_extra" accept="image/*">
+            </div>
+
+            <div class="svb-vid-preview" id="svb-vid-preview-extra">
+              <video id="svb-video-extra" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
+              <img id="img-extra" alt="Фото тут" />
+            </div>
+
+            <div class="svb-vid-seek-bar-container">
+              <input
+                type="range"
+                class="svb-range svb-seek-bar"
+                data-vid-ctrl="seek"
+                data-key="extra"
+                min="0"
+                value="0"
+                step="0.001"
+              >
+              <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                <span>Час, мс:</span>
+                <input
+                  type="number"
+                  class="svb-time-input"
+                  data-key="extra"
+                  value="0"
+                  min="0"
+                  step="1"
+                  style="width: 90px; padding: 2px 4px; font-size: 12px;"
+                >
+              </div>
+            </div>
+
+            <div class="svb-vid-controls">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="extra">► Play</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="extra" style="display:none;">❚❚ Pause</button>
+              <div id="svb-vid-time-extra" class="svb-btn ghost">00:00 / 00:00</div>
+
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="extra">🔇 Mute</button>
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="extra" style="display:none;">🔈 Unmute</button>
+              <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="extra" min="0" max="1" step="0.05" value="0.8">
+              <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="extra">📌 Log frame</button>
+            </div>
+
+            <div class="svb-note" style="margin-top: 4px;">
+              <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+            </div>
+
+            <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
+              <label>
+                X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-x"
+                  type="number"
+                  value="775"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-range-name="extra_x"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_x"
+                  value="775"
+                  min="-1000"
+                  max="2500"
+                  step="5"
+                  data-val-id="val-extra-x"
+                  data-key-up="ArrowRight"
+                  data-key-down="ArrowLeft"
+                />
+              </label>
+
+              <label>
+                Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-y"
+                  type="number"
+                  value="405"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-range-name="extra_y"
+                />
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_y"
+                  value="405"
+                  min="-1000"
+                  max="2000"
+                  step="5"
+                  data-val-id="val-extra-y"
+                  data-key-up="ArrowDown"
+                  data-key-down="ArrowUp"
+                />
+              </label>
+
+              <label>
+                Scale
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-scale"
+                  type="number"
+                  value="31"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="extra_scale"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_scale"
+                  value="31"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-extra-scale"
+                  data-key-up="="
+                  data-key-down="-"
+                />
+              </label>
+
+              <label>
+                Scale Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-scale-y"
+                  type="number"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-range-name="extra_scale_y"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_scale_y"
+                  value="100"
+                  min="10"
+                  max="200"
+                  step="1"
+                  data-val-id="val-extra-scale-y"
+                />
+              </label>
+
+              <label>
+                Skew X
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-skew"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="extra_skew"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_skew"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-extra-skew"
+                />
+              </label>
+
+              <label>
+                Skew Y
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-skew-y"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="extra_skew_y"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_skew_y"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-extra-skew-y"
+                />
+              </label>
+
+              <label>
+                Angle
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-angle"
+                  type="number"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-range-name="extra_angle"
+                />
+                °
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_angle"
+                  value="0"
+                  min="-45"
+                  max="45"
+                  step="1"
+                  data-val-id="val-extra-angle"
+                  data-key-up="."
+                  data-key-down=","
+                />
+              </label>
+
+              <label>
+                Radius
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-radius"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-range-name="extra_radius"
+                />
+                px
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_radius"
+                  value="0"
+                  min="0"
+                  max="200"
+                  step="1"
+                  data-val-id="val-extra-radius"
+                  data-key-up="]"
+                  data-key-down="["
+                />
+              </label>
+
+              <label>
+                Прозорість:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-opacity"
+                  type="number"
+                  value="100"
+                  min="30"
+                  max="100"
+                  step="1"
+                  data-range-name="extra_opacity"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_opacity"
+                  min="30"
+                  max="100"
+                  step="1"
+                  value="100"
+                  data-val-id="val-extra-opacity"
+                />
+              </label>
+
+              <label>
+                Світлі краї:
+                <input
+                  class="svb-val svb-val-input"
+                  id="val-extra-glow"
+                  type="number"
+                  value="0"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-range-name="extra_glow"
+                />
+                %
+                <input
+                  class="svb-range svb-key-control"
+                  type="range"
+                  name="extra_glow"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="0"
+                  data-val-id="val-extra-glow"
+                />
+              </label>
+            </div>
+
+            <span class="svb-note">Інтервал: 07:06:00–07:11:13 (додаткове фото у фінальній сцені)</span>
+          </div>
         </div>
 
-        <div class="svb-note" style="margin-top: 4px;">
-           <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
+        <div class="svb-actions">
+          <button class="svb-btn ghost" type="button" id="svb-back-2">Назад</button>
+          <button class="svb-btn primary" type="button" id="svb-next-2">Далі</button>
         </div>
-
-        <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-            <label>X<span class="svb-val" id="val-child1-x">785</span>
-                <input class="svb-range svb-key-control" type="range" name="child1_x" value="785" min="-1000" max="2500" step="5" data-val-id="val-child1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
-            </label>
-            <label>Y<span class="svb-val" id="val-child1-y">315</span>
-                <input class="svb-range svb-key-control" type="range" name="child1_y" value="315" min="-1000" max="2000" step="5" data-val-id="val-child1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
-            </label>
-            <label>Scale<span class="svb-val" id="val-child1-scale">29</span>%
-                <input class="svb-range svb-key-control" type="range" name="child1_scale" value="29" min="10" max="200" step="1" data-val-id="val-child1-scale" data-key-up="=" data-key-down="-"/>
-            </label>
-            <label>Scale Y<span class="svb-val" id="val-child1-scale-y">100</span>%
-                <input class="svb-range svb-key-control" type="range" name="child1_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-child1-scale-y"/>
-            </label>
-            <label>Skew X<span class="svb-val" id="val-child1-skew">0</span>°
-                <input class="svb-range svb-key-control" type="range" name="child1_skew" value="0" min="-45" max="45" step="1" data-val-id="val-child1-skew"/>
-            </label>
-            <label>Skew Y<span class="svb-val" id="val-child1-skew-y">0</span>°
-                <input class="svb-range svb-key-control" type="range" name="child1_skew_y" value="0" min="-45" max="45" step="1" data-val-id="val-child1-skew-y"/>
-            </label>
-            <label>Angle<span class="svb-val" id="val-child1-angle">4</span>°
-                <input class="svb-range svb-key-control" type="range" name="child1_angle" value="4" min="-45" max="45" step="1" data-val-id="val-child1-angle" data-key-up="." data-key-down=","/>
-            </label>
-            <label>Radius<span class="svb-val" id="val-child1-radius">30</span>px
-                <input class="svb-range svb-key-control" type="range" name="child1_radius" value="30" min="0" max="200" step="1" data-val-id="val-child1-radius" data-key-up="]" data-key-down="["/>
-            </label>
-            <label>
-    Прозорість:
-    <span class="svb-val" id="val-child1-opacity">100</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="child1_opacity"
-        min="30"
-        max="100"
-        step="1"
-        value="100"
-        data-val-id="val-child1-opacity"
-    />
-</label>
-
-<label>
-    Світлі краї:
-    <span class="svb-val" id="val-child1-glow">0</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="child1_glow"
-        min="0"
-        max="100"
-        step="1"
-        value="0"
-        data-val-id="val-child1-glow"
-    />
-</label>
-
-        </div>
-        <span class="svb-note">Інтервали: 00:54:20–00:58:25 та 04:18:11–04:21:21</span>
-    </div>
-    <div class="svb-drop" data-photo="child2">
-      <div class="svb-field"><span class="svb-label">Фото дитини 2</span><input class="svb-input" type="file" name="photo_child2" accept="image/*" required></div>
-
-      <div class="svb-vid-preview" id="svb-vid-preview-child2">
-        <video id="svb-video-child2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
-        <img id="img-child2" alt="Фото тут" />
-      </div>
-
-      <div class="svb-vid-seek-bar-container">
-        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="child2" min="0" value="0" step="0.1">
-      </div>
-      <div class="svb-vid-controls">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="child2">► Play</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="child2" style="display:none;">❚❚ Pause</button>
-        <div id="svb-vid-time-child2" class="svb-btn ghost">00:00 / 00:00</div>
-
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="child2">🔇 Mute</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="child2" style="display:none;">🔈 Unmute</button>
-        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="child2" min="0" max="1" step="0.05" value="0.8">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="child2">📌 Log frame</button>
-
-      </div>
-
-      <div class="svb-note" style="margin-top: 4px;">
-        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
-      </div>
-
-      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-        <label>X<span class="svb-val" id="val-child2-x">1156</span>
-          <input class="svb-range svb-key-control" type="range" name="child2_x" value="1156" min="-1000" max="2500" step="5" data-val-id="val-child2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
-        </label>
-        <label>Y<span class="svb-val" id="val-child2-y">250</span>
-          <input class="svb-range svb-key-control" type="range" name="child2_y" value="250" min="-1000" max="2000" step="5" data-val-id="val-child2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
-        </label>
-        <label>Scale<span class="svb-val" id="val-child2-scale">33</span>%
-          <input class="svb-range svb-key-control" type="range" name="child2_scale" value="33" min="10" max="200" step="1" data-val-id="val-child2-scale" data-key-up="=" data-key-down="-"/>
-        </label>
-        <label>Scale Y<span class="svb-val" id="val-child2-scale-y">100</span>%
-          <input class="svb-range svb-key-control" type="range" name="child2_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-child2-scale-y"/>
-        </label>
-        <label>Skew X<span class="svb-val" id="val-child2-skew">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="child2_skew" value="0" min="-45" max="45" step="1" data-val-id="val-child2-skew"/>
-        </label>
-        <label>Skew Y<span class="svb-val" id="val-child2-skew-y">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="child2_skew_y" value="0" min="-45" max="45" step="1" data-val-id="val-child2-skew-y"/>
-        </label>
-        <label>Angle<span class="svb-val" id="val-child2-angle">10</span>°
-          <input class="svb-range svb-key-control" type="range" name="child2_angle" value="10" min="-45" max="45" step="1" data-val-id="val-child2-angle" data-key-up="." data-key-down=","/>
-        </label>
-        <label>Radius<span class="svb-val" id="val-child2-radius">0</span>px
-          <input class="svb-range svb-key-control" type="range" name="child2_radius" value="0" min="0" max="200" step="1" data-val-id="val-child2-radius" data-key-up="]" data-key-down="["/>
-        </label>
-        <label>
-    Прозорість:
-    <span class="svb-val" id="val-child2-opacity">100</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="child2_opacity"
-        min="30"
-        max="100"
-        step="1"
-        value="100"
-        data-val-id="val-child2-opacity"
-    />
-</label>
-
-<label>
-    Світлі краї:
-    <span class="svb-val" id="val-child2-glow">0</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="child2_glow"
-        min="0"
-        max="100"
-        step="1"
-        value="0"
-        data-val-id="val-child2-glow"
-    />
-</label>
-
-      </div>
-      <span class="svb-note">Інтервали: 02:17:14–02:21:25 та 07:04:23–07:11:13</span>
-    </div>
-    <div class="svb-drop" data-photo="parent1">
-      <div class="svb-field"><span class="svb-label">Фото батька</span><input class="svb-input" type="file" name="photo_parent1" accept="image/*" required></div>
-
-      <div class="svb-vid-preview" id="svb-vid-preview-parent1">
-        <video id="svb-video-parent1" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
-        <img id="img-parent1" alt="Фото тут" />
-      </div>
-
-      <div class="svb-vid-seek-bar-container">
-        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="parent1" min="0" value="0" step="0.1">
-      </div>
-      <div class="svb-vid-controls">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent1">► Play</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent1" style="display:none;">❚❚ Pause</button>
-        <div id="svb-vid-time-parent1" class="svb-btn ghost">00:00 / 00:00</div>
-
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent1">🔇 Mute</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent1" style="display:none;">🔈 Unmute</button>
-        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent1" min="0" max="1" step="0.05" value="0.8">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="parent1">📌 Log frame</button>
-
-      </div>
-
-      <div class="svb-note" style="margin-top: 4px;">
-        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
-      </div>
-
-      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-        <label>X<span class="svb-val" id="val-parent1-x">166</span>
-          <input class="svb-range svb-key-control" type="range" name="parent1_x" value="166" min="-1000" max="2500" step="5" data-val-id="val-parent1-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
-        </label>
-        <label>Y<span class="svb-val" id="val-parent1-y">0</span>
-          <input class="svb-range svb-key-control" type="range" name="parent1_y" value="0" min="-1000" max="2000" step="5" data-val-id="val-parent1-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
-        </label>
-        <label>Scale<span class="svb-val" id="val-parent1-scale">75</span>%
-          <input class="svb-range svb-key-control" type="range" name="parent1_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent1-scale" data-key-up="=" data-key-down="-"/>
-        </label>
-        <label>Scale Y<span class="svb-val" id="val-parent1-scale-y">100</span>%
-          <input class="svb-range svb-key-control" type="range" name="parent1_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-parent1-scale-y"/>
-        </label>
-        <label>Skew X<span class="svb-val" id="val-parent1-skew">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="parent1_skew" value="0" min="-45" max="45" step="1" data-val-id="val-parent1-skew"/>
-        </label>
-        <label>Skew Y<span class="svb-val" id="val-parent1-skew-y">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="parent1_skew_y" value="0" min="-45" max="45" step="1" data-val-id="val-parent1-skew-y"/>
-        </label>
-        <label>Angle<span class="svb-val" id="val-parent1-angle">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="parent1_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent1-angle" data-key-up="." data-key-down=","/>
-        </label>
-        <label>Radius<span class="svb-val" id="val-parent1-radius">0</span>px
-          <input class="svb-range svb-key-control" type="range" name="parent1_radius" value="0" min="0" max="200" step="1" data-val-id="val-parent1-radius" data-key-up="]" data-key-down="["/>
-        </label>
-        <label>
-    Прозорість:
-    <span class="svb-val" id="val-parent1-opacity">100</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="parent1_opacity"
-        min="30"
-        max="100"
-        step="1"
-        value="100"
-        data-val-id="val-parent1-opacity"
-    />
-</label>
-
-<label>
-    Світлі краї:
-    <span class="svb-val" id="val-parent1-glow">0</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="parent1_glow"
-        min="0"
-        max="100"
-        step="1"
-        value="0"
-        data-val-id="val-parent1-glow"
-    />
-</label>
-
-      </div>
-      <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото матері)</span>
-    </div>
-    <div class="svb-drop" data-photo="parent2">
-      <div class="svb-field"><span class="svb-label">Фото матері</span><input class="svb-input" type="file" name="photo_parent2" accept="image/*" required></div>
-
-      <div class="svb-vid-preview" id="svb-vid-preview-parent2">
-        <video id="svb-video-parent2" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
-        <img id="img-parent2" alt="Фото тут" />
-      </div>
-
-      <div class="svb-vid-seek-bar-container">
-        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="parent2" min="0" value="0" step="0.1">
-      </div>
-      <div class="svb-vid-controls">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="parent2">► Play</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="parent2" style="display:none;">❚❚ Pause</button>
-        <div id="svb-vid-time-parent2" class="svb-btn ghost">00:00 / 00:00</div>
-
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="parent2">🔇 Mute</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="parent2" style="display:none;">🔈 Unmute</button>
-        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="parent2" min="0" max="1" step="0.05" value="0.8">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="parent2">📌 Log frame</button>
-
-      </div>
-
-      <div class="svb-note" style="margin-top: 4px;">
-        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
-      </div>
-
-      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-        <label>X<span class="svb-val" id="val-parent2-x">166</span>
-          <input class="svb-range svb-key-control" type="range" name="parent2_x" value="166" min="-1000" max="2500" step="5" data-val-id="val-parent2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
-        </label>
-        <label>Y<span class="svb-val" id="val-parent2-y">0</span>
-          <input class="svb-range svb-key-control" type="range" name="parent2_y" value="0" min="-1000" max="2000" step="5" data-val-id="val-parent2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
-        </label>
-        <label>Scale<span class="svb-val" id="val-parent2-scale">75</span>%
-          <input class="svb-range svb-key-control" type="range" name="parent2_scale" value="75" min="10" max="200" step="1" data-val-id="val-parent2-scale" data-key-up="=" data-key-down="-"/>
-        </label>
-        <label>Scale Y<span class="svb-val" id="val-parent2-scale-y">100</span>%
-          <input class="svb-range svb-key-control" type="range" name="parent2_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-parent2-scale-y"/>
-        </label>
-        <label>Skew X<span class="svb-val" id="val-parent2-skew">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="parent2_skew" value="0" min="-45" max="45" step="1" data-val-id="val-parent2-skew"/>
-        </label>
-        <label>Skew Y<span class="svb-val" id="val-parent2-skew-y">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="parent2_skew_y" value="0" min="-45" max="45" step="1" data-val-id="val-parent2-skew-y"/>
-        </label>
-        <label>Angle<span class="svb-val" id="val-parent2-angle">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="parent2_angle" value="0" min="-45" max="45" step="1" data-val-id="val-parent2-angle" data-key-up="." data-key-down=","/>
-        </label>
-        <label>Radius<span class="svb-val" id="val-parent2-radius">0</span>px
-          <input class="svb-range svb-key-control" type="range" name="parent2_radius" value="0" min="0" max="200" step="1" data-val-id="val-parent2-radius" data-key-up="]" data-key-down="["/>
-        </label>
-                <label>
-    Прозорість:
-    <span class="svb-val" id="val-parent2-opacity">100</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="parent2_opacity"
-        min="30"
-        max="100"
-        step="1"
-        value="100"
-        data-val-id="val-parent2-opacity"
-    />
-</label>
-
-<label>
-    Світлі краї:
-    <span class="svb-val" id="val-parent2-glow">0</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="parent2_glow"
-        min="0"
-        max="100"
-        step="1"
-        value="0"
-        data-val-id="val-parent2-glow"
-    />
-</label>
-      </div>
-      <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото батька)</span>
-    </div>
-
-        <!-- НОВОЕ: дополнительное фото для сцены 04:18 -->
-    <div class="svb-drop" data-photo="extra2">
-      <div class="svb-field">
-        <span class="svb-label">Додаткове фото (сцена 04:18)</span>
-        <input class="svb-input" type="file" name="photo_extra2" accept="image/*">
-      </div>
-
-      <div class="svb-vid-preview" id="svb-vid-preview-extra2">
-        <video id="svb-video-extra2"
-               src="<?php echo esc_url($template_url); ?>"
-               playsinline loop></video>
-        <img id="img-extra2" alt="Фото тут" />
-      </div>
-
-      <div class="svb-vid-seek-bar-container">
-        <input type="range"
-               class="svb-range svb-seek-bar"
-               data-vid-ctrl="seek"
-               data-key="extra2"
-               min="0" value="0" step="0.1">
-      </div>
-
-      <div class="svb-vid-controls">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="play"  data-key="extra2">► Play</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="extra2" style="display:none;">❚❚ Pause</button>
-        <div id="svb-vid-time-extra2" class="svb-btn ghost">00:00 / 00:00</div>
-
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute"   data-key="extra2">🔇 Mute</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="extra2" style="display:none;">🔈 Unmute</button>
-        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="extra2" min="0" max="1" step="0.05" value="0.8">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="extra2">📌 Log frame</button>
-      </div>
-
-      <div class="svb-note" style="margin-top: 4px;">
-        <b>Керування:</b> ті ж самі слайдери, що й для інших фото.
-      </div>
-
-      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-        <label>X<span class="svb-val" id="val-extra2-x">775</span>
-          <input class="svb-range svb-key-control" type="range" name="extra2_x" value="775" min="-1000" max="2500" step="5" data-val-id="val-extra2-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
-        </label>
-        <label>Y<span class="svb-val" id="val-extra2-y">405</span>
-          <input class="svb-range svb-key-control" type="range" name="extra2_y" value="405" min="-1000" max="2000" step="5" data-val-id="val-extra2-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
-        </label>
-        <label>Scale<span class="svb-val" id="val-extra2-scale">31</span>%
-          <input class="svb-range svb-key-control" type="range" name="extra2_scale" value="31" min="10" max="200" step="1" data-val-id="val-extra2-scale" data-key-up="=" data-key-down="-"/>
-        </label>
-        <label>Scale Y<span class="svb-val" id="val-extra2-scale-y">100</span>%
-          <input class="svb-range svb-key-control" type="range" name="extra2_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-extra2-scale-y"/>
-        </label>
-        <label>Skew X<span class="svb-val" id="val-extra2-skew">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="extra2_skew" value="0" min="-45" max="45" step="1" data-val-id="val-extra2-skew"/>
-        </label>
-        <label>Skew Y<span class="svb-val" id="val-extra2-skew-y">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="extra2_skew_y" value="0" min="-45" max="45" step="1" data-val-id="val-extra2-skew-y"/>
-        </label>
-        <label>Angle<span class="svb-val" id="val-extra2-angle">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="extra2_angle" value="0" min="-45" max="45" step="1" data-val-id="val-extra2-angle" data-key-up="." data-key-down=","/>
-        </label>
-        <label>Radius<span class="svb-val" id="val-extra2-radius">0</span>px
-          <input class="svb-range svb-key-control" type="range" name="extra2_radius" value="0" min="0" max="200" step="1" data-val-id="val-extra2-radius" data-key-up="]" data-key-down="["/>
-        </label>
-                <label>
-    Прозорість:
-    <span class="svb-val" id="val-extra2-opacity">100</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="extra2_opacity"
-        min="30"
-        max="100"
-        step="1"
-        value="100"
-        data-val-id="val-extra2-opacity"
-    />
-</label>
-
-<label>
-    Світлі краї:
-    <span class="svb-val" id="val-extra2-glow">0</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="extra2_glow"
-        min="0"
-        max="100"
-        step="1"
-        value="0"
-        data-val-id="val-extra2-glow"
-    />
-</label>
-      </div>
-
-      <span class="svb-note">Інтервал: 04:18:11–04:21:21 (додаткове фото в середині відео)</span>
-    </div>
-
-    <div class="svb-drop" data-photo="extra">
-      <div class="svb-field"><span class="svb-label">Додаткове фото</span><input class="svb-input" type="file" name="photo_extra" accept="image/*"></div>
-
-      <div class="svb-vid-preview" id="svb-vid-preview-extra">
-        <video id="svb-video-extra" src="<?php echo esc_url($template_url); ?>" playsinline loop></video>
-        <img id="img-extra" alt="Фото тут" />
-      </div>
-
-      <div class="svb-vid-seek-bar-container">
-        <input type="range" class="svb-range svb-seek-bar" data-vid-ctrl="seek" data-key="extra" min="0" value="0" step="0.1">
-      </div>
-      <div class="svb-vid-controls">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="play" data-key="extra">► Play</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="pause" data-key="extra" style="display:none;">❚❚ Pause</button>
-        <div id="svb-vid-time-extra" class="svb-btn ghost">00:00 / 00:00</div>
-
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="mute" data-key="extra">🔇 Mute</button>
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="unmute" data-key="extra" style="display:none;">🔈 Unmute</button>
-        <input type="range" class="svb-range" data-vid-ctrl="volume" data-key="extra" min="0" max="1" step="0.05" value="0.8">
-        <button type="button" class="svb-btn ghost" data-vid-ctrl="log" data-key="extra">📌 Log frame</button>
-
-      </div>
-
-      <div class="svb-note" style="margin-top: 4px;">
-        <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
-      </div>
-
-      <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
-        <label>X<span class="svb-val" id="val-extra-x">775</span>
-          <input class="svb-range svb-key-control" type="range" name="extra_x" value="775" min="-1000" max="2500" step="5" data-val-id="val-extra-x" data-key-up="ArrowRight" data-key-down="ArrowLeft"/>
-        </label>
-        <label>Y<span class="svb-val" id="val-extra-y">405</span>
-          <input class="svb-range svb-key-control" type="range" name="extra_y" value="405" min="-1000" max="2000" step="5" data-val-id="val-extra-y" data-key-up="ArrowDown" data-key-down="ArrowUp"/>
-        </label>
-        <label>Scale<span class="svb-val" id="val-extra-scale">31</span>%
-          <input class="svb-range svb-key-control" type="range" name="extra_scale" value="31" min="10" max="200" step="1" data-val-id="val-extra-scale" data-key-up="=" data-key-down="-"/>
-        </label>
-        <label>Scale Y<span class="svb-val" id="val-extra-scale-y">100</span>%
-          <input class="svb-range svb-key-control" type="range" name="extra_scale_y" value="100" min="10" max="200" step="1" data-val-id="val-extra-scale-y"/>
-        </label>
-        <label>Skew X<span class="svb-val" id="val-extra-skew">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="extra_skew" value="0" min="-45" max="45" step="1" data-val-id="val-extra-skew"/>
-        </label>
-        <label>Skew Y<span class="svb-val" id="val-extra-skew-y">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="extra_skew_y" value="0" min="-45" max="45" step="1" data-val-id="val-extra-skew-y"/>
-        </label>
-        <label>Angle<span class="svb-val" id="val-extra-angle">0</span>°
-          <input class="svb-range svb-key-control" type="range" name="extra_angle" value="0" min="-45" max="45" step="1" data-val-id="val-extra-angle" data-key-up="." data-key-down=","/>
-        </label>
-        <label>Radius<span class="svb-val" id="val-extra-radius">0</span>px
-          <input class="svb-range svb-key-control" type="range" name="extra_radius" value="0" min="0" max="200" step="1" data-val-id="val-extra-radius" data-key-up="]" data-key-down="["/>
-        </label>
-                <label>
-    Прозорість:
-    <span class="svb-val" id="val-extra-opacity">100</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="extra_opacity"
-        min="30"
-        max="100"
-        step="1"
-        value="100"
-        data-val-id="val-extra-opacity"
-    />
-</label>
-
-<label>
-    Світлі краї:
-    <span class="svb-val" id="val-extra-glow">0</span>%
-    <input
-        class="svb-range svb-key-control"
-        type="range"
-        name="extra_glow"
-        min="0"
-        max="100"
-        step="1"
-        value="0"
-        data-val-id="val-extra-glow"
-    />
-</label>
-      </div>
-      <span class="svb-note">Інтервал: 07:06:00–07:11:13 (додаткове фото у фінальній сцені)</span>
-    </div>
-  </div>
-
-  <div class="svb-actions">
-    <button class="svb-btn ghost" type="button" id="svb-back-2">Назад</button>
-    <button class="svb-btn primary" type="button" id="svb-next-2">Далі</button>
-  </div>
-</section>
+      </section>
 
       <section class="svb-step" data-step="3">
         <p><span class="svb-spinner" id="svb-spin" style="display:none"></span><strong id="svb-status">Починаємо збірку відео…</strong></p>
@@ -1368,9 +2744,11 @@ function svb_render_form() {
 
 <div class="svb-screenlock" id="svb-lock">
   <div class="svb-screenlock__spinner" id="svb-spinner-box">
-    <span id="svb-lock-percent">0%</span> </div>
+    <span id="svb-lock-percent">0%</span>
+  </div>
   <div class="svb-screenlock__txt" id="svb-lock-text">Формуємо відео… будь ласка, не закривайте сторінку</div>
 </div>
+
 
 <script>
 const SVB_AUDIO = <?php echo wp_json_encode($audio_catalog, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
@@ -1387,12 +2765,19 @@ const $  = (sel,root=document) => root.querySelector(sel);
 const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
 
 let svbCurrentSampleAudio = null;
-
 function svbFormatTime(seconds) {
-    const min = Math.floor(seconds / 60);
-    const sec = Math.floor(seconds % 60);
-    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    const totalMs = Math.round(seconds * 1000);
+    const ms = totalMs % 1000;
+    const totalSec = (totalMs - ms) / 1000;
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return (
+        `${min.toString().padStart(2, '0')}:` +
+        `${sec.toString().padStart(2, '0')}.` +
+        `${ms.toString().padStart(3, '0')}`
+    );
 }
+
 
 
 function svbSetStep(n){
@@ -1517,17 +2902,49 @@ function svbBindPhotoInputs(){
       const ctrl = document.querySelector(`input[name="${key}_${k}"]`);
       if(ctrl){
         ctrl.addEventListener('input', (e)=> {
-          const valId = e.target.dataset.valId;
-          if(valId) {
-            const valEl = document.getElementById(valId);
-            if(valEl) valEl.textContent = e.target.value;
+                    const valId = e.target.dataset.valId;
+          if (valId) {
+              const valEl = document.getElementById(valId);
+              if (valEl) {
+                  if (valEl.tagName === 'INPUT') {
+                      valEl.value = e.target.value;
+                  } else {
+                      valEl.textContent = e.target.value;
+                  }
+              }
           }
           svbUpdatePreviewTransform(key);
           svbDebugPrint(key);
+
         });
       }
     });
   });
+}
+function svbBindNumericControls() {
+    $$('.svb-val-input').forEach(inp => {
+        const rangeName = inp.dataset.rangeName;
+        if (!rangeName) return;
+        const range = document.querySelector(`input[name="${rangeName}"]`);
+        if (!range) return;
+
+        inp.addEventListener('input', () => {
+            let v = parseFloat(inp.value);
+            if (!Number.isFinite(v)) return;
+
+            const min = parseFloat(range.min);
+            const max = parseFloat(range.max);
+            if (Number.isFinite(min)) v = Math.max(min, v);
+            if (Number.isFinite(max)) v = Math.min(max, v);
+
+            const step = parseFloat(range.step) || 1;
+            v = Math.round(v / step) * step;
+
+            range.value = v;
+            // триггерим обычный обработчик слайдера
+            range.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    });
 }
 
 
@@ -1746,50 +3163,44 @@ if (typeof geom.glow === 'number' && geom.glow > 0) {
 }
 
 
-/** overlay_json — просто снимаем geom для всех ключей */
-/** overlay_json — снимаем ровно ту же геометрию, что и превью */
+/**
+ * overlay_json — фронт единожды считает геометрию и отдаёт на бэкенд
+ * НОРМАЛИЗОВАННЫЙ ЦЕНТР bbox в координатах итогового видео 854×480.
+ * FFmpeg больше НИЧЕГО сам не пересчитывает «по-своему».
+ */
 function svbCollectOverlayData() {
   const data = {};
   const keys = ['child1', 'child2', 'parent1', 'parent2', 'extra', 'extra2'];
 
   keys.forEach((key) => {
     const img = document.getElementById('img-' + key);
-    const preview = document.getElementById('svb-vid-preview-' + key);
-    if (!img || !preview) return;
+    if (!img) return;
 
     const geom = svbComputeOverlayGeom(key);
     if (!geom) return;
 
+    // центр предсказанного bbox в модели 854×480
     const cx_model = geom.final_x + geom.w_pred / 2;
     const cy_model = geom.final_y + geom.h_pred / 2;
-    const cx_norm  = cx_model / SVB_MODEL_W;
-    const cy_norm  = cy_model / SVB_MODEL_H;
 
     data[key] = {
-      x_norm:  geom.x_norm,
-      y_norm:  geom.y_norm,
+      // единственный источник истины для ffmpeg:
+      cx_norm: cx_model / SVB_MODEL_W,
+      cy_norm: cy_model / SVB_MODEL_H,
+
+      // для отладки можно сохранить размер bbox:
       w_pred:  geom.w_pred,
       h_pred:  geom.h_pred,
-      x:       geom.final_x,
-      y:       geom.final_y,
 
-      cx_norm,
-      cy_norm,
-
-      // то, что едет на бэкенд
+      // управляющие параметры трансформации
       scale:   geom.scale,
       scaleY:  geom.scaleY,
       skew:    geom.skew,
       skewY:   geom.skewY,
       angle:   geom.angle,
       radius:  geom.radius,
-
-      // НОВОЕ
       opacity: geom.opacity,
-      glow:    geom.glow,
-
-      video:      geom.video,
-      source_png: geom.source_png
+      glow:    geom.glow
     };
   });
 
@@ -1799,6 +3210,7 @@ function svbCollectOverlayData() {
   }
   return data;
 }
+
 
 
 // ... (Функции autoBindNameAudio, autoBindAgeAudio, buildSoundMap - БЕЗ ИЗМЕНЕНИЙ) ...
@@ -2013,10 +3425,17 @@ function svbHandleError(data) {
   $('#svb-status').textContent = 'Сталася помилка при генерації відео';
   const res = $('#svb-result');
   if (res) {
-    const msg = (data && data.msg) || 'Unknown error';
-    const cmd = (data && data.cmd) || '';
-    const log = (data && data.log) || '';
-    const hint= (data && data.hint) || '';
+    let msg, cmd = '', log = '', hint = '';
+
+    if (typeof data === 'string') {
+      msg = data;                 // ← показываем строку, если это строка
+    } else {
+      msg  = (data && data.msg)  || 'Unknown error';
+      cmd  = (data && data.cmd)  || '';
+      log  = (data && data.log)  || '';
+      hint = (data && data.hint) || '';
+    }
+
     res.style.display = 'block';
     res.innerHTML = `<details open>
        <summary><b>Деталі помилки</b></summary>
@@ -2027,6 +3446,7 @@ function svbHandleError(data) {
     </details>`;
   }
 }
+
 
 // ... (Функции подсказок для имени - БЕЗ ИЗМЕНЕНИЙ) ...
 const _svbNorm = s => (s||'').toString().toLowerCase().trim().replace(/[\s_\-’']/g,'');
@@ -2094,6 +3514,7 @@ function svbBindRealtimeControls() {
         const unmuteBtn = document.querySelector(`[data-vid-ctrl="unmute"][data-key="${key}"]`);
         const volumeSlider = document.querySelector(`[data-vid-ctrl="volume"][data-key="${key}"]`);
         const seekSlider = document.querySelector(`[data-vid-ctrl="seek"][data-key="${key}"]`);
+                const timeInputMs = document.querySelector(`.svb-time-input[data-key="${key}"]`);
 
                 // === ВКЛЮЧАЕМ ВИДИМОСТЬ КАРТИНКИ ПО ТАЙМИНГАМ ===
                 // === ВКЛЮЧАЕМ ВИДИМОСТЬ КАРТИНКИ ПО ТАЙМИНГАМ ===
@@ -2146,19 +3567,26 @@ function svbBindRealtimeControls() {
         });
 
         let totalDuration = 0;
-          vid.addEventListener('loadedmetadata', () => {
+        vid.addEventListener('loadedmetadata', () => {
             totalDuration = vid.duration;
             seekSlider.max = totalDuration;
-            timeEl.textContent = `${svbFormatTime(0)} / ${svbFormatTime(totalDuration)}`;
 
+            let start = 0;
             if (windows && windows.length) {
-                const start = windows[0][0] || 0;
-                vid.currentTime = start;
-                seekSlider.value = start;
-                if (img) updateImgVisibility(start);
-                timeEl.textContent = `${svbFormatTime(start)} / ${svbFormatTime(totalDuration)}`;
+                start = windows[0][0] || 0;
+            }
+
+            vid.currentTime = start;
+            seekSlider.value = start;
+            if (img) updateImgVisibility(start);
+
+            timeEl.textContent = `${svbFormatTime(start)} / ${svbFormatTime(totalDuration)}`;
+
+            if (timeInputMs) {
+                timeInputMs.value = Math.round(start * 1000);
             }
         });
+
 
 
 
@@ -2167,20 +3595,29 @@ function svbBindRealtimeControls() {
             if (!seekSlider.matches(':active')) {
                 seekSlider.value = currentTime;
             }
-            timeEl.textContent = `${svbFormatTime(currentTime)} / ${svbFormatTime(totalDuration)}`;
+            timeEl.textContent = `${svbFormatTime(currentTime)} / ${svbFormatTime(totalDuration || vid.duration || 0)}`;
+            if (timeInputMs) {
+                timeInputMs.value = Math.round(currentTime * 1000);
+            }
             if (img) {
                 updateImgVisibility(currentTime);
             }
         });
 
 
+
         seekSlider.addEventListener('input', (e) => {
             const t = parseFloat(e.target.value) || 0;
             vid.currentTime = t;
+            if (timeInputMs) {
+                timeInputMs.value = Math.round(t * 1000);
+            }
+            timeEl.textContent = `${svbFormatTime(t)} / ${svbFormatTime(totalDuration || vid.duration || 0)}`;
             if (img) {
                 updateImgVisibility(t);
             }
         });
+
 
 
         const updateMuteButtons = (isMuted) => {
@@ -2214,6 +3651,24 @@ function svbBindRealtimeControls() {
         vid.volume = parseFloat(volumeSlider.value || '0.8');
         vid.muted = vid.volume < 0.05;
         updateMuteButtons(vid.muted);
+                if (timeInputMs) {
+            timeInputMs.addEventListener('input', () => {
+                const ms = parseFloat(timeInputMs.value);
+                if (!Number.isFinite(ms)) return;
+
+                const dur = totalDuration || vid.duration || 0;
+                let sec = ms / 1000;
+                if (sec < 0) sec = 0;
+                if (dur > 0 && sec > dur) sec = dur;
+
+                vid.currentTime = sec;
+                seekSlider.value = sec;
+                timeEl.textContent = `${svbFormatTime(sec)} / ${svbFormatTime(dur)}`;
+                if (img) {
+                    updateImgVisibility(sec);
+                }
+            });
+        }
 
         const controls = {};
         const logBtn = document.querySelector(`[data-vid-ctrl="log"][data-key="${key}"]`);
@@ -2270,6 +3725,7 @@ svbBindAudioPreview();
 svbBindPhotoInputs(); 
 svbEnsureWrappers();
 svbBindNameSuggest();
+svbBindNumericControls();
 svbBuildNameSuggest(document.querySelector('input[name="name_text"]')?.value || '');
 document.querySelector('select[name="gender"]').addEventListener('change', autoBindNameAudio);
 document.querySelector('input[name="name_text"]').addEventListener('input', autoBindNameAudio);
@@ -2447,8 +3903,8 @@ $HAS_BLEND        = svb_ff_has_filter($ffmpeg, 'blend');
     }
 
 
-// === Разбор overlay_json (только нормализованные координаты + размеры bbox от клиента) ===
-// === Разбор overlay_json: фронт присылает готовую геометрию ===
+// === Разбор overlay_json: фронт прислал ГОТОВУЮ геометрию ===
+// Центр (cx_norm/cy_norm) — одна система координат для браузера и FFmpeg.
 if (!empty($_POST['overlay_json'])) {
     $overlay_decoded = json_decode(stripslashes($_POST['overlay_json']), true);
 
@@ -2463,33 +3919,32 @@ if (!empty($_POST['overlay_json'])) {
                 continue;
             }
 
-            // Управляющие параметры (для логов / отладки)
-            // Управляющие параметры (для логов / отладки)
-foreach ([
-    's'        => 'scale',
-    'sy'       => 'scaleY',
-    'skew'     => 'skew',
-    'skew_y'   => 'skewY',
-    'angle'    => 'angle',
-    'radius'   => 'radius',
-    'opacity'  => 'opacity',
-    'glow'     => 'glow',
-] as $k => $src) {
-    if (isset($rec[$src]) && is_numeric($rec[$src])) {
-        $val = (float)$rec[$src];
-        if ($src === 'radius') {
-            $pos[$pk][$k] = max(0, (int)round($val));
-        } elseif ($src === 'opacity' || $src === 'glow') {
-            $pos[$pk][$k] = max(0.0, min(100.0, $val)); // храним 0–100
-        } else {
-            $pos[$pk][$k] = $val;
-        }
-    }
-}
+            // управляющие параметры (всё, что крутит картинку)
+            foreach ([
+                's'       => 'scale',
+                'sy'      => 'scaleY',
+                'skew'    => 'skew',
+                'skew_y'  => 'skewY',
+                'angle'   => 'angle',
+                'radius'  => 'radius',
+                'opacity' => 'opacity',
+                'glow'    => 'glow',
+            ] as $k => $src) {
+                if (!isset($rec[$src]) || !is_numeric($rec[$src])) {
+                    continue;
+                }
+                $val = (float)$rec[$src];
 
+                if ($src === 'radius') {
+                    $pos[$pk][$k] = max(0, (int)round($val));          // px
+                } elseif ($src === 'opacity' || $src === 'glow') {
+                    $pos[$pk][$k] = max(0.0, min(100.0, $val));        // 0–100
+                } else {
+                    $pos[$pk][$k] = $val;                              // как есть
+                }
+            }
 
-
-            // Нормализованный ЦЕНТР (новый главный контракт)
+            // НОРМАЛИЗОВАННЫЙ центр bbox: 0..1 относительно 854×480
             if (isset($rec['cx_norm'])) {
                 $pos[$pk]['cx_norm'] = max(0.0, min(1.0, (float)$rec['cx_norm']));
             }
@@ -2497,22 +3952,13 @@ foreach ([
                 $pos[$pk]['cy_norm'] = max(0.0, min(1.0, (float)$rec['cy_norm']));
             }
 
-            // Старые поля — только для совместимости / дебага
-            if (isset($rec['x_norm'])) {
-                $pos[$pk]['x_norm'] = max(0.0, min(1.0, (float)$rec['x_norm']));
-            }
-            if (isset($rec['y_norm'])) {
-                $pos[$pk]['y_norm'] = max(0.0, min(1.0, (float)$rec['y_norm']));
-            }
+            // чисто для логов (ничего не используем для overlay)
             if (isset($rec['w_pred'])) {
                 $pos[$pk]['w_pred'] = (int)$rec['w_pred'];
             }
             if (isset($rec['h_pred'])) {
                 $pos[$pk]['h_pred'] = (int)$rec['h_pred'];
             }
-
-            // Координаты в пикселях больше не нужны
-            unset($pos[$pk]['x'], $pos[$pk]['y']);
         }
     }
 }
@@ -2607,7 +4053,7 @@ foreach ($photo_keys as $pk) {
     
     // --- (Сборка входов - без изменений) ---
     $inputs = [];
-    $inputs[] = '-threads 1 -i ' . escapeshellarg($template);
+    $inputs[] = '-i ' . escapeshellarg($template);
     $imgIndexMap = [];
     foreach ($photos as $k => $png) {
         $inputs[] = '-loop 1 -framerate 1 -i ' . escapeshellarg($png);
@@ -2646,7 +4092,7 @@ $addOverlay = function($key, $intervals) use (
     $idx = $imgIndexMap[$key];
     $p   = $pos[$key] ?? [];
 
-    // центр в нормированных координатах
+    // 1) Центр в нормированных координатах (общее между браузером и FFmpeg)
     $cx_norm = isset($p['cx_norm']) ? (float)$p['cx_norm'] : 0.5;
     $cy_norm = isset($p['cy_norm']) ? (float)$p['cy_norm'] : 0.5;
     $cx_norm = max(0.0, min(1.0, $cx_norm));
@@ -2655,7 +4101,7 @@ $addOverlay = function($key, $intervals) use (
     $cx = $cx_norm * $target_w;
     $cy = $cy_norm * $target_h;
 
-    // масштаб / вращение / skew
+    // 2) Масштаб и поворот/скошенность (то же, что крутится слайдерами)
     $scaleX = max(10, min(200, (int)round($p['s']  ?? 100))) / 100.0;
     $scaleY = max(10, min(200, (int)round($p['sy'] ?? 100))) / 100.0;
 
@@ -2670,16 +4116,19 @@ $addOverlay = function($key, $intervals) use (
     $opacity_val  = max(0.0, min(100.0, $opacity_val));
     $opacity_norm = $opacity_val / 100.0;
 
-    // базовый размер (как в превью)
+    // 3) Базовый размер «контента» (как в svbComputeOverlayGeom на фронте)
     $w_src = max(2, (int)round($target_w * $scaleX));
     $h_src = max(2, (int)round($w_src     * $scaleY));
 
-    // shear требует pad, чтобы не отрезало углы
+    // 4) Если есть shear — заранее добавляем паддинги, чтобы не резало углы
     $need_shear = $HAS_SHEAR && (abs($skewX_deg) > 0.001 || abs($skewY_deg) > 0.001);
-    $pad_x = $pad_y = 0;
+
+    $pad_x = 0;
+    $pad_y = 0;
     $w_padded = $w_src;
     $h_padded = $h_src;
-    $shx = $shy = 0.0;
+    $shx = 0.0;
+    $shy = 0.0;
 
     if ($need_shear) {
         $skewX_rad = $skewX_deg * (M_PI / 180.0);
@@ -2687,8 +4136,11 @@ $addOverlay = function($key, $intervals) use (
 
         $maxShiftX = abs(tan($skewX_rad)) * $h_src;
         $maxShiftY = abs(tan($skewY_rad)) * $w_src;
+
         $pad_margin = (int)ceil(max($maxShiftX, $maxShiftY));
-        if ($pad_margin < 0) $pad_margin = 0;
+        if ($pad_margin < 0) {
+            $pad_margin = 0;
+        }
 
         $pad_x = $pad_y = $pad_margin;
         $w_padded = $w_src + 2 * $pad_x;
@@ -2696,13 +4148,15 @@ $addOverlay = function($key, $intervals) use (
         if ($w_padded < 2) $w_padded = 2;
         if ($h_padded < 2) $h_padded = 2;
 
-        $shx = -tan($skewX_rad);
-        $shy =  tan($skewY_rad);
+        // X — как в CSS, Y — с инвертированным знаком, чтобы картинка не отражалась
+        $shx = tan($skewX_rad);
+        $shy = -tan($skewY_rad);
+
         $shx = max(-2.0, min(2.0, $shx));
         $shy = max(-2.0, min(2.0, $shy));
     }
 
-    // 1) scale / shear / rotate → RGBA
+    // 5) Строим цепочку фильтров для этого изображения
     $baseLabel = "{$key}s{$vcount}_b";
     $chain = "[{$idx}:v]scale={$w_src}:{$h_src}:force_original_aspect_ratio=disable,setsar=1";
 
@@ -2718,9 +4172,9 @@ $addOverlay = function($key, $intervals) use (
     $chain .= ",format=rgba[{$baseLabel}]";
     $filter[] = $chain;
 
-    // 2) при необходимости – глобальная прозрачность
     $currLabel = $baseLabel;
 
+    // 6) Глобальная прозрачность (Opacity), если не 100%
     if ($HAS_COLORCH && abs($opacity_norm - 1.0) > 0.0001) {
         $opLabel = "{$key}s{$vcount}_op";
         $line = "[{$currLabel}]colorchannelmixer=aa={$opacity_norm}";
@@ -2731,7 +4185,6 @@ $addOverlay = function($key, $intervals) use (
         $filter[] = $line;
         $currLabel = $opLabel;
     } elseif ($HAS_FIFO) {
-        // просто fifo, если фильтр есть, но прозрачность 100%
         $ffLabel = "{$key}s{$vcount}_ff";
         $line = "[{$currLabel}]fifo[{$ffLabel}]";
         $filter[] = $line;
@@ -2740,7 +4193,8 @@ $addOverlay = function($key, $intervals) use (
 
     $finalOut = $currLabel;
 
-    // 3) overlay по таймингам
+    // 7) Overlay: позиционирование ТОЛЬКО по центру
+    // w и h — реальные размеры результата после всех трансформаций
     $xExpr = sprintf('%.6F - w/2', $cx);
     $yExpr = sprintf('%.6F - h/2', $cy);
 
@@ -2756,6 +4210,7 @@ $addOverlay = function($key, $intervals) use (
     $vlabel = "[v{$vcount}]";
     $vcount++;
 
+    // лог для сверки с браузером
     svb_align_log($job_dir, "overlay.calc.{$key}", [
         'video_space' => ['W' => $target_w, 'H' => $target_h],
         'inputs'      => $p,
@@ -2778,6 +4233,7 @@ $addOverlay = function($key, $intervals) use (
         ],
     ]);
 };
+
 
 
 
