@@ -103,6 +103,42 @@ function svb_ts_to_seconds($ts) {
     return 0.0;
 }
 
+function svb_seconds_to_hms($sec) {
+    $sec = max(0, (float)$sec);
+    $h = floor($sec / 3600);
+    $m = floor(($sec % 3600) / 60);
+    $s = floor($sec % 60);
+    return sprintf('%02d:%02d:%02d', $h, $m, $s);
+}
+
+function svb_normalize_overlay_intervals(array $raw, array $defaults) {
+    foreach ($defaults as $key => $def) {
+        if (empty($raw[$key]) || !is_array($raw[$key])) {
+            continue;
+        }
+        $normalized = [];
+        foreach ($raw[$key] as $pair) {
+            if (!is_array($pair) || count($pair) < 2) {
+                continue;
+            }
+            $start = svb_ts_to_seconds($pair[0]);
+            $end   = svb_ts_to_seconds($pair[1]);
+            if (!is_numeric($start) || !is_numeric($end)) {
+                continue;
+            }
+            if ($end <= $start) {
+                continue;
+            }
+            $normalized[] = [svb_seconds_to_hms($start), svb_seconds_to_hms($end)];
+        }
+        if (!empty($normalized)) {
+            $defaults[$key] = $normalized;
+        }
+    }
+
+    return $defaults;
+}
+
 function svb_exec_find($bin) {
     $path = @shell_exec('command -v '.escapeshellarg($bin).' 2>/dev/null');
     if (!$path) $path = @shell_exec('which '.escapeshellarg($bin).' 2>/dev/null');
@@ -585,6 +621,10 @@ function svb_render_form() {
 }
 
 .svb-note { color:#666; font-size:12px; }
+.svb-intervals { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+.svb-intervals .svb-interval-input { font-family: monospace; font-size: 12px; min-height: 44px; }
+.svb-intervals .svb-note { margin: 0; }
+.svb-interval-input--invalid { border-color: #D62828; }
 .svb-audio-row { display:flex; align-items:center; gap:8px; }
 .svb-play { border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:#EEE; cursor:pointer; }
 .svb-step { display:none; }
@@ -757,6 +797,7 @@ function svb_render_form() {
 
     <form id="svb-form" enctype="multipart/form-data">
       <input type="hidden" name="_svb_nonce" value="<?php echo esc_attr($nonce); ?>" />
+      <input type="hidden" name="overlay_windows_json" id="svb-overlay-windows-json" value="" />
 
       <section class="svb-step active" data-step="1">
         <div class="svb-grid cols-2">
@@ -1144,7 +1185,15 @@ function svb_render_form() {
               </label>
             </div>
 
-            <span class="svb-note">Інтервали: 00:54:20–00:58:25 та 04:18:11–04:21:21</span>
+            <div class="svb-intervals" data-key="child1">
+              <label class="svb-label">Інтервали появи</label>
+              <textarea
+                class="svb-input svb-interval-input"
+                data-key="child1"
+                placeholder="00:00:00-00:00:00&#10;00:00:00-00:00:00"
+              ></textarea>
+              <span class="svb-note">Змініть час появи цього фото у відео.</span>
+            </div>
           </div>
 
           <!-- CHILD2 -->
@@ -1458,7 +1507,15 @@ function svb_render_form() {
               </label>
             </div>
 
-            <span class="svb-note">Інтервали: 02:17:14–02:21:25 та 07:04:23–07:11:13</span>
+            <div class="svb-intervals" data-key="child2">
+              <label class="svb-label">Інтервали появи</label>
+              <textarea
+                class="svb-input svb-interval-input"
+                data-key="child2"
+                placeholder="00:00:00-00:00:00&#10;00:00:00-00:00:00"
+              ></textarea>
+              <span class="svb-note">Змініть час появи цього фото у відео.</span>
+            </div>
           </div>
 
           <!-- PARENT1 -->
@@ -1772,7 +1829,15 @@ function svb_render_form() {
               </label>
             </div>
 
-            <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото матері)</span>
+            <div class="svb-intervals" data-key="parent1">
+              <label class="svb-label">Інтервали появи</label>
+              <textarea
+                class="svb-input svb-interval-input"
+                data-key="parent1"
+                placeholder="00:00:00-00:00:00"
+              ></textarea>
+              <span class="svb-note">Змініть час появи цього фото у відео.</span>
+            </div>
           </div>
 
           <!-- PARENT2 -->
@@ -2086,7 +2151,15 @@ function svb_render_form() {
               </label>
             </div>
 
-            <span class="svb-note">Інтервал: 06:35:03–06:43:13 (разом з фото батька)</span>
+            <div class="svb-intervals" data-key="parent2">
+              <label class="svb-label">Інтервали появи</label>
+              <textarea
+                class="svb-input svb-interval-input"
+                data-key="parent2"
+                placeholder="00:00:00-00:00:00"
+              ></textarea>
+              <span class="svb-note">Змініть час появи цього фото у відео.</span>
+            </div>
           </div>
 
           <!-- EXTRA2 (04:18 scene) -->
@@ -2402,7 +2475,15 @@ function svb_render_form() {
               </label>
             </div>
 
-            <span class="svb-note">Інтервал: 04:18:11–04:21:21 (додаткове фото в середині відео)</span>
+            <div class="svb-intervals" data-key="extra2">
+              <label class="svb-label">Інтервали появи</label>
+              <textarea
+                class="svb-input svb-interval-input"
+                data-key="extra2"
+                placeholder="00:00:00-00:00:00"
+              ></textarea>
+              <span class="svb-note">Додаткове фото у середині відео.</span>
+            </div>
           </div>
 
           <!-- EXTRA (final scene) -->
@@ -2716,7 +2797,15 @@ function svb_render_form() {
               </label>
             </div>
 
-            <span class="svb-note">Інтервал: 07:06:00–07:11:13 (додаткове фото у фінальній сцені)</span>
+            <div class="svb-intervals" data-key="extra">
+              <label class="svb-label">Інтервали появи</label>
+              <textarea
+                class="svb-input svb-interval-input"
+                data-key="extra"
+                placeholder="00:00:00-00:00:00"
+              ></textarea>
+              <span class="svb-note">Додаткове фото у фінальній сцені.</span>
+            </div>
           </div>
         </div>
 
@@ -2760,11 +2849,83 @@ const SVB_AJAX  = {
 const SVB_PROCESSED_PHOTO_SIZE = 709; // ширина/высота PNG после препроцессинга на сервере
 const SVB_PREVIEW_CAPS = <?php echo wp_json_encode($preview_caps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
 const SVB_OVERLAY_WINDOWS = <?php echo wp_json_encode($OVER, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
+const SVB_PHOTO_KEYS = ['child1', 'child2', 'parent1', 'parent2', 'extra', 'extra2'];
+const svbVisibilityUpdaters = {};
 
 const $  = (sel,root=document) => root.querySelector(sel);
 const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
 
 let svbCurrentSampleAudio = null;
+function svbSecondsToHms(sec){
+    const total = Math.max(0, Math.floor(sec || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+}
+function svbParseTsToSeconds(ts){
+    const parts = (ts||'').toString().trim().split(':').map(p=>p.trim());
+    if (parts.length !== 3) return NaN;
+    const [hh, mm, ss] = parts;
+    const h = parseInt(hh, 10), m = parseInt(mm, 10), s = parseInt(ss, 10);
+    if ([h,m,s].some(n => Number.isNaN(n) || n < 0)) return NaN;
+    return h * 3600 + m * 60 + s;
+}
+function svbGetOverlayWindows(key){
+    if (typeof SVB_OVERLAY_WINDOWS !== 'object' || !SVB_OVERLAY_WINDOWS[key]) return [];
+    return SVB_OVERLAY_WINDOWS[key];
+}
+function svbIntervalsToText(windows){
+    if (!Array.isArray(windows)) return '';
+    return windows.map(w => `${svbSecondsToHms(w[0]||0)}-${svbSecondsToHms(w[1]||0)}`).join('\n');
+}
+function svbParseIntervalInput(text){
+    const lines = (text||'').toString().split(/\n|;/).map(l => l.trim()).filter(Boolean);
+    const out = [];
+    lines.forEach(line => {
+        const norm = line.replace(/[\u2013\u2014]/g, '-');
+        const [a,b] = norm.split('-').map(p => p.trim());
+        if (!a || !b) return;
+        const aSec = svbParseTsToSeconds(a);
+        const bSec = svbParseTsToSeconds(b);
+        if (!Number.isFinite(aSec) || !Number.isFinite(bSec)) return;
+        if (bSec <= aSec) return;
+        out.push([aSec, bSec]);
+    });
+    return out;
+}
+function svbSyncOverlayIntervalsField(){
+    const hidden = document.getElementById('svb-overlay-windows-json');
+    if (!hidden) return {};
+    const payload = {};
+    SVB_PHOTO_KEYS.forEach(key => {
+        const win = svbGetOverlayWindows(key);
+        if (Array.isArray(win) && win.length) {
+            payload[key] = win.map(w => [svbSecondsToHms(w[0]||0), svbSecondsToHms(w[1]||0)]);
+        }
+    });
+    hidden.value = JSON.stringify(payload);
+    return payload;
+}
+function svbTriggerVisibilityUpdate(key){
+    const fn = svbVisibilityUpdaters[key];
+    if (typeof fn === 'function') fn();
+}
+function svbInitIntervalInputs(){
+    $$('.svb-interval-input').forEach(inp => {
+        const key = inp.dataset.key;
+        if (!key) return;
+        inp.value = svbIntervalsToText(svbGetOverlayWindows(key));
+        inp.addEventListener('input', () => {
+            const parsed = svbParseIntervalInput(inp.value);
+            SVB_OVERLAY_WINDOWS[key] = parsed;
+            inp.classList.toggle('svb-interval-input--invalid', parsed.length === 0);
+            svbSyncOverlayIntervalsField();
+            svbTriggerVisibilityUpdate(key);
+        });
+    });
+    svbSyncOverlayIntervalsField();
+}
 function svbFormatTime(seconds) {
     const totalMs = Math.round(seconds * 1000);
     const ms = totalMs % 1000;
@@ -3356,6 +3517,10 @@ async function svbStartGenerate(){
   $('#svb-status').textContent = 'Запускаємо процес...';
   const form = document.getElementById('svb-form');
   const fd = new FormData(form);
+  const overlayIntervals = svbSyncOverlayIntervalsField();
+  if (overlayIntervals) {
+    fd.set('overlay_windows_json', JSON.stringify(overlayIntervals));
+  }
   try {
     fd.append('overlay_json', JSON.stringify(svbCollectOverlayData()));
   } catch (jsonErr) {
@@ -3505,7 +3670,7 @@ function svbMarkTouched(key){
 }
 
 function svbBindRealtimeControls() {
-    ['child1', 'child2', 'parent1', 'parent2', 'extra', 'extra2'].forEach(key => {
+    SVB_PHOTO_KEYS.forEach(key => {
         const vid = document.getElementById(`svb-video-${key}`);
         const playBtn = document.querySelector(`[data-vid-ctrl="play"][data-key="${key}"]`);
         const pauseBtn = document.querySelector(`[data-vid-ctrl="pause"][data-key="${key}"]`);
@@ -3519,10 +3684,11 @@ function svbBindRealtimeControls() {
                 // === ВКЛЮЧАЕМ ВИДИМОСТЬ КАРТИНКИ ПО ТАЙМИНГАМ ===
                 // === ВКЛЮЧАЕМ ВИДИМОСТЬ КАРТИНКИ ПО ТАЙМИНГАМ ===
         const img = document.getElementById('img-' + key);
-        const windows = (typeof SVB_OVERLAY_WINDOWS === 'object' && SVB_OVERLAY_WINDOWS[key]) ? SVB_OVERLAY_WINDOWS[key] : [];
+        const getWindows = () => svbGetOverlayWindows(key);
         function isOn(t){
-            for (let i = 0; i < windows.length; i++){
-                const w = windows[i];
+            const win = getWindows();
+            for (let i = 0; i < win.length; i++){
+                const w = win[i];
                 if (t >= (w[0]||0) && t <= (w[1]||0)) return true;
             }
             return false;
@@ -3541,6 +3707,11 @@ function svbBindRealtimeControls() {
             // Начальное состояние до старта воспроизведения
             updateImgVisibility(0);
         }
+
+        svbVisibilityUpdaters[key] = () => {
+            const t = vid ? vid.currentTime : 0;
+            updateImgVisibility(t);
+        };
 
         if (!vid || !playBtn || !pauseBtn || !timeEl || !muteBtn || !unmuteBtn || !volumeSlider || !seekSlider) {
             return;
@@ -3572,8 +3743,9 @@ function svbBindRealtimeControls() {
             seekSlider.max = totalDuration;
 
             let start = 0;
-            if (windows && windows.length) {
-                start = windows[0][0] || 0;
+            const win = getWindows();
+            if (win && win.length) {
+                start = win[0][0] || 0;
             }
 
             vid.currentTime = start;
@@ -3722,7 +3894,8 @@ function svbEnsureWrappers(){
 // === ЗАПУСК ===
 svbPopulateSelects();
 svbBindAudioPreview();
-svbBindPhotoInputs(); 
+svbBindPhotoInputs();
+svbInitIntervalInputs();
 svbEnsureWrappers();
 svbBindNameSuggest();
 svbBindNumericControls();
@@ -4044,8 +4217,40 @@ foreach ($photo_keys as $pk) {
     $P_CHILD1 = [ ['00:54:20','00:58:25'] ];
     $P_CHILD2 = [ ['02:17:14','02:21:25'] ];
     $P_PARENTS= [ ['06:35:03','06:43:13'] ];
+    $P_PARENT1 = $P_PARENTS;
+    $P_PARENT2 = $P_PARENTS;
     $P_EXTRA  = [ ['07:06:00','07:11:13'] ];
     $P_EXTRA2 = [ ['04:18:11','04:21:21'] ];
+
+    $overlay_sets = [
+        'child1'  => $P_CHILD1,
+        'child2'  => $P_CHILD2,
+        'parent1' => $P_PARENT1,
+        'parent2' => $P_PARENT2,
+        'extra'   => $P_EXTRA,
+        'extra2'  => $P_EXTRA2,
+    ];
+
+    $overlay_raw = [];
+    if (!empty($_POST['overlay_windows_json'])) {
+        $decoded = json_decode(stripslashes($_POST['overlay_windows_json']), true);
+        if (is_array($decoded)) {
+            $overlay_raw = $decoded;
+            $overlay_sets = svb_normalize_overlay_intervals($decoded, $overlay_sets);
+        }
+    }
+
+    $P_CHILD1 = $overlay_sets['child1'];
+    $P_CHILD2 = $overlay_sets['child2'];
+    $P_PARENT1 = $overlay_sets['parent1'];
+    $P_PARENT2 = $overlay_sets['parent2'];
+    $P_PARENTS = $overlay_sets['parent1'];
+    $P_EXTRA = $overlay_sets['extra'];
+    $P_EXTRA2 = $overlay_sets['extra2'];
+
+    svb_dbg_write($job_dir, 'req.intervals.raw', $overlay_raw);
+    svb_dbg_write($job_dir, 'req.intervals.final', $overlay_sets);
+    svb_align_log($job_dir, 'intervals.final', $overlay_sets);
 
     // === НОВОЕ: ПОЛУЧАЕМ ДЛИТЕЛЬНОСТЬ ЗДЕСЬ, ДО ЗАПУСКА ===
     $tplDur = svb_ffprobe_duration($template);
@@ -4241,8 +4446,8 @@ $addOverlay = function($key, $intervals) use (
 
 $addOverlay('child1',  $P_CHILD1);
 $addOverlay('child2',  $P_CHILD2);
-$addOverlay('parent1', $P_PARENTS);
-$addOverlay('parent2', $P_PARENTS);
+$addOverlay('parent1', $P_PARENT1);
+$addOverlay('parent2', $P_PARENT2);
 $addOverlay('extra2',  $P_EXTRA2); // новая сцена 04:18
 $addOverlay('extra',   $P_EXTRA);  // финальная сцена
 
