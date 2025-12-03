@@ -392,23 +392,31 @@ function svb_scan_audio_catalog() {
         }
         $files = glob($dir . '*.{mp3,MP3,wav,WAV,m4a,M4A,ogg,OGG}', GLOB_BRACE) ?: [];
         foreach ($files as $f) {
-            $file = basename($f);
-            $label = pathinfo($file, PATHINFO_FILENAME);
-            if ($index) {
-                foreach ($index as $row) {
-                    if (!empty($row['file']) && $row['file'] === $file && !empty($row['label'])) {
-                        $label = $row['label']; break;
-                    }
-                }
-            }
-            $items[] = ['file'=>$file, 'url'=>$url.$file, 'label'=>$label];
+            $file  = basename($f);
+$label = null;
+
+if ($index) {
+    foreach ($index as $row) {
+        if (!empty($row['file']) && $row['file'] === $file && isset($row['label'])) {
+            $label = $row['label'];
+            break;
+        }
+    }
+}
+
+if ($label === null) {
+    continue;
+}
+
+$items[] = ['file' => $file, 'url' => $url.$file, 'label' => $label];
+
         }
         return $items;
     };
 
     $out['name']['boy']  = is_dir(SVB_PLUGIN_DIR.'audio/name/boy/')  ? $load_list(SVB_PLUGIN_DIR.'audio/name/boy/',  SVB_PLUGIN_URL.'audio/name/boy/')  : [];
     $out['name']['girl'] = is_dir(SVB_PLUGIN_DIR.'audio/name/girl/') ? $load_list(SVB_PLUGIN_DIR.'audio/name/girl/', SVB_PLUGIN_URL.'audio/name/girl/') : [];
-    $out['name']['root'] = is_dir(SVB_PLUGIN_DIR.'audio/name/')      ? $load_list(SVB_PLUGIN_DIR.'audio/name/',      SVB_PLUGIN_URL.'audio/name/')      : [];
+    $out['name']['root'] = [];
 
     foreach (['age','facts','hobby','praise','request'] as $cat) {
         $dir = SVB_PLUGIN_DIR."audio/{$cat}/";
@@ -458,13 +466,77 @@ function svb_schedule_cleanup($job_dir) {
 function svb_cleanup_job_cb($job_dir) { svb_rrmdir($job_dir); }
 
 function svb_render_form() {
-    $template_url = SVB_PLUGIN_URL . 'assets/template.mp4';
-    if (!file_exists(SVB_PLUGIN_DIR . 'assets/template.mp4')) {
-        $uploads = wp_upload_dir();
-        if (file_exists(trailingslashit($uploads['basedir']) . 'santa-template.mp4')) {
-            $template_url = trailingslashit($uploads['baseurl']) . 'santa-template.mp4';
-        }
-    }
+    // Конфигурация 4 видеошаблонов
+    $video_templates = array(
+        'video1' => array(
+            'label' => 'Шаблон 1',
+            'file'  => 'template1.mp4',
+            'url'   => SVB_PLUGIN_URL . 'assets/template1.mp4',
+        ),
+        'video2' => array(
+            'label' => 'Шаблон 2',
+            'file'  => 'template2.mp4',
+            'url'   => SVB_PLUGIN_URL . 'assets/template2.mp4',
+        ),
+        'video3' => array(
+            'label' => 'Шаблон 3',
+            'file'  => 'template3.mp4',
+            'url'   => SVB_PLUGIN_URL . 'assets/template3.mp4',
+        ),
+        'video4' => array(
+            'label' => 'Шаблон 4',
+            'file'  => 'template4.mp4',
+            'url'   => SVB_PLUGIN_URL . 'assets/template4.mp4',
+        ),
+    );
+
+// Переместили ВСЕ определения таймингов РАНЬШЕ, чем $selected_video_id
+$template_timings = array(
+    'video1' => array(
+        'child1'  => [ ['00:54:20','00:58:25'] ],
+        'child2'  => [ ['02:17:14','02:21:25'] ],
+        'parents' => [ ['06:35:03','06:43:13'] ],
+        'extra'   => [ ['07:06:00','07:11:13'] ],
+        'extra2'  => [ ['04:18:11','04:21:21'] ],
+    ),
+    'video2' => array(
+        'child1'  => [ ['01:29:29','01:39:11'], ['04:45:00','04:51:29'] ],
+        'child2'  => [ ['04:30:20','04:37:03'] ],
+        'parents' => [ ['02:42:20','02:49:27'] ],
+        'extra'   => [ ['07:00:00','07:10:00'] ],
+        'extra2'  => [ ['04:15:00','04:25:00'] ],
+    ),
+    'video3' => array(
+        'child1'  => [ ['01:33:20','01:43:04'] ],
+        'child2'  => [ ['05:07:18','05:12:15'] ],
+        'parents' => [ ['03:21:28','04:26:17'] ],
+        'extra'   => [ ['07:30:00','07:40:00'] ],
+        'extra2'  => [ ['04:30:00','04:40:00'] ],
+    ),
+    'video4' => array(
+        'child1'  => [ ['00:27:09','00:29:04'], ['07:01:10','07:08:09'] ],
+        'child2'  => [ ['03:02:03','03:12:27'], ['09:07:20','09:13:02'] ],
+        'parents' => [ ['04:11:06','04:15:26'] ],
+        'extra'   => [ ['06:50:00','07:00:00'] ],
+        'extra2'  => [ ['04:10:00','04:20:00'] ],
+    ),
+);
+
+// ✅ Получаем выбранное видео ОДИН РАЗ в правильном порядке
+$selected_video_id = isset($_POST['selected_video_id']) ? 
+    sanitize_text_field($_POST['selected_video_id']) : 'video1';
+
+// ✅ Валидируем видео ID
+if (!isset($video_templates[$selected_video_id])) {
+    $selected_video_id = 'video1';
+}
+
+// ✅ Получаем конфигурацию для выбранного видео
+$template_url = $video_templates[$selected_video_id]['url'];
+$default_segments = isset($template_timings[$selected_video_id]) ? 
+    $template_timings[$selected_video_id] : 
+    $template_timings['video1'];
+
 
 
     $audio_catalog = svb_scan_audio_catalog();
@@ -475,14 +547,8 @@ function svb_render_form() {
     $preview_caps = [
         'perspective' => $ffmpeg_path ? svb_ff_has_filter($ffmpeg_path, 'perspective') : false,
     ];
+    $is_admin = is_user_logged_in() && current_user_can('manage_options');
 
-$default_segments = [
-    'child1'  => [ ['00:54:20','00:58:25'] ],
-    'child2'  => [ ['02:17:14','02:21:25'] ],
-    'parents' => [ ['06:35:03','06:43:13'] ],
-    'extra'   => [ ['07:06:00','07:11:13'] ],
-    'extra2'  => [ ['04:18:11','04:21:21'] ],
-];
 
 $user_segments = [];
 
@@ -581,14 +647,82 @@ $P_EXTRA2  = $segments['extra2'];
 
 .svb-vid-preview {
   position: relative;
-  aspect-ratio: 1.777; 
   background: #000;
   border-radius: 12px;
   overflow: hidden;
   width: 100%;
+  max-width: 854px;
+  margin: 0 auto;
+  aspect-ratio: 16 / 9;
 }
 
-.svb-vid-preview { width: 854px; height: 480px; }
+
+.svb-vid-preview video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.svb-vid-preview img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: center center;
+  will-change: transform, top, left, width, height;
+}
+
+
+.svb-photo-grid {
+  display: grid;
+  gap: 18px;
+}
+
+@media (min-width: 760px) {
+  .svb-photo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.svb-drop {
+  background: #fdfdfd;
+  border-radius: 16px;
+  border: 1px solid #ececec;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 1024px) {
+  .svb-drop {
+    padding: 18px;
+  }
+}
+
+.svb-admin-only {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7f7;
+  border: 1px dashed #f4c2c2;
+}
+
+.svb-admin-only .svb-vid-controls {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.svb-admin-only .svb-controls {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (min-width: 1200px) {
+  .svb-admin-only .svb-controls {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
 
 .svb-vid-preview video {
   position: absolute;
@@ -725,20 +859,90 @@ $P_EXTRA2  = $segments['extra2'];
   font-size: 11px;
 }
 
+/* === Селектор видеошаблонов === */
+.svb-video-option {
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.svb-video-option:hover {
+  border-color: #d62828;
+  box-shadow: 0 4px 12px rgba(214, 40, 40, 0.15);
+}
+
+.svb-video-option.active {
+  border-color: #d62828;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(214, 40, 40, 0.25);
+}
+
+.svb-video-option video {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.svb-video-option-label {
+  padding: 10px 12px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  background: #fff;
+}
+
+.svb-video-option.active .svb-video-option-label {
+  background: #d62828;
+  color: #fff;
+}
+
+
+
 </style>
+<?php if ( ! $is_admin ) : ?>
+<style>
+  .svb-admin-only {
+    display: none !important;
+  }
+
+  /* Скрываем текстовые debug-блоки, которые svbDebugPrint добавляет */
+  [id^="svb-dbg-"] {
+    display: none !important;
+  }
+</style>
+<?php endif; ?>
 
 <div class="svb-wrap">
-  <div class="svb-card">
-    <div class="svb-header">
-      <div class="svb-stepper">
-        <span class="svb-dot active" id="svb-dot-1">1</span>
-        <span class="svb-dot muted" id="svb-dot-2">2</span>
-        <span class="svb-dot muted" id="svb-dot-3">3</span>
-      </div>
-      <h2 class="svb-title" id="svb-title">Крок 1 — Дані дитини</h2>
-    </div>
+      <div class="svb-card">
+        <!-- НОВЫЙ БЛОК: ВЫБОР ВИДЕОШАБЛОНА -->
+        <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
+            <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600;">Вибір шаблону відео</h3>
+            <div id="svb-video-selector" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                <!-- Примеры для каждого видео будут добавлены JS -->
+            </div>
+        </div>
 
-    <form id="svb-form" enctype="multipart/form-data">
+        <div class="svb-header">
+            <div class="svb-stepper">
+                <span class="svb-dot active" id="svb-dot-1">1</span>
+                <span class="svb-dot muted" id="svb-dot-2">2</span>
+                <span class="svb-dot muted" id="svb-dot-3">3</span>
+            </div>
+            <h2 class="svb-title" id="svb-title">Крок 1 — Дані дитини</h2>
+        </div>
+
+        <form id="svb-form" enctype="multipart/form-data">
+            <input type="hidden" name="selected_video_id" id="selected_video_id" value="<?php echo esc_attr($selected_video_id); ?>" />
+
       <input type="hidden" name="_svb_nonce" value="<?php echo esc_attr($nonce); ?>" />
       <input type="hidden" name="svb_segments" id="svb_segments" value="" />
 
@@ -867,7 +1071,7 @@ $P_EXTRA2  = $segments['extra2'];
             <div class="svb-note" style="margin-top: 4px;">
               <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
             </div>
-
+<div class="svb-admin-only">
             <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
               <label>
                 X
@@ -1137,6 +1341,7 @@ $P_EXTRA2  = $segments['extra2'];
     <button type="button" class="svb-btn ghost svb-int-reset" data-key="child1">Скинути за замовчуванням</button>
   </div>
 </div>
+</div>
 
           </div>
 
@@ -1190,7 +1395,7 @@ $P_EXTRA2  = $segments['extra2'];
             <div class="svb-note" style="margin-top: 4px;">
               <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
             </div>
-
+<div class="svb-admin-only">
             <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
               <label>
                 X
@@ -1460,6 +1665,7 @@ $P_EXTRA2  = $segments['extra2'];
     <button type="button" class="svb-btn ghost svb-int-reset" data-key="child2">Скинути за замовчуванням</button>
   </div>
 </div>
+</div>
 
           </div>
 
@@ -1513,7 +1719,7 @@ $P_EXTRA2  = $segments['extra2'];
             <div class="svb-note" style="margin-top: 4px;">
               <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
             </div>
-
+<div class="svb-admin-only">
             <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
               <label>
                 X
@@ -1783,7 +1989,7 @@ $P_EXTRA2  = $segments['extra2'];
     <button type="button" class="svb-btn ghost svb-int-reset" data-key="parents">Скинути за замовчуванням</button>
   </div>
 </div>
-
+</div>
           </div>
 
           <!-- PARENT2 -->
@@ -1836,7 +2042,7 @@ $P_EXTRA2  = $segments['extra2'];
             <div class="svb-note" style="margin-top: 4px;">
               <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
             </div>
-
+<div class="svb-admin-only">
             <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
               <label>
                 X
@@ -2098,7 +2304,7 @@ $P_EXTRA2  = $segments['extra2'];
             </div>
 
             <span class="svb-note">Інтервал береться такий самий, як для фото батька.</span>
-
+</div>
           </div>
 
           <!-- EXTRA2 (04:18 scene) -->
@@ -2153,7 +2359,7 @@ $P_EXTRA2  = $segments['extra2'];
             <div class="svb-note" style="margin-top: 4px;">
               <b>Керування:</b> ті ж самі слайдери, що й для інших фото.
             </div>
-
+<div class="svb-admin-only">
             <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
               <label>
                 X
@@ -2423,7 +2629,7 @@ $P_EXTRA2  = $segments['extra2'];
     <button type="button" class="svb-btn ghost svb-int-reset" data-key="extra2">Скинути за замовчуванням</button>
   </div>
 </div>
-
+</div>
           </div>
 
           <!-- EXTRA (final scene) -->
@@ -2476,7 +2682,7 @@ $P_EXTRA2  = $segments['extra2'];
             <div class="svb-note" style="margin-top: 4px;">
               <b>Керування:</b> Фокус на слайдерах. <b>Стрілки</b> (X/Y), <b>+ / -</b> (Scale), <b>[ / ]</b> (Radius), <b>, / .</b> (Angle).
             </div>
-
+<div class="svb-admin-only">
             <div class="svb-controls" style="grid-template-columns: 1fr; gap: 12px;">
               <label>
                 X
@@ -2746,7 +2952,7 @@ $P_EXTRA2  = $segments['extra2'];
     <button type="button" class="svb-btn ghost svb-int-reset" data-key="extra">Скинути за замовчуванням</button>
   </div>
 </div>
-
+</div>
           </div>
         </div>
 
@@ -2782,11 +2988,131 @@ $P_EXTRA2  = $segments['extra2'];
 
 <script>
 const SVB_AUDIO = <?php echo wp_json_encode($audio_catalog, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
+
+const SVB_VIDEO_TEMPLATES = <?php echo wp_json_encode($video_templates, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
+
+const SVB_TEMPLATE_TIMINGS = <?php echo wp_json_encode($template_timings, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
+
+function svbUpdateTimingsForVideo(videoId) {
+    if (!SVB_TEMPLATE_TIMINGS[videoId]) {
+        console.warn(`⚠️ No timings defined for video: ${videoId}`);
+        return false;
+    }
+
+    const newTimings = SVB_TEMPLATE_TIMINGS[videoId];
+    console.log(`📹 Updating timings for: ${videoId}`, newTimings);
+    
+     SVB_OVERLAY_WINDOWS.child1 = newTimings.child1.map(pair => 
+        [svbTSToSeconds(pair), svbTSToSeconds(pair)]
+    );
+    
+    SVB_OVERLAY_WINDOWS.child2 = newTimings.child2.map(pair => 
+        [svbTSToSeconds(pair), svbTSToSeconds(pair)]
+    );
+    
+    const parentTimings = newTimings.parents.map(pair => 
+        [svbTSToSeconds(pair), svbTSToSeconds(pair)]
+    );
+    SVB_OVERLAY_WINDOWS.parent1 = parentTimings;
+    SVB_OVERLAY_WINDOWS.parent2 = parentTimings;
+    
+   if (newTimings.extra) {
+        SVB_OVERLAY_WINDOWS.extra = newTimings.extra.map(pair => 
+            [svbTSToSeconds(pair), svbTSToSeconds(pair)]
+        );
+    }
+    
+    if (newTimings.extra2) {
+        SVB_OVERLAY_WINDOWS.extra2 = newTimings.extra2.map(pair => 
+            [svbTSToSeconds(pair), svbTSToSeconds(pair)]
+        );
+    }
+
+    console.log('✅ Updated SVB_OVERLAY_WINDOWS:', SVB_OVERLAY_WINDOWS);
+
+    svbInitIntervalUi();
+    svbBindIntervalUi();
+
+    const videoIdField = document.getElementById('selected_video_id');
+    if (videoIdField) {
+        videoIdField.value = videoId;
+    }
+
+    return true;
+}
+
+
+
+function svbRenderVideoSelector() {
+    const selector = document.getElementById('svb-video-selector');
+    if (!selector) return;
+
+    selector.innerHTML = '';
+    
+    for (const [vidId, vidConfig] of Object.entries(SVB_VIDEO_TEMPLATES)) {
+        const option = document.createElement('div');
+        option.className = 'svb-video-option';
+        if (vidId === SVB_SELECTED_VIDEO_ID) {
+            option.classList.add('active');
+        }
+
+        option.innerHTML = `
+            <video style="width:100%; aspect-ratio: 16/9; object-fit: cover;">
+                <source src="${vidConfig.url}" type="video/mp4">
+            </video>
+            <div class="svb-video-option-label">${vidConfig.label}</div>
+        `;
+
+option.addEventListener('click', () => {
+    document.querySelectorAll('.svb-video-option').forEach(el => {
+        el.classList.remove('active');
+    });
+    option.classList.add('active');
+
+    const videoUrl = vidConfig.url;
+    document.querySelectorAll('.svb-vid-preview video').forEach(video => {
+        const prevSrc = video.src;
+        video.src = videoUrl;
+        video.currentTime = 0;  
+        video.load();
+        
+
+        if (prevSrc !== videoUrl) {
+            console.log(`📹 Video source updated from ${prevSrc} to ${videoUrl}`);
+        }
+    });
+
+    // 3. Обновляем глобальный ID выбранного видео
+    SVB_SELECTED_VIDEO_ID = vidId;
+    
+    // 4. КРИТИЧЕСКИ ВАЖНО: Обновляем тайминги в SVB_OVERLAY_WINDOWS
+    svbUpdateTimingsForVideo(vidId);
+    
+    // 5. ✅ Обновляем скрытое поле формы для отправки на backend
+    const videoIdField = document.getElementById('selected_video_id');
+    if (videoIdField) {
+        videoIdField.value = vidId;
+    }
+    
+    // 6. ✅ Логируем для отладки
+    console.log(`✅ Selected video: ${vidId}`, SVB_OVERLAY_WINDOWS);
+});
+
+
+
+        selector.appendChild(option);
+    }
+}
+
+// Текущее выбранное видео
+let SVB_SELECTED_VIDEO_ID = <?php echo wp_json_encode($selected_video_id); ?>;
+
 const SVB_AJAX  = {
     url: <?php echo wp_json_encode($ajax_url); ?>,
     nonce: <?php echo wp_json_encode($nonce); ?>,
     video_template: <?php echo wp_json_encode($template_url); ?>
 };
+
 const SVB_PROCESSED_PHOTO_SIZE = 709; 
 const SVB_PREVIEW_CAPS = <?php echo wp_json_encode($preview_caps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
 const SVB_OVERLAY_WINDOWS = <?php echo wp_json_encode($OVER, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
@@ -3033,8 +3359,8 @@ function svbPopulateSelects(){
     if (cat === 'name') return;
     const items = SVB_AUDIO[cat] || [];
     sel.innerHTML = items.length
-      ? items.map(i=>`<option value="${i.file}">${i.label||i.file}</option>`).join('')
-      : '<option value="">— немає файлів —</option>';
+  ? items.map(i=>`<option value="${i.file}">${i.label}</option>`).join('')
+  : '<option value="">— немає файлів —</option>';
   });
   updateNameOptions();
   const gsel = document.querySelector('select[name="gender"]');
@@ -3054,9 +3380,9 @@ function updateNameOptions(){
   const sel = document.querySelector('select[name="name_audio"]');
   if (!sel) return;
   const items = getNameOptionsByGender();
-  sel.innerHTML = items.length
-    ? items.map(i=>`<option value="${i.file}">${i.label||i.file}</option>`).join('')
-    : '<option value="">— немає файлів —</option>';
+sel.innerHTML = items.length
+  ? items.map(i=>`<option value="${i.file}">${i.label}</option>`).join('')
+  : '<option value="">— немає файлів —</option>';
 }
 
 function svbBindAudioPreview(){
@@ -3177,43 +3503,56 @@ function svbBindNumericControls() {
 }
 
 
-const SVB_MODEL_W = 854, SVB_MODEL_H = 480;
-const PROCESSED_SQUARE = (typeof SVB_PROCESSED_PHOTO_SIZE==='number' && SVB_PROCESSED_PHOTO_SIZE>0) ? SVB_PROCESSED_PHOTO_SIZE : 709;
+const SVB_MODEL_W = 854;   
+const SVB_MODEL_H = 480;   
+const PROCESSED_SQUARE = (typeof SVB_PROCESSED_PHOTO_SIZE === 'number' && SVB_PROCESSED_PHOTO_SIZE > 0)
+  ? SVB_PROCESSED_PHOTO_SIZE
+  : 709;
 
 const toEvenUp = v => {
   const n = Math.ceil(v);
   return (n & 1) ? (n + 1) : n;
 };
 
-const clamp01  = v => Math.max(0, Math.min(1, v));
+const clamp01 = v => Math.max(0, Math.min(1, v));
 
+
+/**
+ * ЕДИНСТВЕННОЕ место, где считаем всю геометрию:
+ * - w_content / h_content (размер содержимого до skew/rotate)
+ * - bbox (w_pred / h_pred) с учётом skew+rotate
+ * - final_x / final_y (левая верхняя точка bbox)
+ * - x_norm / y_norm (нормализованная позиция для логов)
+ * Всё живёт в системе 854×480.
+ */
 function svbComputeOverlayGeom(key) {
   const num = (suffix, def = 0) => {
     const el = document.querySelector(`input[name="${key}_${suffix}"]`);
-    const v  = parseFloat(el?.value);
+    const v = parseFloat(el?.value);
     return Number.isFinite(v) ? v : def;
   };
 
-  const scaleXpct = num('scale', 100);
+  const scaleXpct = num('scale',   100);
   const scaleYpct = num('scale_y', 100);
-  const skewXdeg  = num('skew',   0);
-  const skewYdeg  = num('skew_y', 0);
-  const angleDeg  = num('angle',  0);
-  const radiusPx  = num('radius', 0);
-  const xRaw      = num('x',      0);
-  const yRaw      = num('y',      0);
-  const opacityPct = num('opacity', 100); 
-  const glowPct    = num('glow',    0);   
+  const skewXdeg  = num('skew',    0);
+  const skewYdeg  = num('skew_y',  0);
+  const angleDeg  = num('angle',   0);
+  const radiusPx  = num('radius',  0);
+  const xRaw      = num('x',       0); // в системе 1920×1080
+  const yRaw      = num('y',       0);
 
+  // масштаб по X/Y — в долях
   const sX = Math.max(10, Math.min(200, scaleXpct)) / 100;
   const sY = Math.max(10, Math.min(200, scaleYpct)) / 100;
 
+  // базовый размер содержимого до skew/rotate
   const w_content = Math.max(2, Math.round(SVB_MODEL_W * sX));
   const h_content = Math.max(
     2,
     Math.round(PROCESSED_SQUARE * (w_content / PROCESSED_SQUARE) * sY)
   );
 
+  // считаем bbox по полной матрице: R * Sy * Sx
   const rad      = Math.PI / 180;
   const angRad   = angleDeg * rad;
   const skewXrad = skewXdeg * rad;
@@ -3224,6 +3563,7 @@ function svbComputeOverlayGeom(key) {
   const cos = Math.cos(angRad);
   const sin = Math.sin(angRad);
 
+  // 2×2 матрицы как [a,b,c,d] = [[a,b],[c,d]]
   const mSx = [1,  tx, 0, 1];
   const mSy = [1,  0, ty, 1];
   const mR  = [cos, -sin, sin, cos];
@@ -3235,8 +3575,9 @@ function svbComputeOverlayGeom(key) {
     m1[2]*m2[1] + m1[3]*m2[3],
   ]);
 
-  const mShear = mul2(mSy, mSx);
-  const mTotal = mul2(mR,  mShear);
+  // порядок как в CSS: rotate(...) skewY(...) skewX(...)
+  const mShear = mul2(mSy, mSx);   // Sy * Sx
+  const mTotal = mul2(mR, mShear); // R * (Sy * Sx)
 
   const hw = w_content / 2;
   const hh = h_content / 2;
@@ -3263,11 +3604,13 @@ function svbComputeOverlayGeom(key) {
   const w_bbox = Math.max(2, toEvenUp(maxX - minX));
   const h_bbox = Math.max(2, toEvenUp(maxY - minY));
 
+  // X/Y слайдеры у тебя в 1920×1080 — приводим к 854×480
   const xBase = (xRaw / 1920) * SVB_MODEL_W;
   const yBase = (yRaw / 1080) * SVB_MODEL_H;
 
-  const offX  = (w_bbox - w_content) / 2;
-  const offY  = (h_bbox - h_content) / 2;
+  // поправка на то, что слайдеры задают центр содержимого
+  const offX = (w_bbox - w_content) / 2;
+  const offY = (h_bbox - h_content) / 2;
 
   const left0 = xBase - offX;
   const top0  = yBase - offY;
@@ -3279,11 +3622,12 @@ function svbComputeOverlayGeom(key) {
   const finalY = Math.floor(y_norm * Math.max(0, SVB_MODEL_H - h_bbox));
 
   return {
+    // для логов / бэка
     x_norm, y_norm,
-    w_pred:   w_bbox,
-    h_pred:   h_bbox,
-    final_x:  finalX,
-    final_y:  finalY,
+    w_pred:  w_bbox,
+    h_pred:  h_bbox,
+    final_x: finalX,
+    final_y: finalY,
     w_content,
     h_content,
 
@@ -3297,8 +3641,6 @@ function svbComputeOverlayGeom(key) {
 
     angle:  angleDeg,
     radius: radiusPx,
-    opacity: opacityPct, 
-    glow:    glowPct,    
 
     video:      { w: SVB_MODEL_W, h: SVB_MODEL_H },
     source_png: { square: PROCESSED_SQUARE },
@@ -3307,6 +3649,8 @@ function svbComputeOverlayGeom(key) {
   };
 }
 
+
+/** Обновление DOM-превью: просто читает geom из svbComputeOverlayGeom() */
 function svbUpdatePreviewTransform(key) {
   const img = document.getElementById('img-' + key);
   const preview = document.getElementById('svb-vid-preview-' + key);
@@ -3328,7 +3672,7 @@ function svbUpdatePreviewTransform(key) {
   wrap.style.width  = Math.floor(geom.w_pred * kx) + 'px';
   wrap.style.height = Math.floor(geom.h_pred * ky) + 'px';
 
-  // контент внутри bbox
+  // картинка внутри bbox
   const innerLeft = Math.floor(((geom.w_pred - geom.w_content) / 2) * kx);
   const innerTop  = Math.floor(((geom.h_pred - geom.h_content) / 2) * ky);
 
@@ -3337,69 +3681,63 @@ function svbUpdatePreviewTransform(key) {
   img.style.width  = Math.floor(geom.w_content * kx) + 'px';
   img.style.height = Math.floor(geom.h_content * ky) + 'px';
 
-  // Skew + rotate
+  // порядок: rotate → skewY → skewX (как в матрице)
   const t = [];
   if (geom.angle)    t.push(`rotate(${geom.angle}deg)`);
   if (geom.skewYdeg) t.push(`skewY(${geom.skewYdeg}deg)`);
   if (geom.skewXdeg) t.push(`skewX(${geom.skewXdeg}deg)`);
+
   img.style.transformOrigin = '50% 50%';
   img.style.transform = t.length ? t.join(' ') : 'none';
 
   img.style.borderRadius = geom.radius > 0
     ? Math.floor(geom.radius * kx) + 'px'
     : '0px';
-
-  // НОВОЕ: базовая прозрачность (0–100% → 0–1)
-  let alpha = 1;
-  if (typeof geom.opacity === 'number') {
-    alpha = Math.max(0, Math.min(100, geom.opacity)) / 100;
-  }
-  img.dataset.svbOpacity = String(alpha);
-  const visibleFlag = img.dataset.svbVisible === '0' ? 0 : 1;
-  img.style.opacity = String(visibleFlag ? alpha : 0);
-
-if (typeof geom.glow === 'number' && geom.glow > 0) {
-    const g = Math.max(0, Math.min(100, geom.glow));
-    const maxSide = Math.max(rect.width, rect.height) || 1;
-    const blurPx  = Math.max(2, Math.round((g / 100) * (maxSide * 0.07)));
-    const inner   = Math.round(blurPx * 0.7);
-    const outerB  = Math.round(blurPx * 0.5);
-    const outerS  = Math.round(blurPx * 0.15);
-    img.style.boxShadow =
-      `inset 0 0 ${blurPx}px ${inner}px rgba(255,255,255,0.9),` +
-      `0 0 ${outerB}px ${outerS}px rgba(255,255,255,0.6)`;
-} else {
-    img.style.boxShadow = 'none';
 }
 
-}
-
+/**
+ * Собираем overlay_json из того же geom, что и превью.
+ * Бэкенд доверяет этим значениям и не пересчитывает X/Y.
+ */
 function svbCollectOverlayData() {
   const data = {};
   const keys = ['child1', 'child2', 'parent1', 'parent2', 'extra', 'extra2'];
 
   keys.forEach((key) => {
     const img = document.getElementById('img-' + key);
-    if (!img) return;
+    const preview = document.getElementById('svb-vid-preview-' + key);
+    if (!img || !preview) return;
 
     const geom = svbComputeOverlayGeom(key);
     if (!geom) return;
+
+    // центр bbox в модели 854×480
     const cx_model = geom.final_x + geom.w_pred / 2;
     const cy_model = geom.final_y + geom.h_pred / 2;
+    const cx_norm  = cx_model / SVB_MODEL_W;
+    const cy_norm  = cy_model / SVB_MODEL_H;
 
     data[key] = {
-      cx_norm: cx_model / SVB_MODEL_W,
-      cy_norm: cy_model / SVB_MODEL_H,
+      x_norm:  geom.x_norm,
+      y_norm:  geom.y_norm,
       w_pred:  geom.w_pred,
       h_pred:  geom.h_pred,
+      x:       geom.final_x,
+      y:       geom.final_y,
+
+      cx_norm,
+      cy_norm,
+
+      // управление на бэкенд
       scale:   geom.scale,
       scaleY:  geom.scaleY,
       skew:    geom.skew,
       skewY:   geom.skewY,
       angle:   geom.angle,
       radius:  geom.radius,
-      opacity: geom.opacity,
-      glow:    geom.glow
+
+      video:      geom.video,
+      source_png: geom.source_png
     };
   });
 
@@ -3409,6 +3747,7 @@ function svbCollectOverlayData() {
   }
   return data;
 }
+
 
 const svbNorm = s => (s||'').toString().toLowerCase().trim().replace(/[\s_\-’']/g,'');
 function autoBindNameAudio(){
@@ -3477,7 +3816,8 @@ function buildSoundMap(){
     if (!sel) return null;
     const file = sel.value;
     const it = items.find(i => i.file === file);
-    return it ? { file: it.file, url: it.url, label: it.label || it.file } : null;
+    return it ? { file: it.file, url: it.url, label: it.label } : null;
+
   };
   SVB_SELECTED = {
     name:    pull('name'),
@@ -3542,24 +3882,29 @@ function svbLock(on){
   lock.style.display = on ? 'flex' : 'none';
   document.documentElement.style.overflow = on ? 'hidden' : '';
 }
-async function svbStartGenerate(){
-  if(svbGenerating) return;
-  svbGenerating = true;
-  svbLock(true);
-  $('#svb-lock-percent').textContent = '0%';
-  $('#svb-lock-text').textContent = 'Запускаємо процес...';
-  $('#svb-status').textContent = 'Запускаємо процес...';
+async function svbStartGenerate() {
+    if (svbGenerating) return;
+    svbGenerating = true;
+    svbLock(true);
+    $('#svb-lock-percent').textContent = '0';
+    $('#svb-lock-text').textContent = 'Збирання даних...';
+    $('#svb-status').textContent = 'Збирання даних...';
 
-  // сначала собираем интервалы из UI → hidden input
-  svbSerializeSegmentsToField();
 
-  const form = document.getElementById('svb-form');
-  const fd = new FormData(form);
-  try {
-    fd.append('overlay_json', JSON.stringify(svbCollectOverlayData()));
-  } catch (jsonErr) {
-    console.error('overlay_json encode failed', jsonErr);
-  }
+    // UI скрыто, input svbSerializeSegmentsToField()...
+    svbSerializeSegmentsToField();
+
+    const form = document.getElementById('svb-form');
+    const fd = new FormData(form);
+    
+    // ДОБАВИТЬ: Передаём выбранное видео
+    fd.set('selected_video_id', SVB_SELECTED_VIDEO_ID);
+    
+    try {
+        fd.append('overlay_json', JSON.stringify(svbCollectOverlayData()));
+    } catch (jsonErr) {
+        console.error('overlay_json encode failed:', jsonErr);
+    }
   fd.append('action', 'svb_generate');
   try {
     const response = await fetch(SVB_AJAX.url, { method:'POST', body:fd });
@@ -3912,9 +4257,88 @@ function svbEnsureWrappers(){
     wrap.appendChild(img); // переносим картинку внутрь bbox-обёртки
   });
 }
+// === ВЫБОР ВИДЕОШАБЛОНОВ ===
+
+function svbRenderVideoSelector() {
+    const selector = document.getElementById('svb-video-selector');
+    if (!selector) return;
+    
+    selector.innerHTML = '';
+    
+    Object.entries(SVB_VIDEO_TEMPLATES).forEach(([videoId, template]) => {
+        const div = document.createElement('div');
+        div.className = 'svb-video-option' + (videoId === SVB_SELECTED_VIDEO_ID ? ' active' : '');
+        div.dataset.videoId = videoId;
+        
+        div.innerHTML = `
+            <video muted playsinline style="width:100%; height:auto; aspect-ratio:16/9; object-fit:cover; display:block;">
+                <source src="${template.url}" type="video/mp4">
+            </video>
+            <div class="svb-video-option-label">${template.label}</div>
+        `;
+        
+        div.addEventListener('click', () => {
+            svbSelectVideoTemplate(videoId);
+        });
+        
+        selector.appendChild(div);
+    });
+}
+
+function svbSelectVideoTemplate(videoId) {
+    SVB_SELECTED_VIDEO_ID = videoId;
+    
+    // Обновляем hidden-поле, которое потом уйдет в FormData
+    const hiddenInput = document.getElementById('selected_video_id');
+    if (hiddenInput) {
+        hiddenInput.value = videoId;
+    }
+
+    // Визуально выделяем выбранный шаблон
+    document.querySelectorAll('.svb-video-option').forEach(el => {
+        el.classList.remove('active');
+    });
+    const activeEl = document.querySelector(`[data-video-id="${videoId}"]`);
+    if (activeEl) {
+        activeEl.classList.add('active');
+    }
+
+    // 1) Меняем src у всех видеопревью на шаге 2
+    const tpl = SVB_VIDEO_TEMPLATES[videoId];
+    if (tpl && tpl.url) {
+        document.querySelectorAll('.svb-vid-preview video').forEach(video => {
+            try { video.pause(); } catch(e) {}
+            video.src = tpl.url;
+            video.currentTime = 0;
+            video.load();
+        });
+    }
+
+    // 2) Обновляем интервалы с конвертацией строк в секунды
+    svbUpdateTimingsForVideo(videoId);
+}
+
+
+function svbApplyTemplateTimings(videoId) {
+    const timings = SVB_TEMPLATE_TIMINGS[videoId];
+    if (!timings) return;
+    
+    // Обновить глобальный объект с новыми таймингами
+    Object.keys(timings).forEach(key => {
+        if (SVB_OVERLAY_WINDOWS && timings[key]) {
+            SVB_OVERLAY_WINDOWS[key] = timings[key];
+        }
+    });
+    
+    // Пересчитать UI интервалов
+    svbInitIntervalUi();
+    svbBindIntervalUi();
+}
+
 
 
 // === ЗАПУСК ===
+svbRenderVideoSelector();  
 svbPopulateSelects();
 svbBindAudioPreview();
 svbBindPhotoInputs(); 
@@ -4003,31 +4427,85 @@ function svbDumpOverlayDebug(el, video, key, token){
     return ob_get_clean();
 }
 
-/** === Генерация видео (AJAX) === */
 function svb_generate() {
-    // --- (Вся подготовка до $tplDur остается такой же) ---
+
     if (!isset($_POST['_svb_nonce']) || !wp_verify_nonce($_POST['_svb_nonce'], 'svb_nonce')) {
         wp_send_json_error('bad nonce');
     }
+
+    // 1. Читаем и санитизируем выбранный ID
+    $selected_video_id = isset($_POST['selected_video_id'])
+        ? sanitize_text_field( wp_unslash( $_POST['selected_video_id'] ) )
+        : 'video1';
+
+    // 2. Карта ID → путь к файлу
+    $backend_video_templates = array(
+        'video1' => SVB_PLUGIN_DIR . 'assets/template1.mp4',
+        'video2' => SVB_PLUGIN_DIR . 'assets/template2.mp4',
+        'video3' => SVB_PLUGIN_DIR . 'assets/template3.mp4',
+        'video4' => SVB_PLUGIN_DIR . 'assets/template4.mp4',
+    );
+
+    if (
+        empty($backend_video_templates[$selected_video_id]) ||
+        !file_exists($backend_video_templates[$selected_video_id])
+    ) {
+        $selected_video_id = 'video1';
+    }
+
+    $template_video_path = $backend_video_templates[$selected_video_id];
+
+    // 3. Создаём job-dir ДО логирования
     $uploads = wp_upload_dir();
-    if (!empty($uploads['error'])) wp_send_json_error('uploads not writable');
-    $job = 'svb_' . wp_generate_password(8,false,false);
+    if (!empty($uploads['error'])) {
+        wp_send_json_error('uploads not writable');
+    }
+
+    $job     = 'svb_' . wp_generate_password(8, false, false);
     $job_dir = trailingslashit($uploads['basedir']) . 'svb-jobs/' . $job;
     $job_url = trailingslashit($uploads['baseurl']) . 'svb-jobs/' . $job;
-    if (!wp_mkdir_p($job_dir)) wp_send_json_error('cannot create job dir');
-    $template = SVB_PLUGIN_DIR . 'assets/template.mp4';
-    if (!file_exists($template)) {
-        $tpl2 = trailingslashit($uploads['basedir']) . 'santa-template.mp4';
-        if (file_exists($tpl2)) $template = $tpl2;
+
+    if (!wp_mkdir_p($job_dir)) {
+        wp_send_json_error('cannot create job dir');
     }
-    if (!file_exists($template)) wp_send_json_error('template.mp4 not found');
+
+    // 4. Логируем выбор шаблона уже с валидным $job_dir
+    svb_dbg_write($job_dir, 'generate.video_selection', array(
+        'selected_id' => $selected_video_id,
+        'video_path'  => $template_video_path,
+        'exists'      => file_exists($template_video_path),
+        'post'        => $_POST,
+    ));
+
+    // 5. Используем выбранное видео как основу, но с fallback на старую логику
+    $template = $template_video_path;
+
+    if (!file_exists($template)) {
+        // fallback на старый template.mp4, если вдруг файла нет
+        $template = SVB_PLUGIN_DIR . 'assets/template.mp4';
+
+        if (!file_exists($template)) {
+            $tpl2 = trailingslashit($uploads['basedir']) . 'santa-template.mp4';
+            if (file_exists($tpl2)) {
+                $template = $tpl2;
+            }
+        }
+    }
+
+    if (!file_exists($template)) {
+        wp_send_json_error('template.mp4 not found (selected: '.$selected_video_id.')');
+    }
+
+    // 6. Дальше всё как было, но duration считаем уже от $template
     $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
     if (in_array('exec', $disabled, true)) {
-        wp_send_json_error(['msg'=>'exec() disabled by php.ini']);
+        wp_send_json_error(array('msg' => 'exec() disabled by php.ini'));
     }
-$ffmpeg  = svb_exec_find('ffmpeg'); if (!$ffmpeg) $ffmpeg = '/opt/homebrew/bin/ffmpeg';
-$ffprobe = svb_exec_find('ffprobe'); if (!$ffprobe) $ffprobe = '/opt/homebrew/bin/ffprobe';
-$tplDur = svb_ffprobe_duration($template);
+
+    $ffmpeg  = svb_exec_find('ffmpeg');  if (!$ffmpeg)  $ffmpeg  = '/opt/homebrew/bin/ffmpeg';
+    $ffprobe = svb_exec_find('ffprobe'); if (!$ffprobe) $ffprobe = '/opt/homebrew/bin/ffprobe';
+
+    $tplDur = svb_ffprobe_duration($template);
 
 $HAS_FIFO        = svb_ff_has_filter($ffmpeg, 'fifo');
 $HAS_AFIFO       = svb_ff_has_filter($ffmpeg, 'afifo');
@@ -4092,73 +4570,72 @@ $HAS_BLEND        = svb_ff_has_filter($ffmpeg, 'blend');
     }
     
         // === НОВЫЙ КОНТРАКТ: геометрия приходит ТОЛЬКО из overlay_json ===
-    $pos = [];
-    foreach ($photo_keys as $pk) {
-        $pos[$pk] = [];
-    }
+// === Геометрия из overlay_json (новый контракт) ===
+$pos = [];
+foreach ($photo_keys as $pk) {
+    $pos[$pk] = [];
+}
 
-    // === Разбор overlay_json, присланного фронтом ===
-    if (!empty($_POST['overlay_json'])) {
-        $overlay_decoded = json_decode(stripslashes($_POST['overlay_json']), true);
+if (!empty($_POST['overlay_json'])) {
+    $overlay_decoded = json_decode(stripslashes($_POST['overlay_json']), true);
 
-        if (is_array($overlay_decoded)) {
-            foreach ($photo_keys as $pk) {
-                if (!isset($pos[$pk])) {
-                    $pos[$pk] = [];
-                }
+    if (is_array($overlay_decoded)) {
+        foreach ($photo_keys as $pk) {
+            if (!isset($pos[$pk])) {
+                $pos[$pk] = [];
+            }
 
-                $rec = $overlay_decoded[$pk] ?? null;
-                if (!is_array($rec)) {
-                    continue;
-                }
+            $rec = $overlay_decoded[$pk] ?? null;
+            if (!is_array($rec)) {
+                continue;
+            }
 
-                // управляющие параметры
-                $map = [
-                    's'       => 'scale',   // масштаб X (%)
-                    'sy'      => 'scaleY',  // масштаб Y (%)
-                    'skew'    => 'skew',    // наклон X (градусы)
-                    'skew_y'  => 'skewY',   // наклон Y (градусы)
-                    'angle'   => 'angle',   // поворот (градусы)
-                    'radius'  => 'radius',  // радиус скругления (px)
-                    'opacity' => 'opacity', // 0–100
-                    'glow'    => 'glow',    // 0–100
-                ];
-
-                foreach ($map as $dstKey => $srcKey) {
-                    if (!isset($rec[$srcKey]) || !is_numeric($rec[$srcKey])) {
-                        continue;
-                    }
-                    $val = (float)$rec[$srcKey];
-
-                    if ($srcKey === 'radius') {
-                        $pos[$pk][$dstKey] = max(0, (int)round($val));
-                    } elseif ($srcKey === 'opacity' || $srcKey === 'glow') {
-                        $pos[$pk][$dstKey] = max(0.0, min(100.0, $val));
+            // Управляющие параметры (в градусах/процентах)
+            foreach ([
+                's'      => 'scale',
+                'sy'     => 'scaleY',
+                'skew'   => 'skew',
+                'skew_y' => 'skewY',
+                'angle'  => 'angle',
+                'radius' => 'radius',
+            ] as $k => $src) {
+                if (isset($rec[$src]) && is_numeric($rec[$src])) {
+                    $val = (float)$rec[$src];
+                    if ($src === 'radius') {
+                        $pos[$pk][$k] = max(0, (int)round($val));
                     } else {
-                        $pos[$pk][$dstKey] = $val;
+                        $pos[$pk][$k] = $val;
                     }
-                }
-
-                // нормализованный центр bbox: 0..1 по 854×480
-                if (isset($rec['cx_norm'])) {
-                    $pos[$pk]['cx_norm'] = max(0.0, min(1.0, (float)$rec['cx_norm']));
-                }
-                if (isset($rec['cy_norm'])) {
-                    $pos[$pk]['cy_norm'] = max(0.0, min(1.0, (float)$rec['cy_norm']));
-                }
-
-                // чисто для лога
-                if (isset($rec['w_pred'])) {
-                    $pos[$pk]['w_pred'] = (int)$rec['w_pred'];
-                }
-                if (isset($rec['h_pred'])) {
-                    $pos[$pk]['h_pred'] = (int)$rec['h_pred'];
                 }
             }
+
+            // нормализованный центр bbox — главный источник правды
+            if (isset($rec['cx_norm'])) {
+                $pos[$pk]['cx_norm'] = max(0.0, min(1.0, (float)$rec['cx_norm']));
+            }
+            if (isset($rec['cy_norm'])) {
+                $pos[$pk]['cy_norm'] = max(0.0, min(1.0, (float)$rec['cy_norm']));
+            }
+
+            // старые поля — оставляем для совместимости/логов
+            if (isset($rec['x_norm'])) {
+                $pos[$pk]['x_norm'] = max(0.0, min(1.0, (float)$rec['x_norm']));
+            }
+            if (isset($rec['y_norm'])) {
+                $pos[$pk]['y_norm'] = max(0.0, min(1.0, (float)$rec['y_norm']));
+            }
+            if (isset($rec['w_pred'])) {
+                $pos[$pk]['w_pred'] = (int)$rec['w_pred'];
+            }
+            if (isset($rec['h_pred'])) {
+                $pos[$pk]['h_pred'] = (int)$rec['h_pred'];
+            }
+
+            // сырые x/y в пикселях нам больше не нужны
+            unset($pos[$pk]['x'], $pos[$pk]['y']);
         }
     }
-
-
+}
 
 svb_dbg_write($job_dir, 'req.overlay', $pos);
 
@@ -4204,8 +4681,6 @@ foreach ($photo_keys as $pk) {
         $glowPct     // «Світлі краї» 0–100
     );
 
-    // Радиус/світлі краї теперь зашиты в PNG,
-    // дальше в ffmpeg про них знать не нужно
     $pos[$pk]['radius'] = 0;
     $pos[$pk]['glow']   = 0;
 }
@@ -4231,13 +4706,55 @@ foreach ($photo_keys as $pk) {
             if (file_exists($path)) $audio_sel[$cat] = $path;
         }
     }
-    // --- (Тайминги озвучки - без изменений) ---
-    $A_NAME   = [ ['00:34:15','00:35:15'], ['01:42:18','01:43:18'], ['03:29:15','03:30:15'], ['05:50:19','05:51:19'] ];
-    $A_AGE    = [ ['03:37:16','03:38:16'] ];
-    $A_FACTS  = [ ['02:25:16','02:28:27'] ];
-    $A_HOBBY  = [ ['02:32:00','02:36:27'] ];
-    $A_PRAISE = [ ['05:54:10','05:57:15'] ];
-    $A_REQUEST= [ ['06:19:04','06:22:27'] ];
+// === ТАЙМИНГИ ОЗВУЧЕК ДЛЯ КАЖДОГО ВИДЕО ===
+$audio_timings = [
+    'video1' => [
+        'name'    => [ ['00:34:15','00:35:15'], ['01:42:18','01:43:18'], ['03:29:15','03:30:15'], ['05:50:19','05:51:19'] ],
+        'age'     => [ ['03:37:16','03:38:16'] ],
+        'facts'   => [ ['02:25:16','02:28:27'] ],
+        'hobby'   => [ ['02:32:00','02:36:27'] ],
+        'praise'  => [ ['05:54:10','05:57:15'] ],
+        'request' => [ ['06:19:04','06:22:27'] ],
+    ],
+    'video2' => [
+        'name'    => [ ['00:15:29','00:16:29'], ['00:49:17','00:50:17'], ['04:02:03','04:03:03'], ['06:52:23','06:53:23'] ],
+        'age'     => [ ['01:28:22','01:29:22'] ],
+        'facts'   => [ ['01:37:28','01:38:28'] ],
+        'hobby'   => [ ['01:41:22','01:42:22'] ],
+        'praise'  => [ ['04:05:27','04:06:27'] ],
+        'request' => [ ['04:23:17','04:24:17'] ],
+    ],
+    'video3' => [
+        'name'    => [ ['00:53:00','00:54:00'], ['01:44:28','01:45:28'], ['04:32:16','04:33:16'], ['04:57:04','04:58:04'], ['05:45:27','05:46:27'] ],
+        'age'     => [ ['01:33:20','01:34:20'] ],
+        'facts'   => [ ['01:51:13','01:52:13'] ],
+        'hobby'   => [ ['01:55:01','01:56:01'] ],
+        'praise'  => [ ['08:52:05','08:53:05'] ],
+        'request' => [ ['05:05:23','05:06:23'] ],
+    ],
+    'video4' => [
+        'name'    => [ ['00:55:04','00:56:04'], ['01:36:27','01:37:27'], ['04:47:29','04:48:29'], ['06:17:25','06:18:25'], ['08:25:26','08:26:26'] ],
+        'age'     => [ ['06:21:02','06:22:02'] ],
+        'facts'   => [ ['03:18:05','03:19:05'] ],
+        'hobby'   => [ ['03:25:04','03:26:04'] ],
+        'praise'  => [ ['07:26:00','07:27:00'] ],
+        'request' => [ ['06:34:28','06:35:28'] ],
+    ],
+];
+
+// ✅ Получаем тайминги озвучек для ВЫБРАННОГО видео
+$timings_for_video = isset($audio_timings[$selected_video_id]) 
+    ? $audio_timings[$selected_video_id] 
+    : $audio_timings['video1'];
+
+// ✅ Теперь используем привязанные тайминги
+$A_NAME    = $timings_for_video['name'];
+$A_AGE     = $timings_for_video['age'];
+$A_FACTS   = $timings_for_video['facts'];
+$A_HOBBY   = $timings_for_video['hobby'];
+$A_PRAISE  = $timings_for_video['praise'];
+$A_REQUEST = $timings_for_video['request'];
+
 
     // --- Интервалы фото: дефолт + то, что пришло с фронта ---
     $default_segments = [
@@ -4290,22 +4807,22 @@ foreach ($photo_keys as $pk) {
 
     /* === FILTER COMPLEX === */
     
-    $filter = [];
-// сначала всё без format
+/* === FILTER COMPLEX === */
+
+// База: видео шаблона в 480p, 30fps, rgba
+$filter = [];
 $filter[] = "[0:v]fps=30,setsar=1,scale={$target_w}:{$target_h},setpts=PTS-STARTPTS[vbase_tmp]";
-// потом отдельной строкой применяем format и помечаем выход
 $filter[] = "[vbase_tmp]format=rgba[vbase]";
 
-
-    $vlabel = "[vbase]";
-    $vcount = 0;
-$SOURCE_SQUARE = 709; // размер квадратного PNG после препроцессинга
+$vlabel = "[vbase]";
+$vcount = 0;
+$SOURCE_SQUARE = 709; // квадратный PNG после препроцессинга
 
 $addOverlay = function($key, $intervals) use (
     &$filter, &$vlabel, &$vcount,
     $imgIndexMap, $pos,
-    $HAS_FIFO, $HAS_SHEAR, $HAS_COLORCH,
-    $target_w, $target_h, $job_dir
+    $HAS_FIFO, $HAS_ROUNDED, $HAS_SHEAR,
+    $target_w, $target_h, $job_dir, $SOURCE_SQUARE
 ) {
     if (!isset($imgIndexMap[$key])) {
         svb_dbg_write($job_dir, "overlay.{$key}.skip", 'no image index for this key');
@@ -4315,7 +4832,7 @@ $addOverlay = function($key, $intervals) use (
     $idx = $imgIndexMap[$key];
     $p   = $pos[$key] ?? [];
 
-    // 1) Центр в нормированных координатах (общих для браузера и FFmpeg)
+    // 1. Центр оверлея (от фронта)
     $cx_norm = isset($p['cx_norm']) ? (float)$p['cx_norm'] : 0.5;
     $cy_norm = isset($p['cy_norm']) ? (float)$p['cy_norm'] : 0.5;
     $cx_norm = max(0.0, min(1.0, $cx_norm));
@@ -4324,119 +4841,108 @@ $addOverlay = function($key, $intervals) use (
     $cx = $cx_norm * $target_w;
     $cy = $cy_norm * $target_h;
 
-    // 2) Масштаб, поворот и наклоны (то, что крутят слайдеры)
+    // 2. Масштаб / угол / радиус
     $scaleX = max(10, min(200, (int)round($p['s']  ?? 100))) / 100.0;
     $scaleY = max(10, min(200, (int)round($p['sy'] ?? 100))) / 100.0;
 
     $angle_deg = (float)($p['angle'] ?? 0.0);
-    $angle_rad = $angle_deg * (M_PI / 180.0);
-    $angle_str = rtrim(rtrim(sprintf('%.15F', $angle_rad), '0'), '.');
+    $radius    = isset($p['radius']) ? (int)$p['radius'] : 0;
 
+    // 3. Skew в ГРАДУСАХ (из overlay_json)
     $skewX_deg = isset($p['skew'])   ? (float)$p['skew']   : 0.0;
     $skewY_deg = isset($p['skew_y']) ? (float)$p['skew_y'] : 0.0;
 
-    $opacity_val  = isset($p['opacity']) ? (float)$p['opacity'] : 100.0;
-    $opacity_val  = max(0.0, min(100.0, $opacity_val));
-    $opacity_norm = $opacity_val / 100.0;
-
-    // 3) Размер «контента» (как на фронте)
+    // Базовый прямоугольник до skew/rotate
     $w_src = max(2, (int)round($target_w * $scaleX));
     $h_src = max(2, (int)round($w_src     * $scaleY));
 
-    // 4) Если есть shear — добавляем паддинги, чтобы не резало углы
     $need_shear = $HAS_SHEAR && (abs($skewX_deg) > 0.001 || abs($skewY_deg) > 0.001);
 
-    $pad_x = 0;
-    $pad_y = 0;
+    $pad_x = $pad_y = 0;
     $w_padded = $w_src;
     $h_padded = $h_src;
     $shx = 0.0;
     $shy = 0.0;
 
     if ($need_shear) {
-        $skewX_rad = $skewX_deg * (M_PI / 180.0);
-        $skewY_rad = $skewY_deg * (M_PI / 180.0);
+        $skewX_rad = $skewX_deg * M_PI / 180.0;
+        $skewY_rad = $skewY_deg * M_PI / 180.0;
 
-        $maxShiftX = abs(tan($skewX_rad)) * $h_src;
-        $maxShiftY = abs(tan($skewY_rad)) * $w_src;
-
+        // Максимальный сдвиг краёв из-за skew → под него делаем pad
+        $maxShiftX = abs(tan($skewX_rad)) * $h_src; // по X из-за skewX
+        $maxShiftY = abs(tan($skewY_rad)) * $w_src; // по Y из-за skewY
         $pad_margin = (int)ceil(max($maxShiftX, $maxShiftY));
         if ($pad_margin < 0) {
             $pad_margin = 0;
         }
 
         $pad_x = $pad_y = $pad_margin;
+
         $w_padded = $w_src + 2 * $pad_x;
         $h_padded = $h_src + 2 * $pad_y;
+
         if ($w_padded < 2) $w_padded = 2;
         if ($h_padded < 2) $h_padded = 2;
 
-        // X как в CSS, Y с инвертированным знаком, чтобы не «отражать» картинку
-        $shx = tan($skewX_rad);
-        $shy = -tan($skewY_rad);
+        // shear-факторы ffmpeg из углов, с ограничением -2..2
+        $shx = -tan($skewX_rad);
+        $shy =  tan($skewY_rad);
 
         $shx = max(-2.0, min(2.0, $shx));
         $shy = max(-2.0, min(2.0, $shy));
     }
 
-    // 5) Цепочка фильтров для картинки
-    $baseLabel = "{$key}s{$vcount}_b";
-    $chain = "[{$idx}:v]scale={$w_src}:{$h_src}:force_original_aspect_ratio=disable,setsar=1";
+    // угол в радианах для rotate
+    $angle_rad = $angle_deg * M_PI / 180.0;
+    $angle_str = rtrim(rtrim(sprintf('%.15F', $angle_rad), '0'), '.');
+
+    $tmpOut   = "{$key}s{$vcount}_tmp";
+    $finalOut = "{$key}s{$vcount}";
+
+    // 4. Цепочка фильтров для этой фотки
+    $chain  = "[{$idx}:v]setpts=PTS-STARTPTS,format=rgba";
+    $chain .= ",scale=w={$w_src}:h={$h_src}";
 
     if ($need_shear) {
-        $chain .= ",pad={$w_padded}:{$h_padded}:{$pad_x}:{$pad_y}:color=black@0";
-        $chain .= ",shear=shx={$shx}:shy={$shy}:fillcolor=none:interp=bilinear";
+        // сначала расширяем, потом shear — чтобы не обрезало картинку
+        $chain .= ",pad=w={$w_padded}:h={$h_padded}"
+                . ":x={$pad_x}:y={$pad_y}:color=black@0";
+        $chain .= ",shear=shx={$shx}:shy={$shy}:fillcolor=black@0";
     }
 
-    if (abs($angle_deg) > 0.0001) {
-        $chain .= ",rotate=angle={$angle_str}:ow='rotw(iw)':oh='roth(ih)':c=none:bilinear=1";
+    // Поворот вокруг центра
+    $chain .= ",rotate={$angle_str}:ow=rotw(iw):oh=roth(ih):c=none";
+
+    if ($radius > 0 && $HAS_ROUNDED) {
+        $chain .= ",roundedcorners=radius={$radius}:fillcolor=none";
     }
 
-    $chain .= ",format=rgba[{$baseLabel}]";
-    $filter[] = $chain;
+    $filter[] = $chain . "[{$tmpOut}]";
 
-    $currLabel = $baseLabel;
+    // fifo + format=rgba перед overlay для устранения мигания
+    $filter[] = "[{$tmpOut}]format=rgba" . ($HAS_FIFO ? ",fifo" : "") . "[{$finalOut}]";
 
-    // 6) Прозрачность (opacity)
-    if ($HAS_COLORCH && abs($opacity_norm - 1.0) > 0.0001) {
-        $opLabel = "{$key}s{$vcount}_op";
-        $line = "[{$currLabel}]colorchannelmixer=aa={$opacity_norm}";
-        if ($HAS_FIFO) {
-            $line .= ",fifo";
-        }
-        $line .= "[{$opLabel}]";
-        $filter[] = $line;
-        $currLabel = $opLabel;
-    } elseif ($HAS_FIFO) {
-        $ffLabel = "{$key}s{$vcount}_ff";
-        $line = "[{$currLabel}]fifo[{$ffLabel}]";
-        $filter[] = $line;
-        $currLabel = $ffLabel;
-    }
-
-    $finalOut = $currLabel;
-
-    // 7) Overlay по центру (w и h — фактический размер после всех трансформаций)
+    // 5. Центрируем overlay: x = cx - w/2, y = cy - h/2
     $xExpr = sprintf('%.6F - w/2', $cx);
     $yExpr = sprintf('%.6F - h/2', $cy);
 
-    // enable по интервалам
     $exprParts = [];
     foreach ($intervals as $it) {
         $exprParts[] = "between(t," . svb_ts_to_seconds($it[0]) . "," . svb_ts_to_seconds($it[1]) . ")";
     }
     $enable = implode('+', $exprParts);
 
-    $filter[] = "{$vlabel}[{$finalOut}]overlay=x={$xExpr}:y={$yExpr}:enable='{$enable}'[vtmp{$vcount}]";
+    $filter[] = "{$vlabel}[{$finalOut}]overlay="
+              . "x={$xExpr}:y={$yExpr}:enable='{$enable}'[vtmp{$vcount}]";
     $filter[] = "[vtmp{$vcount}]format=rgba[v{$vcount}]";
 
     $vlabel = "[v{$vcount}]";
     $vcount++;
 
+    // Лог для сверки
     svb_align_log($job_dir, "overlay.calc.{$key}", [
         'video_space' => ['W' => $target_w, 'H' => $target_h],
         'inputs'      => $p,
-        'intervals'   => $intervals, // <— сюда прилетают интервалы в секундах
         'derived'     => [
             'cx_norm'   => $cx_norm,
             'cy_norm'   => $cy_norm,
@@ -4444,20 +4950,17 @@ $addOverlay = function($key, $intervals) use (
             'cy'        => $cy,
             'w_src'     => $w_src,
             'h_src'     => $h_src,
-            'w_pad'     => $w_padded,
-            'h_pad'     => $h_padded,
+            'w_padded'  => $w_padded,
+            'h_padded'  => $h_padded,
             'skewX_deg' => $skewX_deg,
             'skewY_deg' => $skewY_deg,
             'shx'       => $shx,
             'shy'       => $shy,
             'angle_deg' => $angle_deg,
             'angle_rad' => $angle_rad,
-            'opacity'   => $opacity_val,
         ],
     ]);
-
 };
-
 
 
 
@@ -4548,16 +5051,17 @@ $finalV = '[vfinal]';
     $logFile = $job_dir . '/ffmpeg.log';
     $pidFile = $job_dir . '/ffmpeg.pid';
 
-    set_transient('svb_job_data_'.$job, [
-        'tplDur' => $tplDur,
-        'logFile' => $logFile,
-        'output' => $output,
-        'job_dir' => $job_dir,
-        'url' => $job_url . '/video.mp4',
-        'pidFile' => $pidFile
-    ], HOUR_IN_SECONDS * 2); 
+set_transient('svb_job_data_' . $job, [
+    'job_dir'  => $job_dir,
+    'logFile'  => $logFile,
+    'output'   => $output,
+    'pidFile'  => $pidFile,
+    'tplDur'   => $tplDur,
+    'job_url'  => $job_url,
+], HOUR_IN_SECONDS);
 
-    $cmd_bg = $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1 & echo $!;';
+// Потім йде код запуску FFmpeg:
+$cmd_bg = $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1 & echo $!'; 
     svb_dbg_write($job_dir, 'final.cmd_bg', $cmd_bg);
     
     $pid = @exec($cmd_bg, $pid_out, $rc_pid);
@@ -4679,6 +5183,21 @@ function svb_confirm(){
         $message = 'Дякуємо! Ваше відео готове: ' . $data['url'] . "\nПосилання дійсне протягом 1 години.";
         @wp_mail($email, $subject, $message);
     }
+    // ✅ Получаем выбранное видео
+$selected_video_id = isset($input['selected_video_id']) 
+    ? sanitize_text_field($input['selected_video_id']) 
+    : 'video1';
+
+if (!isset($video_templates[$selected_video_id])) {
+    $selected_video_id = 'video1';
+}
+
+// ✅ Используем тайминги для выбранного видео
+svb_dbg_write($job_dir, 'confirm.selected_video', [
+    'video_id' => $selected_video_id,
+    'segments' => $segments
+]);
+
 
     wp_send_json_success([ 'url'=>$data['url'] ]);
 }
