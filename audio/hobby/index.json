@@ -1,3 +1,186 @@
 [
-  {"file":"ya-takozh-bachu-sho-ti-lyubish-gratisya-z-tvarinka.MP3", "label":"Грається з тваринками"}
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh chytaty knyzhky..mp3",
+    "label": "Я також бачу, що ти любиш читати книжки"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh dopomahaty inshym ditjam..mp3",
+    "label": "Я також бачу, що ти любиш допомагати іншим дітям"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh dynozavriv..mp3",
+    "label": "Я також бачу, що ти любиш динозаврів"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh fantazuvaty..mp3",
+    "label": "Я також бачу, що ти любиш фантазувати"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh harno maljuvaty..mp3",
+    "label": "Я також бачу, що ти любиш гарно малювати"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh hratysja ihrashkamy..mp3",
+    "label": "Я також бачу, що ти любиш гратися іграшками"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh hratysja z tvarynkamy..mp3",
+    "label": "Я також бачу, що ти любиш гратися з тваринками"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh hraty u nastil_ni ihry..mp3",
+    "label": "Я також бачу, що ти любиш грати у настільні ігри"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh hraty v futbol..mp3",
+    "label": "Я також бачу, що ти любиш грати у футбол"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh hraty v ihry..mp3",
+    "label": "Я також бачу, що ти любиш грати в ігри"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh karate..mp3",
+    "label": "Я також бачу, що ти любиш карате"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh katatysja na velosypedi..mp3",
+    "label": "Я також бачу, що ти любиш кататися на велосипеді"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh slukhaty muzyku..mp3",
+    "label": "Я також бачу, що ти любиш слухати музику"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh smachno hotuvaty..mp3",
+    "label": "Я також бачу, що ти любиш смачно готувати"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh spivaty..mp3",
+    "label": "Я також бачу, що ти любиш співати"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh superheroyiv..mp3",
+    "label": "Я також бачу, що ти любиш супергероїв"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh tantsjuvaty..mp3",
+    "label": "Я також бачу, що ти любиш танцювати"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh vyrishuvaty holovolomky..mp3",
+    "label": "Я також бачу, що ти любиш вирішувати головоломки"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh zajmatys_ sportom..mp3",
+    "label": "Я також бачу, що ти любиш займатися спортом"
+  },
+  {
+    "file": "Ja takozh bachu,.. shcho ty ljubysh zbyraty konstruktory..mp3",
+    "label": "Я також бачу, що ти любиш збирати конструктори"
+  },
+  {
+    "file": "ya-takozh-bachu-sho-ti-lyubish-gratisya-z-tvarinka.MP3",
+    "label": "Я також бачу, що ти любиш гратися з тваринками"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte chytaty knyzhky..mp3",
+    "label": "Я також бачу, що ви любите читати книжки",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte dopomahaty inshym ditjam..mp3",
+    "label": "Я також бачу, що ви любите допомагати іншим дітям",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte dynozavriv..mp3",
+    "label": "Я також бачу, що ви любите динозаврів",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte fantazuvaty..mp3",
+    "label": "Я також бачу, що ви любите фантазувати",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte harno maljuvaty..mp3",
+    "label": "Я також бачу, що ви любите гарно малювати",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte hraty u futbol..mp3",
+    "label": "Я також бачу, що ви любите грати у футбол",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte hraty u nastil_ni ihry..mp3",
+    "label": "Я також бачу, що ви любите грати у настільні ігри",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte hraty v ihry..mp3",
+    "label": "Я також бачу, що ви любите грати в ігри",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte hratysja ihrashkamy..mp3",
+    "label": "Я також бачу, що ви любите гратися іграшками",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte hratysja z tvarynkamy..mp3",
+    "label": "Я також бачу, що ви любите гратися з тваринками",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte karate..mp3",
+    "label": "Я також бачу, що ви любите карате",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte katatysja na velosypedakh..mp3",
+    "label": "Я також бачу, що ви любите кататися на велосипедах",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte slukhaty muzyku..mp3",
+    "label": "Я також бачу, що ви любите слухати музику",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte smachno hotuvaty..mp3",
+    "label": "Я також бачу, що ви любите смачно готувати",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte spivaty..mp3",
+    "label": "Я також бачу, що ви любите співати",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte superheroyiv..mp3",
+    "label": "Я також бачу, що ви любите супергероїв",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte tantsjuvaty..mp3",
+    "label": "Я також бачу, що ви любите танцювати",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte vyrishuvaty holovolomky..mp3",
+    "label": "Я також бачу, що ви любите вирішувати головоломки",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte zajmatysja sportom..mp3",
+    "label": "Я також бачу, що ви любите займатися спортом",
+    "type": "group"
+  },
+  {
+    "file": "Ja takozh bachu, shcho vy ljubyte zbyraty konstruktory..mp3",
+    "label": "Я також бачу, що ви любите збирати конструктори",
+    "type": "group"
+  }
 ]

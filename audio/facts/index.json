@@ -1,3 +1,33 @@
 [
-  {"file":"znayu-sho-ti-rostesh-chudovoyu-ditinoyu.MP3", "label":"Росте чудовою дітиною"}
+  {
+    "file": "Znaju,... shcho ty rostesh chudovoju divchynkoju.mp3",
+    "label": "Знаю, що ти ростеш чудовою дівчинкою"
+  },
+  {
+    "file": "Znaju,... shcho ty rostesh chudovoju dytynoju.mp3",
+    "label": "Знаю, що ти ростеш чудовою дитиною"
+  },
+  {
+    "file": "Znaju,... shcho ty rostesh chudovym khlopchykom.mp3",
+    "label": "Знаю, що ти ростеш чудовим хлопчиком"
+  },
+  {
+    "file": "znayu-sho-ti-rostesh-chudovoyu-ditinoyu.MP3",
+    "label": "Знаю, що ти ростеш чудовою дитиною"
+  },
+  {
+    "file": "Znaju, shcho vy rostete chudovymy ditkamy..mp3",
+    "label": "Знаю, що ви ростете чудовими дітками",
+    "type": "group"
+  },
+  {
+    "file": "Znaju, shcho vy rostete chudovymy divchatkamy..mp3",
+    "label": "Знаю, що ви ростете чудовими дівчатками",
+    "type": "group"
+  },
+  {
+    "file": "Znaju, shcho vy rostete chudovymy khlopchykamy..mp3",
+    "label": "Знаю, що ви ростете чудовими хлопчиками",
+    "type": "group"
+  }
 ]

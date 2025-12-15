@@ -1,3 +1,96 @@
 [
-  {"file":"za-te-sho-vzhe-spish.MP3", "label":"За те що вже спить"}
+  {
+    "file": "Za te,.. shcho tak ljubysh svoyikh bat_kiv..mp3",
+    "label": "За те, що так любиш своїх батьків"
+  },
+  {
+    "file": "Za te,.. shcho trymayesh vse v chystoti..mp3",
+    "label": "За те, що тримаєш все в чистоті"
+  },
+  {
+    "file": "Za te,.. shcho ty ne zdayeshsja, navit_ koly vazhko..mp3",
+    "label": "За те, що ти не здаєшся, навіть коли важко"
+  },
+  {
+    "file": "Za te,.. shcho ty starayeshsja shchyro dopomahaty bat_kam..mp3",
+    "label": "За те, що ти стараєшся щиро допомагати батькам"
+  },
+  {
+    "file": "Za te,.. shcho ty tak bahato usmikhayeshsja..mp3",
+    "label": "За те, що ти так багато усміхаєшся"
+  },
+  {
+    "file": "Za te,.. shcho ty vmiyesh pidtrymaty svoyikh druziv..mp3",
+    "label": "За те, що ти вмієш підтримати своїх друзів"
+  },
+  {
+    "file": "Za te,.. shcho uvazhno slukhayesh, koly shchos_ pojasnjujut_..mp3",
+    "label": "За те, що уважно слухаєш, коли щось пояснюють"
+  },
+  {
+    "file": "Za te,.. shcho vzhe spysh u svoyemu lizhechku..mp3",
+    "label": "За те, що вже спиш у своєму ліжечку"
+  },
+  {
+    "file": "za-te-sho-vzhe-spish.MP3",
+    "label": "За те, що вже спиш"
+  },
+  {
+    "file": "Za tvoju chesnist_, i spravedlyvist_..mp3",
+    "label": "За твою чесність і справедливість"
+  },
+  {
+    "file": "Za tvoju napolehlyvist_, u navchanni..mp3",
+    "label": "За твою наполегливість у навчанні"
+  },
+{
+    "file": "Za te, shcho vy ne zdayetesja, navit_ koly vazhko..mp3",
+    "label": "За те, що ви не здаєтеся, навіть коли важко",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy starayetesja shchyro dopomahaty bat_kam..mp3",
+    "label": "За те, що ви стараєтеся щиро допомагати батькам",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy tak bahato usmikhayetesja..mp3",
+    "label": "За те, що ви так багато усміхаєтеся",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy tak ljubyte svoyikh bat_kiv..mp3",
+    "label": "За те, що ви так любите своїх батьків",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy trymayete vse v chystoti..mp3",
+    "label": "За те, що ви тримаєте все в чистоті",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy uvazhno slukhayete, koly shchos_ pojasnjujut_..mp3",
+    "label": "За те, що ви уважно слухаєте, коли щось пояснюють",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy vmiyete pidtrymaty svoyikh druziv..mp3",
+    "label": "За те, що ви вмієте підтримати своїх друзів",
+    "type": "group"
+  },
+  {
+    "file": "Za te, shcho vy vzhe spyte u svoyikh lizhechkakh..mp3",
+    "label": "За те, що ви вже спите у своїх ліжечках",
+    "type": "group"
+  },
+  {
+    "file": "Za vashu chesnist_ i spravedlyvist_..mp3",
+    "label": "За вашу чесність і справедливість",
+    "type": "group"
+  },
+  {
+    "file": "Za vashu napolehlyvist_ u navchanni..mp3",
+    "label": "За вашу наполегливість у навчанні",
+    "type": "group"
+  }
 ]

@@ -1,3 +1,111 @@
 [
-  {"file":"troshki-bilshe-sluhatisya.MP3", "label":"Більше слухатись"}
+  {
+    "file": "Postarajsja bil_she dopomahaty po domu..mp3",
+    "label": "Постарайся більше допомагати по дому"
+  },
+  {
+    "file": "Postarajsja bil_she huljaty na svizhomu povitri..mp3",
+    "label": "Постарайся більше гуляти на свіжому повітрі"
+  },
+  {
+    "file": "Postarajsja dilytysja ihrashkamy z inshymy..mp3",
+    "label": "Постарайся ділитися іграшками з іншими"
+  },
+  {
+    "file": "Postarajsja menshe dyvytysja televizor.mp3",
+    "label": "Постарайся менше дивитися телевізор"
+  },
+  {
+    "file": "Postarajsja menshe hraty v ihry..mp3",
+    "label": "Постарайся менше грати в ігри"
+  },
+  {
+    "file": "Postarajsja menshe sydity v telefoni..mp3",
+    "label": "Постарайся менше сидіти в телефоні"
+  },
+  {
+    "file": "Postarajsja prydiljaty bil_she chasu navchannju..mp3",
+    "label": "Постарайся приділяти більше часу навчанню"
+  },
+
+  {
+    "file": "Postarajsja samostijno zbyraty svoyi rechi..mp3",
+    "label": "Постарайся самостійно збирати свої речі"
+  },
+  {
+    "file": "Postarajsja trokhy bil_she chytaty knyzhky..mp3",
+    "label": "Постарайся трохи більше читати книжки"
+  },
+  {
+    "file": "Postarajsja troshky bil_she slukhatys_..mp3",
+    "label": "Постарайся трошки більше слухатися"
+  },
+  {
+    "file": "Postarajsja vvichlyvo hovoryty z usima..mp3",
+    "label": "Постарайся ввічливо говорити з усіма"
+  },
+  {
+    "file": "troshki-bilshe-sluhatisya.MP3",
+    "label": "Трошки більше слухайся"
+  },
+{
+    "file": "Postarajtesja bil_she chasu provodyty na svizhomu povitri.mp3",
+    "label": "Постарайтеся більше часу проводити на свіжому повітрі",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja bil_she dopomahaty po domu.mp3",
+    "label": "Постарайтеся більше допомагати по дому",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja dilytysja ihrashkamy z inshymy.mp3",
+    "label": "Постарайтеся ділитися іграшками з іншими",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja menshe dyvytysja televizor.mp3",
+    "label": "Постарайтеся менше дивитися телевізор",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja menshe hraty v ihry.mp3",
+    "label": "Постарайтеся менше грати в ігри",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja menshe sydity v telefonakh.mp3",
+    "label": "Постарайтеся менше сидіти в телефонах",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja prydiljaty bil_she chasu navchannju.mp3",
+    "label": "Постарайтеся приділяти більше часу навчанню",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja rozpovidaty bat_kam pro svoyi pochuttja i dumky.mp3",
+    "label": "Постарайтеся розповідати батькам про свої почуття і думки",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja samostijno zbyraty svoyi rechi..mp3",
+    "label": "Постарайтеся самостійно збирати свої речі",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja troshky bil_she slukhatysja.mp3",
+    "label": "Постарайтеся трошки більше слухатися",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja vvichlyvo hovoryty z usima..mp3",
+    "label": "Постарайтеся ввічливо говорити з усіма",
+    "type": "group"
+  },
+  {
+    "file": "Postarajtesja vytrachaty trokhy bil_she chasu na chytannja.mp3",
+    "label": "Постарайтеся витрачати трохи більше часу на читання",
+    "type": "group"
+  }
 ]

@@ -1,0 +1,770 @@
+{
+    "video1": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "00:54:666",
+                    "end": "00:58:866",
+                    "label": "Сцена 1",
+                    "x": 810,
+                    "y": 295,
+                    "scale": 30,
+                    "scale_x": 89,
+                    "scale_y": 85,
+                    "skew": -6,
+                    "skew_y": -2,
+                    "angle": 2,
+                    "radius": 33,
+                    "opacity": 100,
+                    "glow": 66
+                },
+                {
+                    "start": "04:18:366",
+                    "end": "04:21:733",
+                    "label": "Сцена 2",
+                    "x": 1065,
+                    "y": 380,
+                    "scale": 18,
+                    "scale_x": 111,
+                    "scale_y": 113,
+                    "skew": 4,
+                    "skew_y": -1,
+                    "angle": 1,
+                    "radius": 22,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "child2": [
+                {
+                    "start": "02:17:466",
+                    "end": "02:21:860",
+                    "label": "Сцена 1",
+                    "x": 1305,
+                    "y": 255,
+                    "scale": 24,
+                    "scale_x": 103,
+                    "scale_y": 124,
+                    "skew": -7,
+                    "skew_y": -2,
+                    "angle": 2,
+                    "radius": 27,
+                    "opacity": 100,
+                    "glow": 100
+                },
+                {
+                    "start": "07:04:766",
+                    "end": "07:11:466",
+                    "label": "Сцена 2",
+                    "x": 870,
+                    "y": 305,
+                    "scale": 18,
+                    "scale_x": 119,
+                    "scale_y": 105,
+                    "skew": 0,
+                    "skew_y": -1,
+                    "angle": -1,
+                    "radius": 30,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "06:35:100",
+                    "end": "06:43:466",
+                    "label": "Сцена 1",
+                    "x": 395,
+                    "y": 290,
+                    "scale": 19,
+                    "scale_x": 100,
+                    "scale_y": 110,
+                    "skew": -4,
+                    "skew_y": 1,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "06:35:100",
+                    "end": "06:43:466",
+                    "label": "Сцена 1",
+                    "x": 1290,
+                    "y": 305,
+                    "scale": 19,
+                    "scale_x": 100,
+                    "scale_y": 109,
+                    "skew": -2,
+                    "skew_y": 1,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ]
+        }
+    },
+    "video2": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "01:29:966",
+                    "end": "01:39:399",
+                    "label": "Книга",
+                    "x": 735,
+                    "y": 415,
+                    "scale": 35,
+                    "scale_x": 86,
+                    "scale_y": 98,
+                    "skew": 5,
+                    "skew_y": 3,
+                    "angle": -18,
+                    "radius": 34,
+                    "opacity": 100,
+                    "glow": 100
+                },
+                {
+                    "start": "04:45:000",
+                    "end": "04:51:999",
+                    "label": "Танці",
+                    "x": 930,
+                    "y": 125,
+                    "scale": 29,
+                    "scale_x": 94,
+                    "scale_y": 138,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": -7,
+                    "radius": 41,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "child2": [
+                {
+                    "start": "04:30:667",
+                    "end": "04:37:133",
+                    "label": "Сцена 1",
+                    "x": 930,
+                    "y": 125,
+                    "scale": 28,
+                    "scale_x": 101,
+                    "scale_y": 127,
+                    "skew": 1,
+                    "skew_y": 0,
+                    "angle": -7,
+                    "radius": 50,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "02:42:667",
+                    "end": "02:49:933",
+                    "label": "Сцена 1",
+                    "x": 450,
+                    "y": 280,
+                    "scale": 23,
+                    "scale_x": 108,
+                    "scale_y": 121,
+                    "skew": 9,
+                    "skew_y": 2,
+                    "angle": -26,
+                    "radius": 29,
+                    "opacity": 100,
+                    "glow": 69
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "02:42:667",
+                    "end": "02:49:933",
+                    "label": "Сцена 1",
+                    "x": 955,
+                    "y": 385,
+                    "scale": 26,
+                    "scale_x": 91,
+                    "scale_y": 103,
+                    "skew": 17,
+                    "skew_y": 0,
+                    "angle": -25,
+                    "radius": 25,
+                    "opacity": 100,
+                    "glow": 45
+                }
+            ]
+        }
+    },
+    "video3": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "01:34:167",
+                    "end": "01:43:166",
+                    "label": "Сцена 1",
+                    "x": 905,
+                    "y": 200,
+                    "scale": 44,
+                    "scale_x": 102,
+                    "scale_y": 135,
+                    "skew": -3,
+                    "skew_y": 1,
+                    "angle": 4,
+                    "radius": 39,
+                    "opacity": 100,
+                    "glow": 74
+                }
+            ],
+            "child2": [
+                {
+                    "start": "05:07:600",
+                    "end": "05:12:533",
+                    "label": "Сцена 1",
+                    "x": 1055,
+                    "y": 235,
+                    "scale": 27,
+                    "scale_x": 96,
+                    "scale_y": 169,
+                    "skew": -9,
+                    "skew_y": 7,
+                    "angle": 0,
+                    "radius": 39,
+                    "opacity": 100,
+                    "glow": 75
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "03:21:934",
+                    "end": "03:26:600",
+                    "label": "Сцена 1",
+                    "x": 705,
+                    "y": 300,
+                    "scale": 21,
+                    "scale_x": 100,
+                    "scale_y": 111,
+                    "skew": -6,
+                    "skew_y": 1,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "03:21:934",
+                    "end": "03:26:600",
+                    "label": "Сцена 1",
+                    "x": 1275,
+                    "y": 290,
+                    "scale": 23,
+                    "scale_x": 100,
+                    "scale_y": 107,
+                    "skew": -4,
+                    "skew_y": 1,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ]
+        }
+    },
+    "video4": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "00:27:300",
+                    "end": "00:29:166",
+                    "label": "Початок",
+                    "x": 625,
+                    "y": 495,
+                    "scale": 22,
+                    "scale_x": 103,
+                    "scale_y": 96,
+                    "skew": -2,
+                    "skew_y": 0,
+                    "angle": -29,
+                    "radius": 18,
+                    "opacity": 100,
+                    "glow": 0
+                },
+                {
+                    "start": "07:01:334",
+                    "end": "07:08:333",
+                    "label": "Кінець",
+                    "x": 405,
+                    "y": 350,
+                    "scale": 23,
+                    "scale_x": 113,
+                    "scale_y": 99,
+                    "skew": 1,
+                    "skew_y": -1,
+                    "angle": -13,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "child2": [
+                {
+                    "start": "03:02:100",
+                    "end": "03:12:933",
+                    "label": "Сцена 1",
+                    "x": 730,
+                    "y": 285,
+                    "scale": 21,
+                    "scale_x": 101,
+                    "scale_y": 103,
+                    "skew": 0,
+                    "skew_y": 1,
+                    "angle": -9,
+                    "radius": 21,
+                    "opacity": 100,
+                    "glow": 0
+                },
+                {
+                    "start": "09:07:667",
+                    "end": "09:13:099",
+                    "label": "Сцена 2",
+                    "x": 785,
+                    "y": 245,
+                    "scale": 19,
+                    "scale_x": 151,
+                    "scale_y": 115,
+                    "skew": 0,
+                    "skew_y": 2,
+                    "angle": -23,
+                    "radius": 12,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "04:11:200",
+                    "end": "04:15:899",
+                    "label": "Сцена 1",
+                    "x": 510,
+                    "y": 440,
+                    "scale": 14,
+                    "scale_x": 100,
+                    "scale_y": 104,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 9,
+                    "opacity": 100,
+                    "glow": 15
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "04:11:200",
+                    "end": "04:15:899",
+                    "label": "Сцена 1",
+                    "x": 910,
+                    "y": 440,
+                    "scale": 14,
+                    "scale_x": 100,
+                    "scale_y": 101,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 8,
+                    "opacity": 100,
+                    "glow": 17
+                }
+            ]
+        }
+    },
+    "video5": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "00:54:667",
+                    "end": "00:58:866",
+                    "label": "Сцена 1",
+                    "x": 780,
+                    "y": 295,
+                    "scale": 30,
+                    "scale_x": 100,
+                    "scale_y": 90,
+                    "skew": -6,
+                    "skew_y": -2,
+                    "angle": 2,
+                    "radius": 33,
+                    "opacity": 100,
+                    "glow": 42
+                },
+                {
+                    "start": "06:57:267",
+                    "end": "07:03:966",
+                    "label": "Сцена 2",
+                    "x": 810,
+                    "y": 230,
+                    "scale": 28,
+                    "scale_x": 103,
+                    "scale_y": 88,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": -1,
+                    "radius": 27,
+                    "opacity": 100,
+                    "glow": 93
+                }
+            ],
+            "child2": [
+                {
+                    "start": "02:17:467",
+                    "end": "02:21:866",
+                    "label": "Сцена 1",
+                    "x": 1275,
+                    "y": 220,
+                    "scale": 29,
+                    "scale_x": 96,
+                    "scale_y": 113,
+                    "skew": -8,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 29,
+                    "opacity": 100,
+                    "glow": 88
+                },
+                {
+                    "start": "04:14:167",
+                    "end": "04:17:533",
+                    "label": "Сцена 2",
+                    "x": 1035,
+                    "y": 365,
+                    "scale": 23,
+                    "scale_x": 103,
+                    "scale_y": 95,
+                    "skew": -2,
+                    "skew_y": 5,
+                    "angle": -2,
+                    "radius": 24,
+                    "opacity": 100,
+                    "glow": 92
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "06:27:600",
+                    "end": "06:37:966",
+                    "label": "Сцена 1",
+                    "x": 400,
+                    "y": 310,
+                    "scale": 18,
+                    "scale_x": 100,
+                    "scale_y": 111,
+                    "skew": -5,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "06:27:600",
+                    "end": "06:37:966",
+                    "label": "Сцена 1",
+                    "x": 1290,
+                    "y": 315,
+                    "scale": 19,
+                    "scale_x": 100,
+                    "scale_y": 110,
+                    "skew": -2,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ]
+        }
+    },
+    "video6": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "01:29:967",
+                    "end": "01:39:399",
+                    "label": "Книга",
+                    "x": 695,
+                    "y": 400,
+                    "scale": 30,
+                    "scale_x": 114,
+                    "scale_y": 121,
+                    "skew": 5,
+                    "skew_y": 4,
+                    "angle": -20,
+                    "radius": 1,
+                    "opacity": 100,
+                    "glow": 100
+                },
+                {
+                    "start": "04:30:667",
+                    "end": "04:37:133",
+                    "label": "Сцена 2",
+                    "x": 940,
+                    "y": 135,
+                    "scale": 27,
+                    "scale_x": 101,
+                    "scale_y": 139,
+                    "skew": -1,
+                    "skew_y": 0,
+                    "angle": -7,
+                    "radius": 15,
+                    "opacity": 100,
+                    "glow": 17
+                }
+            ],
+            "child2": [
+                {
+                    "start": "04:45:000",
+                    "end": "04:51:290",
+                    "label": "Сцена 1",
+                    "x": 920,
+                    "y": 115,
+                    "scale": 28,
+                    "scale_x": 107,
+                    "scale_y": 139,
+                    "skew": 1,
+                    "skew_y": 0,
+                    "angle": -7,
+                    "radius": 25,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "02:42:667",
+                    "end": "02:49:933",
+                    "label": "Сцена 1",
+                    "x": 415,
+                    "y": 280,
+                    "scale": 24,
+                    "scale_x": 112,
+                    "scale_y": 123,
+                    "skew": 9,
+                    "skew_y": 2,
+                    "angle": -26,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "02:42:667",
+                    "end": "02:49:933",
+                    "label": "Сцена 1",
+                    "x": 935,
+                    "y": 375,
+                    "scale": 23,
+                    "scale_x": 117,
+                    "scale_y": 127,
+                    "skew": 14,
+                    "skew_y": 1,
+                    "angle": -26,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ]
+        }
+    },
+    "video7": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "01:34:167",
+                    "end": "01:43:166",
+                    "label": "Сцена 1",
+                    "x": 865,
+                    "y": 190,
+                    "scale": 42,
+                    "scale_x": 117,
+                    "scale_y": 143,
+                    "skew": -1,
+                    "skew_y": 0,
+                    "angle": 6,
+                    "radius": 27,
+                    "opacity": 100,
+                    "glow": 100
+                }
+            ],
+            "child2": [
+                {
+                    "start": "05:13:867",
+                    "end": "05:20:399",
+                    "label": "Сцена 1",
+                    "x": 1015,
+                    "y": 220,
+                    "scale": 30,
+                    "scale_x": 101,
+                    "scale_y": 143,
+                    "skew": -2,
+                    "skew_y": 0,
+                    "angle": 7,
+                    "radius": 23,
+                    "opacity": 100,
+                    "glow": 50
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "03:23:700",
+                    "end": "03:28:366",
+                    "label": "Сцена 1",
+                    "x": 705,
+                    "y": 295,
+                    "scale": 21,
+                    "scale_x": 100,
+                    "scale_y": 111,
+                    "skew": -5,
+                    "skew_y": 0,
+                    "angle": 1,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "03:23:700",
+                    "end": "03:28:366",
+                    "label": "Сцена 1",
+                    "x": 1270,
+                    "y": 300,
+                    "scale": 23,
+                    "scale_x": 100,
+                    "scale_y": 106,
+                    "skew": -4,
+                    "skew_y": 0,
+                    "angle": 1,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ]
+        }
+    },
+    "video8": {
+        "scenes": {
+            "child1": [
+                {
+                    "start": "00:27:300",
+                    "end": "00:29:166",
+                    "label": "Початок",
+                    "x": 605,
+                    "y": 470,
+                    "scale": 21,
+                    "scale_x": 111,
+                    "scale_y": 91,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": -29,
+                    "radius": 26,
+                    "opacity": 100,
+                    "glow": 47
+                },
+                {
+                    "start": "06:54:034",
+                    "end": "07:01:010",
+                    "label": "Кінець",
+                    "x": 365,
+                    "y": 310,
+                    "scale": 28,
+                    "scale_x": 108,
+                    "scale_y": 91,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": -13,
+                    "radius": 26,
+                    "opacity": 100,
+                    "glow": 41
+                }
+            ],
+            "child2": [
+                {
+                    "start": "03:02:100",
+                    "end": "03:12:933",
+                    "label": "Сцена 1",
+                    "x": 685,
+                    "y": 245,
+                    "scale": 23,
+                    "scale_x": 111,
+                    "scale_y": 104,
+                    "skew": 1,
+                    "skew_y": 0,
+                    "angle": -9,
+                    "radius": 35,
+                    "opacity": 100,
+                    "glow": 58
+                },
+                {
+                    "start": "08:59:934",
+                    "end": "09:06:367",
+                    "label": "Сцена 2",
+                    "x": 725,
+                    "y": 160,
+                    "scale": 27,
+                    "scale_x": 129,
+                    "scale_y": 104,
+                    "skew": 1,
+                    "skew_y": 0,
+                    "angle": -22,
+                    "radius": 49,
+                    "opacity": 100,
+                    "glow": 73
+                }
+            ],
+            "parent1": [
+                {
+                    "start": "04:11:060",
+                    "end": "04:15:900",
+                    "label": "Сцена 1",
+                    "x": 510,
+                    "y": 440,
+                    "scale": 14,
+                    "scale_x": 100,
+                    "scale_y": 102,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ],
+            "parent2": [
+                {
+                    "start": "04:11:060",
+                    "end": "04:15:900",
+                    "label": "Сцена 1",
+                    "x": 910,
+                    "y": 440,
+                    "scale": 14,
+                    "scale_x": 100,
+                    "scale_y": 102,
+                    "skew": 0,
+                    "skew_y": 0,
+                    "angle": 0,
+                    "radius": 0,
+                    "opacity": 100,
+                    "glow": 0
+                }
+            ]
+        }
+    }
+}
