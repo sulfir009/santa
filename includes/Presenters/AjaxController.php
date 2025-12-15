@@ -69,6 +69,8 @@ function svb_save_config() {
         wp_send_json_success('Налаштування збережено для ВСІХ шаблонів (у svb_config.json)');
     } else {
         wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).');
+    }
+}
 function svb_generate() {
     @ini_set('memory_limit', '512M'); 
     @ini_set('max_execution_time', 300);
@@ -1067,9 +1069,10 @@ function svb_dbg_push(){
     $job_dir = !empty($data['job_dir']) ? $data['job_dir'] : $data['dir'];
 
     $payload_raw = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
-    $payload = json_decode($payload_raw, true);
-    if (!is_array($payload)) $payload = ['raw'=>$payload_raw];
+      $payload = json_decode($payload_raw, true);
+      if (!is_array($payload)) $payload = ['raw'=>$payload_raw];
 
-    svb_align_log($job_dir, 'browser.dump', $payload);
+      svb_align_log($job_dir, 'browser.dump', $payload);
 
-    wp_send_json_success(['ok'=>1]);
+      wp_send_json_success(['ok'=>1]);
+}
