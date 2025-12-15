@@ -584,45 +584,55 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
     $makeAudioBlocks = function($cat, $intervals) use (&$filter, &$amix_inputs, $audIndexMap, $HAS_AFIFO, $tplDur, $audio_format_chain){
         if (!isset($audIndexMap[$cat]) || empty($intervals)) return;
         $idx = $audIndexMap[$cat];
-        
+        $isName = strpos($cat, 'name') === 0;
+        $name_format_chain = ',aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=0:first_pts=0';
+
         if (count($intervals) === 1) {
-            [$stS, $enS] = $intervals[0]; 
-            $st = svb_ts_to_seconds($stS); 
-            $ms = (int)round($st * 1000); 
+            [$stS, $enS] = $intervals[0];
+            $st = svb_ts_to_seconds($stS);
+            $len = max(0, svb_ts_to_seconds($enS) - $st);
+            $segDur = $isName ? min($len, 1.007) : $tplDur;
+            $ms = (int)round($st * 1000);
             $label = "[{$cat}a1]";
-            
-            $chain  = "[{$idx}:a]asetpts=PTS-STARTPTS";
-            $chain .= $audio_format_chain; 
+
+            $chain  = "[{$idx}:a]";
+            if ($isName) $chain .= "atrim=0:{$segDur},";
+            $chain .= "asetpts=PTS-STARTPTS";
+            $chain .= $isName ? $name_format_chain : $audio_format_chain;
             $chain .= ",volume=0.4,adelay={$ms}:all=1";
-            $chain .= ",atrim=0:{$tplDur}"; 
-            
-            if ($HAS_AFIFO) $chain .= ",afifo"; 
+            if (!$isName) $chain .= ",atrim=0:{$tplDur}";
+
+            if ($HAS_AFIFO) $chain .= ",afifo";
             $chain .= "{$label}";
-            
-            $filter[] = $chain; 
-            $amix_inputs[] = $label; 
+
+            $filter[] = $chain;
+            $amix_inputs[] = $label;
             return;
         }
-        
-        $outs = []; 
+
+        $outs = [];
         for ($i=1; $i<=count($intervals); $i++) $outs[] = "[{$cat}s{$i}]";
-        
+
         $filter[] = "[{$idx}:a]asplit=" . count($intervals) . implode('', $outs);
-        
+
         for ($i=1; $i<=count($intervals); $i++){
-            [$stS, $enS] = $intervals[$i-1]; 
-            $st = svb_ts_to_seconds($stS); 
-            $ms = (int)round($st * 1000); 
+            [$stS, $enS] = $intervals[$i-1];
+            $st = svb_ts_to_seconds($stS);
+            $len = max(0, svb_ts_to_seconds($enS) - $st);
+            $segDur = $isName ? min($len, 1.007) : $tplDur;
+            $ms = (int)round($st * 1000);
             $label = "[{$cat}a{$i}]";
-            
-            $chain  = "{$outs[$i-1]}asetpts=PTS-STARTPTS";
-            $chain .= $audio_format_chain; 
+
+            $chain  = "{$outs[$i-1]}";
+            if ($isName) $chain .= "atrim=0:{$segDur},";
+            $chain .= "asetpts=PTS-STARTPTS";
+            $chain .= $isName ? $name_format_chain : $audio_format_chain;
             $chain .= ",volume=0.4,adelay={$ms}:all=1";
-            
-            if ($HAS_AFIFO) $chain .= ",afifo"; 
+
+            if ($HAS_AFIFO) $chain .= ",afifo";
             $chain .= "{$label}";
-            
-            $filter[] = $chain; 
+
+            $filter[] = $chain;
             $amix_inputs[] = $label;
         }
     };
