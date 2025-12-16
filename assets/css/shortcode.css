@@ -275,12 +275,7 @@ word-wrap: break-word
 }
 
 /* === 1. ПРАВИЛА СКРЫТИЯ (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЮЗЕРОВ) === */
-<?php if ( ! $is_admin ) : ?>
-  .svb-admin-only, 
-  [id^="svb-dbg-"] {
-    display: none !important;
-  }
-<?php endif; ?>
+
 /* === ВСТАВИТЬ ЭТО В БЛОК STYLE === */
 .svb-names-row {
     grid-column: 1 / -1; 
@@ -1083,6 +1078,7 @@ word-wrap: break-word
 .svb-video-loader-gif {
     width: 72px;
     height: 72px;
+    background-image: url('https://e-santaa.com/wp-content/uploads/2025/11/Gif-Loading-Icon.webp');
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;

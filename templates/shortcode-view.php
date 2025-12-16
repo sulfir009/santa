@@ -2,7 +2,14 @@
 
 
 <?php if ( ! defined( 'ABSPATH' ) ) { exit; } ?>
-
+<style>
+<?php if ( ! $is_admin ) : ?>
+  .svb-admin-only, 
+  [id^="svb-dbg-"] {
+    display: none !important;
+  }
+<?php endif; ?>
+  </style>
 <div class="svb-wrap">
       <div class="svb-card">
         
