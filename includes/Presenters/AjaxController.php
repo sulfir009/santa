@@ -490,8 +490,8 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
             $shx = 0.0; $shy = 0.0;
 
             if ($need_shear) {
-                $skewX_rad = ($skewX_deg * -1) * M_PI / 180.0;
-                $skewY_rad = ($skewY_deg * -1) * M_PI / 180.0;
+                $skewX_rad = $skewX_deg * M_PI / 180.0;
+                $skewY_rad = $skewY_deg * M_PI / 180.0;
                 
                 $skewX_rad_abs = abs($skewX_deg) * M_PI / 180.0;
                 $skewY_rad_abs = abs($skewY_deg) * M_PI / 180.0;
@@ -520,7 +520,7 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
                 // Тому зсув центру залежить від $h_padded та $w_padded.
                 
                 // 1. Считаем реальный сдвиг в пикселях на основе PADDED размеров
-                $shift_px_x = $val_shx * $h_padded; 
+                $shift_px_x = $val_shx * $h_padded;
                 $shift_px_y = $val_shy * $w_padded;
 
                 // 2. Корректируем центр оверлея в обратную сторону
@@ -532,7 +532,29 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
             $angle_rad = $angle_deg * M_PI / 180.0;
             $angle_str = number_format($angle_rad, 15, '.', '');
             $angle_str = rtrim(rtrim($angle_str, '0'), '.');
-            
+
+            // Debug transform parameters to trace sign/values mismatch
+            svb_dbg_write($job_dir, "debug.transform_{$key}_sc{$i}", [
+                'input_deg' => [
+                    'skewX_deg' => $skewX_deg,
+                    'skewY_deg' => $skewY_deg,
+                    'angle_deg' => $angle_deg,
+                ],
+                'computed' => [
+                    'need_shear'     => $need_shear,
+                    'skewX_rad'      => isset($skewX_rad) ? $skewX_rad : 0.0,
+                    'skewY_rad'      => isset($skewY_rad) ? $skewY_rad : 0.0,
+                    'shx'            => $shx,
+                    'shy'            => $shy,
+                    'rotate_radians' => $angle_rad,
+                    'angle_str'      => $angle_str,
+                ],
+                'filter_fragments' => [
+                    'shear'  => $need_shear ? "shear=shx={$shx}:shy={$shy}:fillcolor=black@0" : 'disabled',
+                    'rotate' => "rotate={$angle_str}:ow=rotw(iw):oh=roth(ih):c=none",
+                ],
+            ]);
+
             $chain .= ",rotate={$angle_str}:ow=rotw(iw):oh=roth(ih):c=none";
 
             $opacityPct = isset($p['opacity']) ? (float)$p['opacity'] : 100.0;
