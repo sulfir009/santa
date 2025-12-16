@@ -498,17 +498,17 @@
                     "start": "01:29:967",
                     "end": "01:39:399",
                     "label": "Книга",
-                    "x": 695,
-                    "y": 400,
-                    "scale": 30,
-                    "scale_x": 114,
-                    "scale_y": 121,
-                    "skew": 5,
+                    "x": 720,
+                    "y": 415,
+                    "scale": 29,
+                    "scale_x": 106,
+                    "scale_y": 117,
+                    "skew": 8,
                     "skew_y": 4,
                     "angle": -20,
-                    "radius": 1,
+                    "radius": 32,
                     "opacity": 100,
-                    "glow": 100
+                    "glow": 9
                 },
                 {
                     "start": "04:30:667",
@@ -532,17 +532,17 @@
                     "start": "04:45:000",
                     "end": "04:51:290",
                     "label": "Сцена 1",
-                    "x": 920,
-                    "y": 115,
-                    "scale": 28,
-                    "scale_x": 107,
-                    "scale_y": 139,
+                    "x": 940,
+                    "y": 145,
+                    "scale": 26,
+                    "scale_x": 105,
+                    "scale_y": 128,
                     "skew": 1,
                     "skew_y": 0,
                     "angle": -7,
                     "radius": 25,
                     "opacity": 100,
-                    "glow": 100
+                    "glow": 9
                 }
             ],
             "parent1": [
@@ -550,17 +550,17 @@
                     "start": "02:42:667",
                     "end": "02:49:933",
                     "label": "Сцена 1",
-                    "x": 415,
+                    "x": 455,
                     "y": 280,
                     "scale": 24,
                     "scale_x": 112,
-                    "scale_y": 123,
+                    "scale_y": 116,
                     "skew": 9,
                     "skew_y": 2,
                     "angle": -26,
-                    "radius": 0,
+                    "radius": 14,
                     "opacity": 100,
-                    "glow": 100
+                    "glow": 12
                 }
             ],
             "parent2": [
@@ -568,17 +568,17 @@
                     "start": "02:42:667",
                     "end": "02:49:933",
                     "label": "Сцена 1",
-                    "x": 935,
+                    "x": 930,
                     "y": 375,
                     "scale": 23,
-                    "scale_x": 117,
+                    "scale_x": 108,
                     "scale_y": 127,
                     "skew": 14,
                     "skew_y": 1,
                     "angle": -26,
-                    "radius": 0,
+                    "radius": 14,
                     "opacity": 100,
-                    "glow": 100
+                    "glow": 17
                 }
             ]
         }
