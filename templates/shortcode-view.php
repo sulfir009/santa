@@ -1795,17 +1795,82 @@
         </div>
       </section>
 
-      <section class="svb-step" data-step="3">
-        <p><span class="svb-spinner" id="svb-spin" style="display:none"></span><strong id="svb-status">Починаємо збірку відео…</strong></p>
-        <div class="svb-field" style="margin-top:16px;">
-          <label class="svb-label">Email для отримання посилання</label>
-          <input class="svb-input" type="email" name="email" id="svb-email" placeholder="you@example.com" required />
+      <section class="svb-step svb-step--video" data-step="3">
+
+        <div class="svb-video-page">
+          <h2 class="svb-video-page__title">Ваше відео</h2>
+
+          <div class="svb-video-card">
+            <!-- LEFT -->
+            <aside class="svb-video-left">
+
+              <div class="svb-video-order">
+                <?php echo wp_kses_post( $welcome_msg ); ?>
+                <?php echo wp_kses_post( $video_ready_html ); ?>
+              </div>
+
+              <div class="svb-video-box">
+                <div class="svb-video-box__title">📲 Завантажте відео на телефон чи комп’ютер.</div>
+                <div class="svb-video-box__text">
+                  Перегляд і посилання будуть активні всього кілька годин, але при необхідності ви зможете заново створити ваше відео
+                  вказавши Ваш номер замовлення або E-mail.
+                </div>
+              </div>
+
+              <div class="svb-video-box svb-video-box--small">
+                <div class="svb-video-box__text svb-video-box__text--italic">
+                  Якщо виникли технічні проблеми з відео або помилково вказали не вірні дані
+                  <a class="svb-video-link" href="#" rel="nofollow">натисніть тут</a>.
+                </div>
+              </div>
+
+              <div class="svb-video-share">
+                <div class="svb-video-share__title">Поділитись відео</div>
+                <div class="svb-video-share__icons" aria-label="Share buttons">
+                  <!-- тут свои иконки/ссылки -->
+                </div>
+              </div>
+
+              <!-- email оставляем, чтобы не ломать логику -->
+              <div class="svb-video-email">
+                <label class="svb-video-email__label" for="svb-email">Email для отримання посилання</label>
+                <input class="svb-input" type="email" name="email" id="svb-email" placeholder="you@example.com" required />
+              </div>
+
+              <div class="svb-video-actions">
+                <button class="svb-btn ghost" type="button" id="svb-back-3">Назад</button>
+
+                <button class="svb-btn primary svb-video-download" type="button" id="svb-finish" disabled>
+                  Завантажити відео
+                </button>
+              </div>
+
+            </aside>
+
+            <!-- RIGHT -->
+            <div class="svb-video-right">
+              <div class="svb-video-preview">
+                <div class="svb-video-preview__media" id="svb-result"></div>
+
+                <div class="svb-video-preview__overlay" aria-live="polite">
+                  <div class="svb-video-progress">
+                    <span class="svb-spinner" id="svb-spin"></span>
+
+                    <div class="svb-video-progress__icon">
+                    </div>
+
+                    <strong class="svb-video-progress__text" id="svb-status">
+                      Починаємо збірку відео…
+                    </strong>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
         </div>
-        <div class="svb-actions">
-          <button class="svb-btn ghost" type="button" id="svb-back-3">Назад</button>
-          <button class="svb-btn primary" type="button" id="svb-finish" disabled>Отримати відео</button>
-        </div>
-        <div class="svb-result" id="svb-result" style="display:none"></div>
+
       </section>
     </form>
   </div>
