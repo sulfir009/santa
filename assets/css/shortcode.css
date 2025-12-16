@@ -1028,6 +1028,14 @@ word-wrap: break-word
     z-index: 1;
 }
 
+.svb-video-preview__media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: #000;
+}
+
 .svb-video-preview__overlay {
     position: absolute;
     inset: 0;
@@ -1045,6 +1053,16 @@ word-wrap: break-word
 
 .svb-video-overlay--hidden {
     display: none;
+}
+
+.svb-video-result-meta {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.4;
 }
 
 .svb-video-progress {

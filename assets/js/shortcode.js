@@ -1742,6 +1742,25 @@ $('#svb-back-3').addEventListener('click', ()=> {
     overlay.classList.toggle('svb-video-overlay--hidden', !show);
   }
 
+  function svbResetPreviewState() {
+    const res = $('#svb-result');
+    if (!res) return;
+
+    const existingVideo = res.querySelector('video');
+    if (existingVideo) {
+      try { existingVideo.pause(); } catch (e) {}
+      existingVideo.removeAttribute('src');
+      try { existingVideo.load(); } catch (e) {}
+    }
+
+    res.innerHTML = '';
+    res.style.display = 'none';
+    svbVideoURL = null;
+
+    const finishBtn = $('#svb-finish');
+    if (finishBtn) finishBtn.disabled = true;
+  }
+
   function svbUpdateVideoPercent(percent) {
     const percentBox = $('#svb-video-percent');
     if (percentBox) {
@@ -1751,6 +1770,7 @@ $('#svb-back-3').addEventListener('click', ()=> {
   async function svbStartGenerate() {
       if (svbGenerating) return;
       svbGenerating = true;
+      svbResetPreviewState();
       svbToggleVideoOverlay(true);
       svbUpdateVideoPercent(0);
       $('#svb-status').textContent = 'Збирання даних...';
@@ -1909,8 +1929,22 @@ function svbPollProgress(token) {
     svbUpdateVideoPercent(100);
     $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
     const res = $('#svb-result');
-    res.style.display = 'block';
-  res.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+    if (res) {
+      const video = document.createElement('video');
+      video.src = url;
+      video.controls = true;
+      video.playsInline = true;
+      video.controlsList = 'nodownload';
+
+      const meta = document.createElement('div');
+      meta.className = 'svb-video-result-meta';
+      meta.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+
+      res.innerHTML = '';
+      res.appendChild(video);
+      res.appendChild(meta);
+      res.style.display = 'block';
+    }
   $('#svb-finish').disabled = false;
   }
   function svbHandleError(data) {
