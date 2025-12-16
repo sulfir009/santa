@@ -855,6 +855,15 @@ function svbSerializeSegmentsToField() {
 const $  = (sel,root=document) => root.querySelector(sel);
 const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
 
+function svbScrollToTop() {
+  const target = document.querySelector('.svb-wrap') || document.querySelector('.svb-card');
+  if (target && typeof target.scrollIntoView === 'function') {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
 let svbCurrentSampleAudio = null;
 function svbFormatTime(seconds) {
     const totalMs = Math.round(seconds * 1000);
@@ -881,6 +890,7 @@ function svbSetStep(n){
   }
   const titles = {1:'Крок 1 — Дані дитини', 2:'Крок 2 — Фото', 3:'Крок 3 — Підтвердження та отримання'};
   $('#svb-title').textContent = titles[n] || '';
+  svbScrollToTop();
 }
 // === ФУНКЦИЯ ФИЛЬТРАЦИИ АУДИО (ФИНАЛЬНАЯ) ===
 function svbPopulateSelects() {
@@ -1692,20 +1702,19 @@ $('#svb-next-1').addEventListener('click', ()=> svbSetStep(2));
 $('#svb-back-2').addEventListener('click', ()=> svbSetStep(1));
 let svbJobToken = null, svbVideoURL = null, svbGenerating = false;
 let svbPollInterval = null; 
-$('#svb-next-2').addEventListener('click', ()=>{
-  buildSoundMap();
-  svbSetStep(3);
-  $('#svb-spin').style.display='inline-block';
-  $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
-  svbStartGenerate(); 
-});
+  $('#svb-next-2').addEventListener('click', ()=>{
+    buildSoundMap();
+    svbSetStep(3);
+    $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
+    svbStartGenerate();
+  });
 $('#svb-back-3').addEventListener('click', ()=> {
   svbSetStep(2);
   if (svbPollInterval) clearInterval(svbPollInterval);
 });
-$('#svb-finish').addEventListener('click', async ()=>{
-  const email = $('#svb-email').value.trim();
-  if(!email){ alert('Вкажіть email'); return; }
+  $('#svb-finish').addEventListener('click', async ()=>{
+    const email = $('#svb-email').value.trim();
+    if(!email){ alert('Вкажіть email'); return; }
   if(!svbVideoURL){
     alert('Відео ще готується. Будь ласка, дочекайтесь повідомлення «Готово».');
     return;
@@ -1725,21 +1734,46 @@ $('#svb-finish').addEventListener('click', async ()=>{
         alert(data.data||'Помилка підтвердження');
       }
     });
-});
-function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function svbLock(on){
-  const lock = $('#svb-lock');
-  if (!lock) return;
-  lock.style.display = on ? 'flex' : 'none';
-  document.documentElement.style.overflow = on ? 'hidden' : '';
-}
-async function svbStartGenerate() {
-    if (svbGenerating) return;
-    svbGenerating = true;
-    svbLock(true);
-    $('#svb-lock-percent').textContent = '0';
-    $('#svb-lock-text').textContent = 'Збирання даних...';
-    $('#svb-status').textContent = 'Збирання даних...';
+  });
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function svbToggleVideoOverlay(show){
+    const overlay = $('#svb-video-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('svb-video-overlay--hidden', !show);
+  }
+
+  function svbResetPreviewState() {
+    const res = $('#svb-result');
+    if (!res) return;
+
+    const existingVideo = res.querySelector('video');
+    if (existingVideo) {
+      try { existingVideo.pause(); } catch (e) {}
+      existingVideo.removeAttribute('src');
+      try { existingVideo.load(); } catch (e) {}
+    }
+
+    res.innerHTML = '';
+    res.style.display = 'none';
+    svbVideoURL = null;
+
+    const finishBtn = $('#svb-finish');
+    if (finishBtn) finishBtn.disabled = true;
+  }
+
+  function svbUpdateVideoPercent(percent) {
+    const percentBox = $('#svb-video-percent');
+    if (percentBox) {
+      percentBox.textContent = `Створення відео – ${percent}%`;
+    }
+  }
+  async function svbStartGenerate() {
+      if (svbGenerating) return;
+      svbGenerating = true;
+      svbResetPreviewState();
+      svbToggleVideoOverlay(true);
+      svbUpdateVideoPercent(0);
+      $('#svb-status').textContent = 'Збирання даних...';
 
     // 1. Сохраняем сегменты времени
     svbSerializeSegmentsToField();
@@ -1831,13 +1865,12 @@ async function svbStartGenerate() {
 
         const data = await response.json();
     
-        if (data.success && data.data.token) {
-            svbJobToken = data.data.token;
-            $('#svb-status').textContent = 'Генерація почалася...';
-            $('#svb-lock-text').textContent = 'Формуємо відео…';
-            svbPollProgress(svbJobToken);
-        } else {
-            svbHandleError(data.data || {msg: 'Сервер повернув помилку (success: false).'});
+          if (data.success && data.data.token) {
+              svbJobToken = data.data.token;
+              $('#svb-status').textContent = 'Генерація почалася...';
+              svbPollProgress(svbJobToken);
+          } else {
+              svbHandleError(data.data || {msg: 'Сервер повернув помилку (success: false).'});
         }
     } catch (err) {
         console.error(err);
@@ -1871,12 +1904,12 @@ function svbPollProgress(token) {
         }
         // ===============================
 
-        if (data.data.status === 'running') {
-          const percent = data.data.percent || 0;
-          $('#svb-lock-percent').textContent = percent + '%';
-          $('#svb-status').textContent = `Іде обробка... ${percent}%`;
-        } else if (data.data.status === 'done') {
-          clearInterval(svbPollInterval);
+          if (data.data.status === 'running') {
+            const percent = data.data.percent || 0;
+            svbUpdateVideoPercent(percent);
+            $('#svb-status').textContent = `Іде обробка... ${percent}%`;
+          } else if (data.data.status === 'done') {
+            clearInterval(svbPollInterval);
           svbHandleSuccess(data.data.url);
         }
       } else {
@@ -1889,23 +1922,35 @@ function svbPollProgress(token) {
     }
   }, 3000); 
 }
-function svbHandleSuccess(url) {
-  svbGenerating = false;
-  svbLock(false);
-  svbVideoURL = url; 
-  $('#svb-lock-percent').textContent = '100%';
-  $('#svb-spin').style.display = 'none';
-  $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
-  const res = $('#svb-result');
-  res.style.display = 'block';
-  res.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+  function svbHandleSuccess(url) {
+    svbGenerating = false;
+    svbToggleVideoOverlay(false);
+    svbVideoURL = url;
+    svbUpdateVideoPercent(100);
+    $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
+    const res = $('#svb-result');
+    if (res) {
+      const video = document.createElement('video');
+      video.src = url;
+      video.controls = true;
+      video.playsInline = true;
+      video.controlsList = 'nodownload';
+
+      const meta = document.createElement('div');
+      meta.className = 'svb-video-result-meta';
+      meta.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+
+      res.innerHTML = '';
+      res.appendChild(video);
+      res.appendChild(meta);
+      res.style.display = 'block';
+    }
   $('#svb-finish').disabled = false;
-}
-function svbHandleError(data) {
-  svbGenerating = false;
-  svbLock(false);
-  $('#svb-spin').style.display = 'none';
-  $('#svb-status').textContent = 'Сталася помилка при генерації відео';
+  }
+  function svbHandleError(data) {
+    svbGenerating = false;
+    svbToggleVideoOverlay(false);
+    $('#svb-status').textContent = 'Сталася помилка при генерації відео';
   const res = $('#svb-result');
   if (res) {
     let msg, cmd = '', log = '', hint = '';
