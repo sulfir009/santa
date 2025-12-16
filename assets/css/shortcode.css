@@ -1,0 +1,899 @@
+input.svb-input {
+    border-radius: 25px;
+    font-size: 11px;
+}
+.svb-req-trigger-link {
+    background: antiquewhite;
+    border-radius: 25px;
+}
+
+/* === Основна розмітка === */
+.svb-wrap { max-width: 1290px; margin: 40px auto; }
+.svb-card { background:#fff; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.08); padding:25px 15px 25px 15px; }
+.svb-header { display:flex; align-items:center; gap:16px; margin-bottom:16px; }
+.svb-stepper { display:flex; gap:8px; align-items:center; }
+.svb-dot { width:28px; height:28px; border-radius:50%; display:inline-flex; justify-content:center; align-items:center; font-weight:700; }
+.svb-dot.active { background:#D62828; color:#fff; }
+.svb-dot.muted { background:#f0f0f0; color:#999; }
+.svb-title { font-size:28px; font-weight:800; margin:0; }
+.svb-actions { display:flex; gap:12px; margin-top:20px; }
+
+/* === Кнопки (Загальні) === */
+.svb-btn { appearance:none; border:none; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer; transition:.2s ease; }
+.svb-btn.primary { background:#D62828; color:#fff; }
+.svb-btn.primary:hover { background:#B81F1F; }
+.svb-btn.ghost { background:#f3f3f3; padding: 6px 10px; font-size: 13px; }
+
+/* === Сітка та поля === */
+.svb-grid { display:grid; gap:16px; }
+@media (min-width: 760px){ .svb-grid.cols-2 { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1024px){ .svb-grid.cols-3 { grid-template-columns: repeat(3, 1fr); } }
+
+.svb-field { display:flex; flex-direction:column; gap:8px; }
+.svb-label { font-weight:700; font-size:14px; }
+.svb-input, .svb-select { border:1px solid #E3E3E3; border-radius:50px; padding:10px 16px; font-size:15px; }
+.svb-range { border:1px solid #E3E3E3; border-radius: 12px; padding: 0; height: 22px; }
+
+.svb-controls { display:grid; gap:8px; grid-template-columns: 1fr 1fr 1fr; }
+.svb-controls label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.svb-controls .svb-val { font-weight: 700; min-width: 30px; text-align: right; }
+.svb-controls .svb-val-input { border: 1px solid #E3E3E3; border-radius: 6px; padding: 2px 6px; font-size: 12px; width: 70px; text-align: right; }
+
+.svb-note { color:#666; font-size:12px; }
+.svb-audio-row { display:flex; align-items:center; gap:8px; }
+.svb-play { border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:#EEE; cursor:pointer; }
+
+.svb-step { display:none; }
+.svb-step.active { display:block; }
+
+.svb-photo-grid { display:grid; gap:18px; }
+@media (min-width: 760px){ .svb-photo-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.svb-drop { background: #fdfdfd; border-radius: 16px; border: 1px solid #ececec; padding: 14px; display:flex; flex-direction:column; gap:12px; }
+@media (min-width: 1024px) { .svb-drop { padding: 18px; } }
+
+.svb-result { background:#F8F8F8; border-radius:12px; padding:16px; margin-top:16px; }
+.svb-spinner { width:22px; height:22px; border:3px solid #ddd; border-top-color:#D62828; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; vertical-align:middle; margin-right:8px; }
+@keyframes spin{ to { transform:rotate(360deg); } }
+
+.svb-suggest { position: relative; }
+#svb-name-suggest, #svb-name-suggest-2, #svb-name-suggest-3 {
+  position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E3E3E3; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08); z-index: 9999; max-height: 240px; overflow: auto; display: none;
+}
+.svb-suggest-item{ padding: 10px 12px; cursor: pointer; }
+.svb-suggest-item:hover, .svb-suggest-item.active{ background: #F6F6F6; }
+
+.svb-screenlock{ position: fixed; inset: 0; z-index: 999999; background: rgba(255,255,255,.92); display: none; align-items: center; justify-content: center; flex-direction: column; backdrop-filter: blur(2px); }
+.svb-screenlock__spinner{ width:48px; height:48px; border:5px solid #e1e1e1; border-top-color:#D62828; border-radius:50%; animation: spin 1s linear infinite; }
+#svb-lock-percent { position: absolute; font-size: 14px; font-weight: 700; color: #333; }
+.svb-screenlock__txt{ margin-top:14px; font-weight:800; font-size:18px; color:#333; text-align:center; }
+
+.svb-vid-preview { position: relative; background: #000; border-radius: 12px; overflow: hidden; width: 100%; max-width: 854px; margin: 0 auto; aspect-ratio: 16 / 9; }
+.svb-vid-preview video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.svb-vid-preview img { position: absolute; top: 0; left: 0; transform-origin: center center; width: 0; height: auto; }
+.svb-ovbox{ position:absolute; left:0; top:0; width:0; height:0; z-index:2; }
+.svb-ovbox > img{ position:absolute; left:0; top:0; width:auto; height:auto; transform-origin:50% 50%; }
+
+.svb-vid-preview img:not([src]) { display: flex; align-items: center; justify-content: center; min-height: 50px; background: rgba(255, 255, 255, 0.4); backdrop-filter: blur(2px); border: 1px dashed #fff; color: white; font-weight: bold; font-size: 14px; text-shadow: 0 1px 2px rgba(0,0,0,0.5); box-sizing: border-box; }
+.svb-vid-preview img:not([src])::after { content: attr(alt); }
+.svb-vid-preview img[src] { background: transparent; backdrop-filter: none; color: transparent; border: none; min-height: 0; }
+
+.svb-vid-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.svb-vid-controls input[type="range"] { margin-left: 4px; padding: 0; width: 80px; }
+.svb-vid-seek-bar-container { padding: 8px 0; }
+.svb-seek-bar { width: 100%; padding: 0 !important; margin: 0 !important; }
+#svb-vid-time-child1 { font-size: 12px; min-width: 70px; }
+
+.svb-admin-only { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: #fff7f7; border: 1px dashed #f4c2c2; }
+.svb-admin-only .svb-controls { grid-template-columns: 1fr 1fr; }
+@media (min-width: 1200px) { .svb-admin-only .svb-controls { grid-template-columns: repeat(3, 1fr); } }
+
+.svb-intervals { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #fafafa; border: 1px dashed #e1e1e1; font-size: 12px; }
+.svb-intervals-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.svb-int-row { display: flex; align-items: center; gap: 6px; }
+.svb-int-row .svb-int-start, .svb-int-row .svb-int-end { flex: 0 0 90px; padding: 4px 6px; font-size: 12px; }
+.svb-int-row .svb-int-del { padding: 4px 8px; font-size: 11px; }
+
+.svb-child-count-wrap { display:flex; gap:10px; margin-bottom:16px; justify-content: center; }
+.svb-child-radio { display:none; }
+.svb-child-label { padding: 10px 20px; border: 1px solid #E3E3E3; border-radius: 50px; cursor: pointer; font-weight: 600; color: #666; transition: all 0.2s; }
+.svb-child-radio:checked + .svb-child-label { background: #D62828; color: #fff; border-color: #D62828; }
+
+/* ========================================================================= */
+/* ===  ДИЗАЙН КАРТОК (ВИПРАВЛЕНИЙ ПІД ВАШ ЗАПИТ) === */
+/* ========================================================================= */
+
+.svb-video-option {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    
+    /* Основна форма */
+    border-radius: 15px;
+    overflow: hidden; 
+    cursor: pointer;
+    background: #fff;
+    
+    /* Дефолтна рамка прозора (щоб не стрибало) */
+    outline: 5px solid transparent; 
+    outline-offset: -5px;
+    
+    /* Тінь */
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    
+    transition: transform 0.2s ease, outline-color 0.2s ease;
+}
+
+/* === ХОВЕР: ЧЕРВОНА РАМКА === */
+/* Коли наводимо мишкою, рамка стає червоною */
+.svb-video-option:hover {
+    outline-color: #D62828;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+}
+
+/* === АКТИВНА: ЖОВТА РАМКА === */
+/* Коли картка обрана, рамка стає жовтою */
+.svb-video-option.active {
+    outline-color: #FACC15;
+}
+
+/* Верхня частина: Картинка */
+.svb-video-thumb-box {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10; 
+    background: #000;
+}
+
+.svb-video-thumb-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: 0.9;
+}
+
+.svb-video-btn-preview {
+    position: absolute;
+    bottom: 6px; 
+    left: 50%;
+    transform: translateX(-50%); 
+    
+    width: 80%;
+    max-width: 180px;
+    height: 24px;
+    
+    background-color: #FFC107; 
+    color: #333333;
+    font-family: Roboto, sans-serif;
+    font-weight: 500;
+    font-size: 11px;
+    line-height: 24px;
+    
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    
+    /* === ВАЖНО: МЕНЯЕМ display: flex на display: none === */
+    display: none; 
+    
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: background 0.2s;
+}
+
+/* 2. Добавляем новое правило: показывать кнопку только у АКТИВНОЙ карточки */
+.svb-video-option.active .svb-video-btn-preview {
+    display: flex; /* Возвращаем flex, чтобы кнопка появилась */
+    animation: fadeIn 0.3s ease-in-out; /* Плавное появление (опционально) */
+}
+
+/* Опционально: анимация появления */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translate(-50%, 5px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.svb-video-btn-preview::before {
+    content: '👁';
+    font-size: 14px;
+    line-height: 1;
+}
+
+.svb-video-btn-preview:hover {
+    background-color: #FFD54F;
+}
+
+/* === Нижня плашка з назвою === */
+.svb-video-label-bar {
+    width: 100%;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    color: white;
+    font-size: 13px;
+    font-family: Roboto, sans-serif;
+    font-weight: 700;
+    text-align: center;
+    text-transform: none;
+    
+    /* Дефолтний колір фону - ЧЕРВОНИЙ (якщо не активна) */
+    background-color: #D62828;
+    transition: background-color 0.2s ease;
+}
+
+/* === АКТИВНА ПЛАШКА: ЖОВТА === */
+/* Коли картка обрана, фон плашки стає жовтим */
+.svb-video-option.active .svb-video-label-bar {
+    background-color: #FACC15;
+}
+
+/* Специфічне правило для першої картки, якщо ви хочете, щоб вона була жовтою за замовчуванням
+   але за вашим описом логіка "активна = жовта" універсальна.
+   Якщо "Фабрика Іграшок" має бути жовтою ЗАВЖДИ, розкоментуйте нижче:
+*/
+/*
+.svb-video-option.theme-yellow .svb-video-label-bar {
+    background-color: #FACC15;
+}
+.svb-video-option.theme-yellow.active {
+    outline-color: #FACC15;
+}
+*/
+
+/* === Модальне вікно === */
+.svb-modal { position: fixed; inset: 0; z-index: 999999; background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease; }
+.svb-modal.active { display: flex; opacity: 1; }
+.svb-modal-content { position: relative; width: 90%; max-width: 1000px; aspect-ratio: 16/9; background: #000; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.svb-modal-close { position: absolute; top: -40px; right: 0; color: #fff; font-size: 36px; line-height: 1; cursor: pointer; opacity: 0.8; transition: opacity 0.2s; z-index: 1000; }
+.svb-modal-close:hover { opacity: 1; }
+.svb-modal video { width: 100%; height: 100%; border-radius: 12px; object-fit: contain; }
+@media (max-width: 768px) {
+    .svb-modal-close { top: 10px; right: 10px; background: rgba(0,0,0,0.6); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+}
+.svb-video-option-label {
+
+text-align: center;
+
+color: #FFFFFF;
+
+background: #D62828;
+
+font-size: 11px;
+
+font-family: Roboto;
+
+font-weight: 700;
+
+line-height: 16.50px;
+
+word-wrap: break-word
+
+}
+
+/* === 1. ПРАВИЛА СКРЫТИЯ (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЮЗЕРОВ) === */
+<?php if ( ! $is_admin ) : ?>
+  .svb-admin-only, 
+  [id^="svb-dbg-"] {
+    display: none !important;
+  }
+<?php endif; ?>
+/* === ВСТАВИТЬ ЭТО В БЛОК STYLE === */
+.svb-names-row {
+    grid-column: 1 / -1; 
+    display: flex;        
+    gap: 16px;            
+    width: 100%;
+}
+.svb-names-row .svb-field {
+    flex: 1;             
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .svb-names-row {
+        flex-direction: column;
+    }
+}
+/* === ВСТАВИТЬ В НАЧАЛО БЛОКА <style> (примерно строка 280) === */
+
+.svb-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    width: 100%; /* Добавлено для надежности */
+}
+
+/* Важно: input должен сжиматься, чтобы дать место кнопке */
+.svb-input-wrapper .svb-input {
+    flex: 1;
+    min-width: 0; /* Важно для Grid/Flex контейнеров */
+}
+
+/* Стили кнопки Play */
+.svb-name-play {
+    display: none; /* Скрыта пока не выбрано имя */
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #D62828;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.2s;
+    font-size: 14px;
+    padding: 0;
+}
+.svb-name-play:hover {
+    background: #B81F1F;
+}
+/* Если кнопка активна (display: flex), центруем иконку */
+.svb-name-play[style*="display: flex"] {
+    display: flex !important;
+}
+
+/* === Виджет запроса имени === */
+.svb-req-widget {
+    margin-top: 16px;
+    background: #FFF6F0;
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.svb-req-closed {
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+
+.svb-req-text {
+    color: #333; font-size: 13px; font-family: Roboto, sans-serif; font-weight: 500; line-height: 1.2;
+}
+.svb-req-link {
+    text-decoration: underline; cursor: pointer;
+}
+.svb-req-icon {
+    font-weight: 500; font-size: 16px; color: #333;
+}
+
+.svb-req-opened {
+    padding: 16px;
+    display: none; /* Скрыто по умолчанию */
+    flex-direction: column;
+    gap: 12px;
+}
+
+.svb-req-desc {
+    color: #333; font-size: 11px; font-family: Roboto, sans-serif; font-weight: 400; line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.svb-req-input {
+    width: 100%;
+    height: 36px;
+    background: white;
+    border-radius: 43px;
+    border: 1px solid #666;
+    padding: 0 14px;
+    font-size: 12px;
+    font-family: Roboto, sans-serif;
+    color: #333;
+    outline: none;
+}
+.svb-req-input::placeholder { color: #757575; }
+
+.svb-req-btn {
+    width: 100%;
+    height: 36px;
+    background: #D62828;
+    border-radius: 50px;
+    border: none;
+    color: white;
+    font-size: 13px;
+    font-family: Roboto, sans-serif;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.svb-req-btn:hover { background: #b81f1f; }
+.svb-req-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+/* Анимация открытия */
+.svb-req-widget.active .svb-req-closed { display: none; }
+.svb-req-widget.active .svb-req-opened { display: flex; }
+
+/* === Нове посилання та попап запиту імені === */
+.svb-req-trigger-link {
+    font-size: 12px;
+    color: #D62828;
+    cursor: pointer;
+    margin-top: 6px;
+    display: inline-block;
+    font-weight: 500;
+}
+.svb-req-trigger-link:hover {
+    color: #B81F1F;
+}
+
+/* Стилі для контенту попапа запиту (перевизначаємо загальні стилі модалки) */
+.svb-req-popup-content {
+    background: #fff !important; /* Білий фон замість чорного */
+    max-width: 450px !important;
+    width: 90% !important;
+    aspect-ratio: auto !important; /* Прибираємо 16/9 */
+    padding: 25px !important;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    color: #333;
+    border-radius: 16px;
+}
+.svb-req-popup-content h3 {
+    margin: 0 0 5px 0;
+    font-size: 20px;
+    text-align: center;
+}
+.svb-req-popup-content .svb-close-black {
+    color: #333 !important;
+    background: #f0f0f0 !important;
+    top: 10px !important;
+    right: 10px !important;
+    width: 30px; 
+    height: 30px;
+    font-size: 20px;
+}
+/* === Стилі для точок слайдера (пагінація) === */
+.svb-slider-dots {
+    display: none; /* На комп'ютері приховано */
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-bottom: 5px;
+}
+
+.svb-slider-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #E3E3E3;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+/* Активна точка - довша і жовта (під колір активної картки) */
+.svb-slider-dot.active {
+    background-color: #FACC15; /* Жовтий */
+    width: 24px;
+    border-radius: 12px;
+}
+
+/* Показуємо тільки на мобільних */
+@media (max-width: 768px) {
+    .svb-slider-dots {
+        display: flex;
+    }
+}
+
+/* Додайте це в блок <style> */
+
+.svb-select {
+    /* 1. Прибираємо стандартну системну стрілку */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+
+    /* 2. Малюємо свою стрілку (SVG код) */
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23333333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-size: 16px; /* Розмір самої стрілочки */
+
+    /* 3. ЯК ПОСУНУТИ СТРІЛКУ: */
+    /* right 20px center -> означає 20px від правого краю. */
+    /* Змініть 20px на 30px або 10px, щоб посунути її */
+    background-position: right 20px center;
+
+    /* 4. Важливий відступ справа, щоб текст не наліз на стрілку */
+    padding-right: 45px; 
+}
+/* === Стиль кнопки запиту імені (Дизайн #FFF6F0) === */
+.svb-req-trigger-link {
+    /* Розміри та відступи */
+        width: 230px;
+    box-sizing: border-box; /* Щоб padding не збільшував ширину */
+    padding: 10px 12px;      /* Відступи, як top:7px left:7px у дизайні */
+    margin-top: 1px;        /* Відступ зверху від інпуту */
+    
+    /* Фон та рамка */
+    background: #FFF6F0;
+    border-radius: 10px;
+    
+    /* Вирівнювання (Flexbox замість absolute) */
+    display: flex;
+    justify-content: space-between; /* Текст зліва, плюс справа */
+    align-items: center;            /* Центрування по вертикалі */
+    
+    /* Курсор та переходи */
+    cursor: pointer;
+    text-decoration: none; /* Прибираємо стандартне підкреслення блоку */
+    transition: background-color 0.2s ease;
+}
+
+/* Ефект наведення */
+.svb-req-trigger-link:hover {
+    background: #ffebe0;
+}
+
+/* Стиль тексту */
+.svb-req-text {
+    color: #333333;
+    font-size: 12px; /* 10px у дизайні, 11px краще для читабельності */
+    font-family: 'Roboto', sans-serif;
+    font-weight: 500;
+    line-height: 14px;
+}
+
+/* Стиль підкресленої частини "Натисніть тут" */
+.svb-req-text u {
+    text-decoration: underline;
+    text-underline-offset: 2px; /* Відступ лінії для краси */
+}
+
+/* Стиль плюсика (+) */
+.svb-req-plus {
+    color: #333333;
+    font-size: 14px;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 500;
+    line-height: 14px;
+}
+/* === НОВЫЕ СТИЛИ ДЛЯ КНОПОК С ЦЕНАМИ === */
+.svb-child-count-wrap { 
+    display: flex; 
+    gap: 10px; 
+    margin-bottom: 16px; 
+    justify-content: center; 
+    flex-wrap: wrap; 
+}
+
+.svb-child-radio { display: none; }
+
+/* Основной контейнер кнопки (текст + цена) */
+.svb-child-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 4px 4px 20px; /* Отступ слева больше для текста */
+    border: 1px solid #E3E3E3;
+    border-radius: 50px;
+    cursor: pointer;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    font-size: 18px; /* Размер шрифта как на макете */
+    color: #333;
+    background: #fff;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+/* Активное состояние (выбранная кнопка) */
+.svb-child-radio:checked + .svb-child-label {
+    background: #C0392B; /* Красный цвет */
+    color: #fff;
+    border-color: #C0392B;
+    box-shadow: 0 4px 10px rgba(192, 57, 43, 0.3);
+}
+
+/* Желтый бейдж с ценой */
+.svb-c-price {
+    background: #F4D03F; /* Желтый цвет */
+    color: #000; /* Текст внутри желтого всегда черный */
+    border-radius: 30px;
+    padding: 6px 14px;
+    margin-left: 12px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.1;
+    font-weight: 800;
+}
+
+/* Старая цена (зачеркнутая) */
+.svb-c-old {
+    color: #6b5c21;
+    font-size: 11px;
+    text-decoration: line-through;
+    opacity: 0.7;
+    font-weight: 500;
+}
+
+/* Новая цена */
+.svb-c-new {
+    color: #000;
+}
+
+/* Мобильная адаптация кнопок */
+@media (max-width: 480px) {
+    .svb-child-label {
+        font-size: 15px;
+        padding-left: 15px;
+        width: 100%; /* На мобильном кнопки на всю ширину */
+        justify-content: space-between;
+    }
+    .svb-child-count-wrap {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+/* ========================================= */
+/* === СТИЛИ ДЛЯ ПК (Сетка) === */
+/* ========================================= */
+.svb-desktop-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+/* Карточка ПК */
+.svb-video-option {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #fff;
+    border: 3px solid transparent;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.svb-video-option:hover {
+    border-color: #D62828;
+    transform: translateY(-2px);
+}
+.svb-video-option.active {
+    border-color: #FACC15;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+}
+
+/* Картинка ПК */
+.svb-video-thumb-box {
+    position: relative;
+    width: 100%; aspect-ratio: 16/9; background: #000;
+}
+.svb-video-thumb-box img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+}
+
+/* Кнопка "Дивитися" на ПК */
+.svb-video-btn-preview {
+    display: none; 
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    background: #FACC15; color: #333; border: none; padding: 6px 14px;
+    border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer;
+    align-items: center; gap: 5px; white-space: nowrap;
+}
+.svb-video-btn-preview::before { content: '👁'; }
+.svb-video-option.active .svb-video-btn-preview { display: flex; }
+
+/* Плашка названия ПК */
+.svb-video-label-bar {
+    background-color: #D62828; color: #fff; font-weight: 700;
+    text-align: center; padding: 10px 5px; font-size: 13px; text-transform: uppercase;
+}
+.svb-video-option.active .svb-video-label-bar {
+    background-color: #FACC15; color: #333;
+}
+
+/* Контейнер, який займає одну клітинку гріда, але всередині розбитий на два стовпчики */
+.svb-customer-cell {
+    display: flex;
+    gap: 15px; /* Відстань між Іменем та Емейлом */
+    align-items: flex-start;
+    width: 100%;
+}
+
+/* Стовпчики всередині (Ім'я зліва, Емейл справа) */
+.svb-customer-col {
+    flex: 1; /* Змушує їх займати рівну ширину (50% на 50%) */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0; /* Важливо для flexbox, щоб інпути не вилазили */
+}
+
+/* Стилізація посилання на промокод */
+.svb-promo-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: #A5402D; /* Темно-червоний колір як на скріншоті */
+    text-decoration: none;
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.2;
+}
+.svb-promo-link span u {
+    text-decoration: underline;
+}
+.svb-promo-link:hover {
+    opacity: 0.8;
+}
+
+/* Адаптація для мобільних: стовпчики стають один під одним */
+@media (max-width: 480px) {
+    .svb-customer-cell {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+/* ========================================= */
+/* === СТИЛИ ДЛЯ МОБИЛЬНОГО (Featured + Slider) === */
+/* ========================================= */
+@media (max-width: 768px) {
+    /* Основной контейнер мобилки */
+    .svb-template-section {
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+    }
+
+    /* 1. БОЛЬШОЕ ВИДЕО (Featured) */
+    .svb-featured-container {
+        width: 100%;
+        margin-bottom: 15px;
+    }
+    .svb-feat-card {
+        border-radius: 16px;
+        overflow: hidden;
+        background: #FACC15; /* Желтый фон */
+        padding-bottom: 0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .svb-feat-img-wrap {
+        position: relative;
+        margin: 4px 4px 0 4px; /* Желтая рамка */
+        border-top-left-radius: 12px;
+        border-top-right-radius: 12px;
+        overflow: hidden;
+    }
+    .svb-feat-thumb {
+        width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+    }
+    .svb-feat-btn {
+        position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+        background: #FACC15; color: #333; font-weight: 700; border: none;
+        padding: 8px 16px; border-radius: 20px; font-size: 12px; cursor: pointer;
+        display: flex; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .svb-feat-btn::before { content: '👁'; }
+    
+    .svb-feat-label {
+        text-align: center; color: #333; font-weight: 800; font-size: 14px;
+        padding: 8px 0; text-transform: uppercase;
+    }
+
+    /* 2. ЗАГОЛОВОК "Інші відео" */
+    .svb-section-title {
+        margin: 0 0 10px 0;
+        font-size: 16px; font-weight: 700; color: #333;
+    }
+
+    /* 3. СЛАЙДЕР (Others) */
+    .svb-others-slider {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 10px;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none; /* Firefox */
+    }
+    .svb-others-slider::-webkit-scrollbar { display: none; }
+
+    .svb-small-card {
+        flex: 0 0 160px; /* Ширина маленькой карточки */
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+        cursor: pointer;
+        scroll-snap-align: start;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .svb-small-thumb {
+        width: 100%; height: 90px; object-fit: cover; display: block;
+    }
+    .svb-small-label {
+        background: #D62828; color: #fff; font-size: 10px; font-weight: 700;
+        text-align: center; padding: 6px 4px; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
+    }
+}
+
+/* Стилі для вікна обрізки (Green Header Style) */
+.svb-crop-content {
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    width: 90%;
+    max-width: 500px;
+    aspect-ratio: auto !important; /* Перебиваємо старий стиль 16/9 */
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+}
+
+.svb-crop-header {
+    background: #008631; /* Зелений як на фото */
+    padding: 15px;
+    display: flex;
+    justify-content: center; /* Центруємо заголовок */
+    align-items: center;
+    position: relative;
+}
+
+.svb-crop-header h3 {
+    color: #fff;
+    margin: 0;
+    font-size: 18px;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+}
+
+.svb-crop-close {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.svb-crop-body {
+    padding: 20px;
+    background: #f0f0f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.svb-crop-img-container {
+    max-height: 60vh; /* Обмеження висоти */
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* Переконаємось, що картинка не вилазить */
+#svb-crop-target {
+    max-width: 100%;
+}
+
+.svb-crop-actions {
+    padding: 15px;
+    background: #fff;
+    text-align: center;
+    border-top: 1px solid #eee;
+}
+
+#svb-crop-save {
+    background: #D62828; /* Червона кнопка Save */
+    border-radius: 50px;
+    padding: 10px 40px;
+    font-size: 16px;
+}
