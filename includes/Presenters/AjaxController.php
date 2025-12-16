@@ -490,8 +490,8 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
             $shx = 0.0; $shy = 0.0;
 
             if ($need_shear) {
-                $skewX_rad = $skewX_deg * M_PI / 180.0;
-                $skewY_rad = $skewY_deg * M_PI / 180.0;
+                $skewX_rad = ($skewX_deg * -1) * M_PI / 180.0;
+                $skewY_rad = ($skewY_deg * -1) * M_PI / 180.0;
                 
                 $skewX_rad_abs = abs($skewX_deg) * M_PI / 180.0;
                 $skewY_rad_abs = abs($skewY_deg) * M_PI / 180.0;
