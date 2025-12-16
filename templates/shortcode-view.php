@@ -1848,25 +1848,28 @@
             </aside>
 
             <!-- RIGHT -->
-            <div class="svb-video-right">
-              <div class="svb-video-preview">
-                <div class="svb-video-preview__media" id="svb-result"></div>
-
-                <div class="svb-video-preview__overlay" aria-live="polite">
-                  <div class="svb-video-progress">
-                    <span class="svb-spinner" id="svb-spin"></span>
-
-                    <div class="svb-video-progress__icon">
-                    </div>
-
-                    <strong class="svb-video-progress__text" id="svb-status">
-                      Починаємо збірку відео…
-                    </strong>
+              <div class="svb-video-right">
+                <div class="svb-video-preview">
+                  <div class="svb-video-preview__bg">
+                    <img class="svb-video-bg" src="<?php echo esc_url( $video_poster ?? '' ); ?>" alt="<?php echo esc_attr__( 'Попередній перегляд відео', 'santa' ); ?>">
                   </div>
-                </div>
 
+                  <div class="svb-video-preview__media" id="svb-result"></div>
+
+                  <div class="svb-video-preview__overlay" id="svb-video-overlay" aria-live="polite">
+                    <div class="svb-video-progress">
+                      <div class="svb-video-loader-gif" aria-hidden="true"></div>
+
+                      <div class="svb-video-progress__text" id="svb-video-percent">Створення відео – 0%</div>
+
+                      <strong class="svb-video-progress__status" id="svb-status">
+                        Починаємо збірку відео…
+                      </strong>
+                    </div>
+                  </div>
+
+                </div>
               </div>
-            </div>
 
           </div>
         </div>
@@ -1876,14 +1879,7 @@
   </div>
 </div>
 
-<div class="svb-screenlock" id="svb-lock">
-  <div class="svb-screenlock__spinner" id="svb-spinner-box">
-    <span id="svb-lock-percent">0%</span>
-  </div>
-  <div class="svb-screenlock__txt" id="svb-lock-text">Формуємо відео… будь ласка, не закривайте сторінку</div>
-</div>
-
-<div class="svb-modal" id="svb-video-modal" onclick="svbCloseModal(event)">
+  <div class="svb-modal" id="svb-video-modal" onclick="svbCloseModal(event)">
   <div class="svb-modal-content">
     <div class="svb-modal-close" onclick="svbCloseModal(event, true)">&times;</div>
     <video id="svb-modal-video" controls controlsList="nodownload" oncontextmenu="return false;"></video>
