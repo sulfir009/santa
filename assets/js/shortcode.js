@@ -512,7 +512,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const paymentToggle = document.getElementById('svb-payment-enabled');
+    const paymentToggle = document.querySelector('#svb_payment_toggle');
     if (paymentToggle && typeof SVB_PAYMENT.enabled !== 'undefined') {
         paymentToggle.checked = !!SVB_PAYMENT.enabled;
     }
@@ -1848,9 +1848,15 @@ function svbClearInvoiceId() {
   try { localStorage.removeItem(SVB_PAYMENT_STORAGE.invoice); } catch(e) {}
 }
 
-function svbIsPaymentDisabledByAdmin() {
-  const toggle = document.getElementById('svb-payment-enabled');
-  return !!(toggle && !toggle.checked);
+function svbIsPaymentDisabledByAdmin(logMissing = false) {
+  const toggle = document.querySelector('#svb_payment_toggle');
+  if (!toggle) {
+    if (logMissing) {
+      svbError('[SVB PAY] payment toggle not found in DOM, defaulting to payRequired=true');
+    }
+    return false;
+  }
+  return !toggle.checked;
 }
 
 function svbHidePaymentError() {
@@ -1947,15 +1953,22 @@ async function svbHandleStep2Next() {
   const childCount = svbGetSelectedChildCount();
   const paymentEnabled = !!SVB_PAYMENT.enabled;
   const isAdmin = !!SVB_PAYMENT.is_admin;
-  const adminBypassCheckboxValue = svbIsPaymentDisabledByAdmin();
-  const requirePayment = paymentEnabled && (!isAdmin || !adminBypassCheckboxValue);
+  const paymentToggle = document.querySelector('#svb_payment_toggle');
+  const toggleFound = !!paymentToggle;
+  const toggleChecked = paymentToggle ? !!paymentToggle.checked : true;
+  if (isAdmin && !toggleFound) {
+    svbError('[SVB PAY] admin payment toggle not found, defaulting payRequired=true');
+  }
+
+  const requirePayment = isAdmin ? toggleChecked : true;
 
   const savedState = svbLoadState();
   svbLog('[SVB STEP2] Next click', {
     payRequired: requirePayment,
     paymentEnabled,
     isAdmin,
-    adminBypassCheckboxValue,
+    adminToggleFound: toggleFound,
+    adminToggleChecked: toggleChecked,
     child_count: childCount,
     selected_video_id: SVB_SELECTED_VIDEO_ID,
     formData: savedState.formData || {}

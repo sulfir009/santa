@@ -1798,8 +1798,8 @@
 
         <div class="svb-field svb-admin-only" style="margin: 10px 0;">
           <label class="svb-label" style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="svb-payment-enabled" checked />
-            <span>Оплата: вкл/викл (admin)</span>
+            <input type="checkbox" id="svb_payment_toggle" checked />
+            <span>Оплата включена (admin)</span>
           </label>
           <div style="font-size:12px; color:#555;">Вимикайте тільки для тестів або службової підтримки.</div>
         </div>
