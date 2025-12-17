@@ -583,6 +583,41 @@ function svbError() {
     console.error.apply(console, args);
 }
 
+function svbMaskToken(tkn) {
+    if (!tkn) return '';
+    const token = String(tkn);
+    if (token.length <= 6) return token;
+    if (token.length <= 12) return token.slice(0, 3) + '***' + token.slice(-2);
+    return token.slice(0, 6) + '***' + token.slice(-4);
+}
+
+function svbMaskUrlToken(url) {
+    try {
+        const u = new URL(url, window.location.origin);
+        const token = u.searchParams.get('token');
+        if (token) {
+            u.searchParams.set('token', svbMaskToken(token));
+        }
+        return u.toString();
+    } catch (e) {
+        return url;
+    }
+}
+
+function svbLogDownload() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB DL]');
+    console.log.apply(console, args);
+}
+
+function svbErrorDownload() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB DL]');
+    console.error.apply(console, args);
+}
+
 /* === НАЛАШТУВАННЯ ПРОПОРЦІЙ (ASPECT RATIO) === */
 const SVB_ASPECT_RATIOS = {
     // ЗАМЕНИТЕ NaN на конкретные пропорции, чтобы запретить изменение рамки!
@@ -2349,19 +2384,114 @@ function svbPollProgress(token) {
       clearInterval(svbPollInterval);
       svbHandleError({msg: 'Помилка мережі під час перевірки статусу.', log: err.message});
     }
-  }, 3000); 
+  }, 3000);
 }
-  function svbHandleSuccess(url) {
-    if (!url) {
-      svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
-      return;
+
+// Diagnostics: check download endpoint response before navigating (open browser Console to inspect status, content-type, final URL, headers).
+async function svbProbeDownload(url) {
+    if (!svbIsDebugMode()) {
+        return { okForVideo: true, reason: 'debug_off' };
     }
-    console.debug('SVB download URL', url);
+
+    const maskedUrl = svbMaskUrlToken(url || '');
+    svbLogDownload('Probe start', { requestedUrl: maskedUrl });
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            redirect: 'follow',
+            headers: {
+                Range: 'bytes=0-512'
+            }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const contentDisposition = response.headers.get('content-disposition') || '';
+        const contentLength = response.headers.get('content-length') || '';
+        const dlHeader = response.headers.get('x-svb-download') || '';
+        const dlReason = response.headers.get('x-svb-download-reason') || '';
+
+        svbLogDownload('Probe response', {
+            requestedUrl: maskedUrl,
+            status: response.status,
+            ok: response.ok,
+            redirected: response.redirected,
+            finalUrl: svbMaskUrlToken(response.url || ''),
+            headers: {
+                'content-type': contentType,
+                'content-disposition': contentDisposition,
+                'content-length': contentLength,
+                'x-svb-download': dlHeader,
+                'x-svb-download-reason': dlReason
+            }
+        });
+
+        if (contentType.toLowerCase().startsWith('text/')) {
+            const body = await response.text();
+            svbLogDownload('Probe body (first 800 chars)', body.slice(0, 800));
+            return { okForVideo: false, reason: 'content-type ' + contentType };
+        }
+
+        if (!contentType.toLowerCase().startsWith('video/')) {
+            return { okForVideo: false, reason: 'content-type ' + (contentType || 'unknown') };
+        }
+
+        if (!(response.ok || response.status === 206)) {
+            return { okForVideo: false, reason: 'status ' + response.status };
+        }
+
+        return { okForVideo: true, reason: 'ok' };
+    } catch (err) {
+        svbErrorDownload('Probe failed', err);
+        return { okForVideo: false, reason: err && err.message ? err.message : 'probe_failed' };
+    }
+}
+
+async function svbNavigateToDownload(url) {
+    if (!url) return;
+    if (!svbIsDebugMode()) {
+        window.location.href = url;
+        return;
+    }
+
+    const probe = await svbProbeDownload(url);
+    if (probe.okForVideo) {
+        window.location.href = url;
+    } else {
+        alert('Download failed: ' + (probe.reason || 'unknown'));
+    }
+}
+
+function svbAttachDownloadDebug(container, url) {
+    if (!container || !url) return;
+    const anchors = container.querySelectorAll('.svb-download-link');
+    anchors.forEach(a => {
+        a.addEventListener('click', async (e) => {
+            if (!svbIsDebugMode()) return;
+            e.preventDefault();
+            await svbNavigateToDownload(url);
+        });
+    });
+}
+
+function svbHandleSuccessInternal(url) {
+    if (!url) {
+        svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
+        return;
+    }
+
+    const maskedUrl = svbMaskUrlToken(url);
+    svbLogDownload('Download URL issued', maskedUrl);
     svbGenerating = false;
     svbToggleVideoOverlay(false);
     svbVideoURL = url;
     svbUpdateVideoPercent(100);
-    $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
+    const statusEl = $('#svb-status');
+    if (statusEl) {
+        statusEl.innerHTML = `✅ Відео зібрано. <a class="svb-download-link" href="${url}" download>Скачати</a>`;
+        svbAttachDownloadDebug(statusEl, url);
+    }
     const res = $('#svb-result');
     if (res) {
       const video = document.createElement('video');
@@ -2372,34 +2502,22 @@ function svbPollProgress(token) {
 
       const meta = document.createElement('div');
       meta.className = 'svb-video-result-meta';
-      meta.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+      meta.innerHTML = `<b>Готово!</b> <a class="svb-download-link" href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
 
       res.innerHTML = '';
       res.appendChild(video);
       res.appendChild(meta);
       res.style.display = 'block';
+      svbAttachDownloadDebug(res, url);
     }
-  $('#svb-finish').disabled = false;
-  }
+    if (svbIsDebugMode()) {
+        svbProbeDownload(url);
+    }
+    $('#svb-finish').disabled = false;
+}
 function svbHandleSuccess(url) {
-  svbGenerating = false;
-  svbToggleVideoOverlay(false);
-  svbVideoURL = url;
-  console.debug('SVB download URL', url);
-  svbUpdateVideoPercent(100);
-
-  // без ссылки
-  document.getElementById('svb-status').textContent = '✅ Відео зібрано';
-
-  // просто заполняем превью видео
-  svbRenderResultVideo(url);
-
-  const finishBtn = document.getElementById('svb-finish');
-  if (finishBtn) finishBtn.disabled = false;
-
-  svbClearInvoiceId();
-  svbClearState();
-  svbPaymentStatus = 'paid';
+    // Wrapper to keep legacy references working while ensuring download probes/logs.
+    svbHandleSuccessInternal(url);
 }
 
 

@@ -1198,9 +1198,13 @@ function svb_check_progress() {
         }
 
         if (!empty($data['job_dir'])) {
+            $masked_download_url = $videoUrl;
+            if ($videoUrl && strpos($videoUrl, 'token=') !== false) {
+                $masked_download_url = preg_replace('/(token=)([^&#]+)/', '$1***', $videoUrl);
+            }
             svb_dbg_write($data['job_dir'], 'download.url', [
                 'order_id' => isset($order_id) ? $order_id : null,
-                'download_url' => $videoUrl,
+                'download_url' => $masked_download_url,
                 'abs_path' => $permanent_path,
             ]);
         }

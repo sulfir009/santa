@@ -49,13 +49,18 @@ function svb_stream_order_video($order_id, $token) {
     $order_id = absint($order_id);
     $token = sanitize_text_field($token);
 
-    $send_error = function($reason_key, $status) {
+    $set_reason_header = function($reason_key) {
         header('X-SVB-Download: hit');
         if (defined('SVB_DEBUG') && SVB_DEBUG) {
             header('X-SVB-Download-Reason: ' . $reason_key);
         }
+    };
+
+    $send_error = function($reason_key, $status) use ($set_reason_header) {
+        $set_reason_header($reason_key);
         status_header($status);
         header('Content-Type: text/plain; charset=UTF-8');
+        nocache_headers();
         echo 'SVB download error: ' . $reason_key;
         exit;
     };
@@ -79,8 +84,12 @@ function svb_stream_order_video($order_id, $token) {
     $video_path = $result['video_path'] ?? '';
     $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
 
-    if (!$video_path || !file_exists($video_path) || !is_readable($video_path)) {
+    if (!$video_path || !file_exists($video_path)) {
         $send_error('no_file', 404);
+    }
+
+    if (!is_readable($video_path)) {
+        $send_error('not_readable', 403);
     }
 
     if ($generated_at && (time() - $generated_at) > HOUR_IN_SECONDS) {
@@ -89,17 +98,14 @@ function svb_stream_order_video($order_id, $token) {
 
     $fp = fopen($video_path, 'rb');
     if (!$fp) {
-        $send_error('unreadable', 500);
+        $send_error('not_readable', 500);
     }
 
     while (ob_get_level()) {
         ob_end_clean();
     }
 
-    header('X-SVB-Download: hit');
-    if (defined('SVB_DEBUG') && SVB_DEBUG) {
-        header('X-SVB-Download-Reason: ok');
-    }
+    $set_reason_header('ok');
 
     status_header(200);
     nocache_headers();
@@ -141,11 +147,15 @@ function svb_handle_download_endpoint() {
 
     nocache_headers();
 
+    header('X-SVB-Download: hit');
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        header('X-SVB-Download-Reason: received');
+    }
+
     $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
     $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
 
     if (!$order_id || !$token) {
-        header('X-SVB-Download: hit');
         if (defined('SVB_DEBUG') && SVB_DEBUG) {
             header('X-SVB-Download-Reason: missing_params');
         }
