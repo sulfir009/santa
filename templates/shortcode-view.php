@@ -238,6 +238,21 @@
     </button>
 </div>
 
+    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:12px 0 6px;">
+      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
+        <span>Ціна для 1 дитини (грн)</span>
+        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-1" value="<?php echo esc_attr($price_map_uah[1] ?? 249); ?>" />
+      </label>
+      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
+        <span>Ціна для 2 дітей (грн)</span>
+        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-2" value="<?php echo esc_attr($price_map_uah[2] ?? 249); ?>" />
+      </label>
+      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
+        <span>Ціна для 3 дітей (грн)</span>
+        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-3" value="<?php echo esc_attr($price_map_uah[3] ?? 249); ?>" />
+      </label>
+    </div>
+
     <div style="margin-bottom:10px; padding:6px; background:#eef; border-radius:6px; display:flex; align-items:center; gap:8px;">
     <strong>Налаштування сцени:</strong>
     <select class="svb-scene-select svb-input" data-key="child1" style="padding:4px; font-size:13px;">
@@ -1798,8 +1813,8 @@
 
         <div class="svb-field svb-admin-only" style="margin: 10px 0;">
           <label class="svb-label" style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="svb-payment-enabled" checked />
-            <span>Оплата: вкл/викл (admin)</span>
+            <input type="checkbox" id="svb_payment_toggle" checked />
+            <span>Оплата включена (admin)</span>
           </label>
           <div style="font-size:12px; color:#555;">Вимикайте тільки для тестів або службової підтримки.</div>
         </div>
@@ -1809,8 +1824,8 @@
           <button class="svb-btn primary" type="button" id="svb-next-2">Далі &nbsp; &rarr;</button>
         </div>
 
-        <div id="svb-payment-error" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#fff3cd; border:1px solid #ffeeba; border-radius:8px;">
-          <div class="svb-payment-error__text" style="margin-bottom:8px; color:#8a6d3b;">Оплата неуспешна. Генерация видео не будет выполнена.</div>
+          <div id="svb-payment-error" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#fff3cd; border:1px solid #ffeeba; border-radius:8px;">
+          <div class="svb-payment-error__text" style="margin-bottom:8px; color:#8a6d3b;">Оплата неуспішна. Генерація відео не буде виконана.</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button type="button" class="svb-btn primary" id="svb-payment-retry">Повторити оплату</button>
             <button type="button" class="svb-btn ghost" id="svb-payment-back">Назад</button>
