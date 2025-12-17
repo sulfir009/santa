@@ -16,6 +16,9 @@ define('SVB_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('SVB_DEBUG')) {
     define('SVB_DEBUG', true);
 }
+if (!defined('SVB_ORDERS_V2')) {
+    define('SVB_ORDERS_V2', false);
+}
 
 require_once SVB_PLUGIN_DIR . 'includes/Models/Order.php';
 require_once SVB_PLUGIN_DIR . 'includes/Models/Config.php';
@@ -25,6 +28,7 @@ require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
 
 register_activation_hook(__FILE__, 'svb_install_orders_table');
+register_activation_hook(__FILE__, 'svb_install_orders_v2_table');
 register_activation_hook(__FILE__, function() {
     if (!wp_next_scheduled('svb_cleanup_order_results')) {
         wp_schedule_event(time() + MINUTE_IN_SECONDS, 'hourly', 'svb_cleanup_order_results');
@@ -33,13 +37,14 @@ register_activation_hook(__FILE__, function() {
 
 add_action('svb_cleanup_order_results', 'svb_cleanup_order_results_cb');
 
-function svb_handle_public_order() {
-    if (empty($_GET['svb_order']) || empty($_GET['token'])) {
-        return;
+function svb_stream_order_video($order_id, $token) {
+    $order_id = absint($order_id);
+    $token = sanitize_text_field($token);
+
+    if (!$order_id || !$token) {
+        return false;
     }
 
-    $order_id = absint($_GET['svb_order']);
-    $token = sanitize_text_field(wp_unslash($_GET['token']));
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
     $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d", $order_id), ARRAY_A);
@@ -66,10 +71,48 @@ function svb_handle_public_order() {
         exit('Video expired');
     }
 
-    header('Content-Type: video/mp4');
-    header('Content-Disposition: attachment; filename="svb-video.mp4"');
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+
+    $ext = strtolower(pathinfo($video_path, PATHINFO_EXTENSION));
+    $content_type = 'video/mp4';
+    if ($ext === 'webm') {
+        $content_type = 'video/webm';
+    }
+
+    $filename = 'santa-video.' . ($ext ? $ext : 'mp4');
+
+    header('Content-Type: ' . $content_type);
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . filesize($video_path));
+
     readfile($video_path);
     exit;
+}
+
+function svb_handle_public_order() {
+    if (empty($_GET['svb_order']) || empty($_GET['token'])) {
+        return;
+    }
+
+    svb_stream_order_video(absint($_GET['svb_order']), wp_unslash($_GET['token']));
+}
+
+function svb_handle_download_endpoint() {
+    if (!isset($_GET['svb_download'])) {
+        return;
+    }
+
+    $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
+    $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+
+    if (!$order_id || !$token) {
+        status_header(400);
+        exit('Missing download parameters');
+    }
+
+    svb_stream_order_video($order_id, $token);
 }
 
 // Allow HEIC/HEIF uploads when supported by WordPress core.
@@ -125,3 +168,4 @@ add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
 add_action('wp_ajax_nopriv_svb_monobank_check_status', 'svb_monobank_check_status');
 add_action('init', 'svb_handle_monobank_return', 2);
 add_action('init', 'svb_handle_public_order', 3);
+add_action('init', 'svb_handle_download_endpoint', 3);
