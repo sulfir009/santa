@@ -35,6 +35,25 @@ function svb_exec_find($bin) {
     return false;
 }
 
+function svb_imagick_supports_format($format)
+{
+    if (!class_exists('Imagick') || !extension_loaded('imagick')) {
+        return false;
+    }
+
+    try {
+        $supported = Imagick::queryFormats(strtoupper($format));
+        return !empty($supported);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function svb_can_transcode_heic()
+{
+    return svb_imagick_supports_format('HEIC') || svb_imagick_supports_format('HEIF');
+}
+
 function svb_ff_has_filter($ffmpeg, $name){
     @exec($ffmpeg . ' -hide_banner -filters', $out, $rc);
     if ($rc !== 0 || empty($out)) return false;
@@ -101,18 +120,26 @@ function svb_transcode_image_to_rgba($ffmpeg, $src, $dst, $cropSize = 0, $job_di
             // Обеспечиваем наличие альфа-канала
             $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
 
-            // Исправляем ориентацию (если есть EXIF данные о повороте)
-            $orientation = $img->getImageOrientation();
-            switch ($orientation) {
-                case Imagick::ORIENTATION_BOTTOMRIGHT:
-                    $img->rotateimage("#000", 180);
-                    break;
-                case Imagick::ORIENTATION_RIGHTTOP:
-                    $img->rotateimage("#000", 90);
-                    break;
-                case Imagick::ORIENTATION_LEFTBOTTOM:
-                    $img->rotateimage("#000", -90);
-                    break;
+            // Fix orientation safely
+            try {
+                if (method_exists($img, 'autoOrientImage')) {
+                    $img->autoOrientImage();
+                } else {
+                    $orientation = $img->getImageOrientation();
+                    switch ($orientation) {
+                        case Imagick::ORIENTATION_BOTTOMRIGHT:
+                            $img->rotateimage("#000", 180);
+                            break;
+                        case Imagick::ORIENTATION_RIGHTTOP:
+                            $img->rotateimage("#000", 90);
+                            break;
+                        case Imagick::ORIENTATION_LEFTBOTTOM:
+                            $img->rotateimage("#000", -90);
+                            break;
+                    }
+                }
+            } catch (Throwable $e) {
+                // do not fail hard on orientation issues
             }
             $img->setImageOrientation(Imagick::ORIENTATION_TOPLEFT);
 

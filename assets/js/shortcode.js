@@ -986,6 +986,26 @@ function svbBindAudioPreview(){
 let svbCropper = null;
 let svbCurrentInput = null;
 let svbCurrentKey = null;
+let svbCurrentPreviewUrl = null;
+
+function svbIsHeicFile(file) {
+    if (!file) return false;
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    const isHeicMime = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'].includes(type);
+    const isHeicExt = name.endsWith('.heic') || name.endsWith('.heif');
+    return isHeicMime || isHeicExt;
+}
+
+async function svbNormalizeImageFile(file) {
+    if (!svbIsHeicFile(file)) return file;
+    if (typeof heic2any !== 'function') {
+        throw new Error('HEIC converter is not available');
+    }
+    const baseName = (file.name || 'upload').replace(/\.[^.]+$/, '');
+    const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+}
 
 function svbCloseCrop() {
     const modal = document.getElementById('svb-crop-modal');
@@ -1040,86 +1060,104 @@ function svbBindPhotoInputs() {
         const newInput = input.cloneNode(true);
         input.parentNode.replaceChild(newInput, input);
 
-        newInput.addEventListener('change', function(e) {
+        newInput.addEventListener('change', async function(e) {
             const files = e.target.files;
             if (!files || !files.length) return;
             if (newInput.dataset.processing === 'true') return;
 
-            const file = files[0];
+            const rawFile = files[0];
+            let file = rawFile;
+            try {
+                file = await svbNormalizeImageFile(rawFile);
+            } catch (err) {
+                console.error('HEIC normalize error', err);
+                alert('Не вдалося конвертувати HEIC/HEIF у зображення. Спробуйте інший файл.');
+                newInput.value = '';
+                return;
+            }
+
+            if (file !== rawFile) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                newInput.files = dataTransfer.files;
+            }
+
             svbCurrentInput = newInput;
             svbCurrentKey = key;
 
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                const modal = document.getElementById('svb-crop-modal');
-                const image = document.getElementById('svb-crop-target');
-                const headerTitle = modal.querySelector('h3');
+            const modal = document.getElementById('svb-crop-modal');
+            const image = document.getElementById('svb-crop-target');
+            const headerTitle = modal.querySelector('h3');
 
-                if (headerTitle) {
-                    headerTitle.textContent = key.includes('child') ? "Фото дитини (обрізка):" : "Фото дорослого (обрізка):";
+            const objectUrl = URL.createObjectURL(file);
+            if (svbCurrentPreviewUrl) {
+                URL.revokeObjectURL(svbCurrentPreviewUrl);
+            }
+            svbCurrentPreviewUrl = objectUrl;
+
+            if (headerTitle) {
+                headerTitle.textContent = key.includes('child') ? "Фото дитини (обрізка):" : "Фото дорослого (обрізка):";
+            }
+
+            image.src = objectUrl;
+            modal.style.display = 'flex';
+            modal.classList.add('active');
+
+            if (svbCropper) {
+                svbCropper.destroy();
+                svbCropper = null;
+            }
+
+            // === ЛОГИКА ПРОПОРЦИЙ (Fixed) ===
+
+            // 1. Получаем ID видео из hidden input, так надежнее
+            let currentVidId = 'video1';
+            const hiddenInput = document.getElementById('selected_video_id');
+            if (hiddenInput && hiddenInput.value) {
+                currentVidId = hiddenInput.value;
+            } else if (typeof SVB_SELECTED_VIDEO_ID !== 'undefined') {
+                currentVidId = SVB_SELECTED_VIDEO_ID;
+            }
+
+            // 2. Ищем пропорции
+            let ratio = NaN; // По умолчанию Free
+            let debugSource = "Default (NaN)";
+
+            if (typeof SVB_ASPECT_RATIOS !== 'undefined') {
+                let map = SVB_ASPECT_RATIOS[currentVidId];
+                // Если для текущего видео нет настроек, пробуем video1
+                if (!map) {
+                    map = SVB_ASPECT_RATIOS['video1'];
+                    debugSource = "Fallback to Video1";
+                } else {
+                    debugSource = "Config found for " + currentVidId;
                 }
 
-                image.src = evt.target.result;
-                modal.style.display = 'flex';
-                modal.classList.add('active');
-
-                if (svbCropper) {
-                    svbCropper.destroy();
-                    svbCropper = null;
+                if (map && map[key] !== undefined) {
+                    ratio = map[key];
+                    debugSource += ` -> Key ${key} found: ${ratio}`;
+                } else {
+                    debugSource += ` -> Key ${key} NOT found`;
                 }
+            }
 
-                // === ЛОГИКА ПРОПОРЦИЙ (Fixed) ===
-                
-                // 1. Получаем ID видео из hidden input, так надежнее
-                let currentVidId = 'video1';
-                const hiddenInput = document.getElementById('selected_video_id');
-                if (hiddenInput && hiddenInput.value) {
-                    currentVidId = hiddenInput.value;
-                } else if (typeof SVB_SELECTED_VIDEO_ID !== 'undefined') {
-                    currentVidId = SVB_SELECTED_VIDEO_ID;
-                }
+            // Лог в консоль (яркий)
+            console.log(`%c ✂️ CROPPER INIT: ${key} | Video: ${currentVidId} | Ratio: ${ratio} | Msg: ${debugSource}`, 'background: #222; color: #bada55; font-size: 12px; padding: 4px;');
 
-                // 2. Ищем пропорции
-                let ratio = NaN; // По умолчанию Free
-                let debugSource = "Default (NaN)";
-
-                if (typeof SVB_ASPECT_RATIOS !== 'undefined') {
-                    let map = SVB_ASPECT_RATIOS[currentVidId];
-                    // Если для текущего видео нет настроек, пробуем video1
-                    if (!map) {
-                        map = SVB_ASPECT_RATIOS['video1'];
-                        debugSource = "Fallback to Video1";
-                    } else {
-                        debugSource = "Config found for " + currentVidId;
-                    }
-
-                    if (map && map[key] !== undefined) {
-                        ratio = map[key];
-                        debugSource += ` -> Key ${key} found: ${ratio}`;
-                    } else {
-                        debugSource += ` -> Key ${key} NOT found`;
-                    }
-                }
-
-                // Лог в консоль (яркий)
-                console.log(`%c ✂️ CROPPER INIT: ${key} | Video: ${currentVidId} | Ratio: ${ratio} | Msg: ${debugSource}`, 'background: #222; color: #bada55; font-size: 12px; padding: 4px;');
-
-                svbCropper = new Cropper(image, {
-                    viewMode: 1,
-                    dragMode: 'move',
-                    autoCropArea: 0.9,
-                    aspectRatio: ratio, // <--- ЗДЕСЬ ПРИМЕНЯЕТСЯ РАСЧЕТ
-                    restore: false,
-                    guides: true,
-                    center: true,
-                    highlight: false,
-                    cropBoxMovable: true,
-                    cropBoxResizable: true,
-                    toggleDragModeOnDblclick: false
-                });
-            };
-            reader.readAsDataURL(file);
-            newInput.value = ''; 
+            svbCropper = new Cropper(image, {
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 0.9,
+                aspectRatio: ratio, // <--- ЗДЕСЬ ПРИМЕНЯЕТСЯ РАСЧЕТ
+                restore: false,
+                guides: true,
+                center: true,
+                highlight: false,
+                cropBoxMovable: true,
+                cropBoxResizable: true,
+                toggleDragModeOnDblclick: false
+            });
+            newInput.value = '';
         });
     });
 
@@ -1177,140 +1215,8 @@ function svbBindPhotoInputs() {
             }, 'image/webp', 0.9);
         });
     }
-}
-  // --- НОВА ЛОГІКА INPUT FILE ---
-  ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
-    const input = document.querySelector(`input[name="photo_${key}"]`);
-    if(!input) return;
-
-    input.addEventListener('change', function(e) {
-        const files = e.target.files;
-        if (!files || !files.length) return;
-
-        // Якщо це вже оброблений файл (прапорець), нічого не робимо
-        if (input.dataset.processing === 'true') {
-            return;
-        }
-
-        const file = files[0];
-        svbCurrentInput = input;
-        svbCurrentKey = key;
-
-        // 1. Читаємо файл
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            // 2. Відкриваємо модалку
-            const modal = document.getElementById('svb-crop-modal');
-            const image = document.getElementById('svb-crop-target');
-            const headerTitle = modal.querySelector('h3');
-            
-            // Змінюємо заголовок залежно від ключа (як ви просили)
-            if (key.includes('child')) {
-                headerTitle.textContent = "Add a photo of the child:";
-            } else {
-                headerTitle.textContent = "Add a photo of the parent:";
-            }
-
-            image.src = evt.target.result;
-            modal.style.display = 'flex'; // Flex для центрування
-            modal.classList.add('active');
-
-            // 3. Ініціалізуємо Cropper
-            if (svbCropper) svbCropper.destroy();
-            
-            // Налаштування Aspect Ratio
-            // Для батьків (темне фото 3) та дітей (темне фото 2) ви хотіли певні розміри.
-            // Зазвичай це портретний формат. 
-            // Але оскільки ваш PHP код ріже під 709x709, 
-            // безпечніше дати користувачу квадрат 1:1, або Free.
-            // Я ставлю NaN (Free), щоб користувач сам вирішував, 
-            // але можна розкоментувати aspectRatio: 9/16.
-            
-            svbCropper = new Cropper(image, {
-                viewMode: 1,
-                dragMode: 'move',
-                autoCropArea: 0.9,
-                restore: false,
-                guides: true,
-                center: true,
-                highlight: false,
-                cropBoxMovable: true,
-cropBoxResizable: true,
-                toggleDragModeOnDblclick: false,
-                aspectRatio: ratio, 
-            });
-        };
-        reader.readAsDataURL(file);
-        
-        // Скидаємо value, щоб change спрацював, навіть якщо вибрали той самий файл (але ми його підмінимо пізніше)
-        input.value = ''; 
-    });
-  });
-
-  // Логіка кнопки SAVE у модалці
-  // ВИПРАВЛЕННЯ: Перейменували saveBtn -> cropModalSaveBtn, щоб уникнути конфлікту
-  const cropModalSaveBtn = document.getElementById('svb-crop-save');
-  
-  if (cropModalSaveBtn) {
-      // Видаляємо старі слухачі (щоб не дублювалися при перерендеренгу)
-      const newBtn = cropModalSaveBtn.cloneNode(true);
-      cropModalSaveBtn.parentNode.replaceChild(newBtn, cropModalSaveBtn);
-      
-      newBtn.addEventListener('click', () => {
-          if (!svbCropper || !svbCurrentInput || !svbCurrentKey) return;
-
-          // Отримуємо Canvas з обрізкою
-          const canvas = svbCropper.getCroppedCanvas({
-              maxWidth: 1920, 
-              maxHeight: 1920,
-              imageSmoothingEnabled: true,
-              imageSmoothingQuality: 'high',
-          });
-
-          // Конвертуємо у WebP
-          canvas.toBlob((blob) => {
-              if (!blob) return;
-
-              // 1. Створюємо новий файл
-              const newFile = new File([blob], "cropped_image.webp", { type: "image/webp" });
-
-              // 2. Підміняємо файл у input (через DataTransfer)
-              const dataTransfer = new DataTransfer();
-              dataTransfer.items.add(newFile);
-              
-              svbCurrentInput.files = dataTransfer.files;
-              svbCurrentInput.dataset.processing = 'true'; // Прапорець, щоб не викликати loop
-              svbCurrentInput.dataset.cropped = 'true';
-
-              // 3. Оновлюємо прев'ю на сторінці
-              const imgEl = document.getElementById('img-' + svbCurrentKey);
-              if (imgEl) {
-                  const url = URL.createObjectURL(blob);
-                  if (imgEl.src) URL.revokeObjectURL(imgEl.src);
-                  imgEl.onload = () => { 
-                      if (typeof svbUpdatePreviewTransform === 'function') svbUpdatePreviewTransform(svbCurrentKey); 
-                      if (typeof svbDebugPrint === 'function') svbDebugPrint(svbCurrentKey); 
-                  };
-                  imgEl.src = url;
-              }
-
-              // Закриваємо модалку
-              if (typeof svbCloseCrop === 'function') svbCloseCrop();
-              else {
-                  document.getElementById('svb-crop-modal').style.display = 'none';
-                  document.getElementById('svb-crop-modal').classList.remove('active');
-                  if(svbCropper) svbCropper.destroy();
-              }
-              
-              // Знімаємо прапорець через мить
-              setTimeout(() => { 
-                  if(svbCurrentInput) svbCurrentInput.dataset.processing = 'false'; 
-              }, 100);
-
-          }, 'image/webp', 0.9); // Якість WebP 0.9
-      });
   }
-function svbBindNumericControls() {
+  function svbBindNumericControls() {
     $$('.svb-val-input').forEach(inp => {
         const rangeName = inp.dataset.rangeName;
         if (!rangeName) return;

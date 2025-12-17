@@ -155,29 +155,43 @@ function svb_generate() {
     // === СОХРАНЕНИЕ ФОТО (WEBP) ===
     $photos = [];
     $photo_keys = ['child1','child2','parent1','parent2'];
+    $allowedExt  = ['png','jpg','jpeg','webp','heic','heif'];
+    $allowedMime = ['image/png','image/jpeg','image/webp','image/heic','image/heif','image/heic-sequence','image/heif-sequence'];
+
     foreach ($photo_keys as $pk) {
         $field = 'photo_' . $pk;
         if (!empty($_FILES[$field]['name']) && $_FILES[$field]['error'] === UPLOAD_ERR_OK) {
-            $ext = strtolower(pathinfo($_FILES[$field]['name'], PATHINFO_EXTENSION));
-            if (!in_array($ext, ['png','jpg','jpeg','webp'])) $ext = 'jpg';
-            
+            $file     = $_FILES[$field];
+            $checked  = wp_check_filetype_and_ext($file['tmp_name'], $file['name']);
+            $ext      = strtolower($checked['ext'] ?? '');
+            $mimeType = $checked['type'] ?? '';
+
+            if (!$ext || !$mimeType || !in_array($ext, $allowedExt, true) || !in_array($mimeType, $allowedMime, true)) {
+                wp_send_json_error('unsupported image type');
+            }
+
             $base = $job_dir . '/' . $field;
-            $tmp = $base . '_orig.' . $ext;
-            
+            $tmp  = $base . '_orig.' . $ext;
+
             if (!@move_uploaded_file($_FILES[$field]['tmp_name'], $tmp)) {
                 wp_send_json_error('cannot save photo ' . $field);
             }
 
             $destFile = $base . '.webp';
-            
-            if (svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFile, 0, $job_dir)) {
-                if ($tmp !== $destFile && file_exists($tmp)) @unlink($tmp);
-                $photos[$pk] = $destFile;
-            } elseif (file_exists($destFile)) {
-                @unlink($tmp);
+            $isHeic   = in_array($ext, ['heic','heif'], true);
+
+            $transcoded = svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFile, 0, $job_dir);
+
+            if ($transcoded && file_exists($destFile)) {
+                if (file_exists($tmp)) { @unlink($tmp); }
                 $photos[$pk] = $destFile;
             } else {
-                $photos[$pk] = $tmp;
+                if ($isHeic) {
+                    if (file_exists($destFile)) { @unlink($destFile); }
+                    if (file_exists($tmp)) { @unlink($tmp); }
+                    wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to WebP).');
+                }
+                $photos[$pk] = $tmp; // fallback for non-HEIC
             }
         }
     }

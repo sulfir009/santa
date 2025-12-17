@@ -150,6 +150,14 @@ function svb_enqueue_shortcode_assets( $is_admin, array $localize ) {
     }
 
     wp_enqueue_script(
+        'svb-heic2any',
+        SVB_PLUGIN_URL . 'assets/js/heic2any.min.js',
+        [],
+        '0.0.4',
+        true
+    );
+
+    wp_enqueue_script(
         'svb-cropper',
         'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js',
         [],
@@ -160,7 +168,7 @@ function svb_enqueue_shortcode_assets( $is_admin, array $localize ) {
     wp_enqueue_script(
         'svb-shortcode',
         SVB_PLUGIN_URL . 'assets/js/shortcode.js',
-        [],
+        [ 'svb-heic2any' ],
         SVB_VER,
         true
     );
