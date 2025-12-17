@@ -88,10 +88,64 @@ function svbArrToCssMatrix(m) {
 
 // Глобальні змінні стану
 let svbCurrentChildCount = 1;
+const SVB_STATE_KEY = 'svb_state_v1';
+let svbState = null;
+
+function svbLoadState() {
+    if (svbState && typeof svbState === 'object') return svbState;
+    try {
+        const raw = localStorage.getItem(SVB_STATE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                svbState = parsed;
+            }
+        }
+    } catch (e) {
+        svbState = {};
+    }
+    if (!svbState || typeof svbState !== 'object') {
+        svbState = {};
+    }
+    return svbState;
+}
+
+function svbSaveState() {
+    if (!svbState || typeof svbState !== 'object') return;
+    try {
+        localStorage.setItem(SVB_STATE_KEY, JSON.stringify(svbState));
+    } catch (e) {}
+}
+
+function svbUpdateState(patch) {
+    const current = svbLoadState();
+    svbState = Object.assign({}, current, patch || {});
+    svbSaveState();
+}
+
+function svbClearState() {
+    try { localStorage.removeItem(SVB_STATE_KEY); } catch (e) {}
+    try {
+        if (typeof SVB_PAYMENT_STORAGE !== 'undefined' && SVB_PAYMENT_STORAGE.step) {
+            localStorage.removeItem(SVB_PAYMENT_STORAGE.step);
+        }
+    } catch (e) {}
+    svbState = {};
+}
 // === УНИВЕРСАЛЬНЫЙ РЕНДЕР (ПК vs МОБИЛКА) ===
 function svbRenderUI() {
     const container = document.getElementById('svb-dynamic-container');
     if (!container) return;
+
+    const saved = svbLoadState();
+    if (saved.child_count) {
+        svbCurrentChildCount = parseInt(saved.child_count, 10) || svbCurrentChildCount;
+    }
+    if (saved.selected_video_id) {
+        SVB_SELECTED_VIDEO_ID = saved.selected_video_id;
+        const hInput = document.getElementById('selected_video_id');
+        if (hInput) hInput.value = SVB_SELECTED_VIDEO_ID;
+    }
 
     // Сохраняем текущие значения перед удалением (особенно важно для Select-ов)
     const currentValues = {};
@@ -111,14 +165,29 @@ function svbRenderUI() {
     });
 
     const isSelectedValid = availableVideos.some(([vidId]) => vidId === SVB_SELECTED_VIDEO_ID);
+    let selectionChangedNotice = '';
     if (!isSelectedValid && availableVideos.length > 0) {
         SVB_SELECTED_VIDEO_ID = availableVideos[0][0];
+        selectionChangedNotice = 'Відео недоступне для вибраної кількості дітей, обрано інше.';
         const hInput = document.getElementById('selected_video_id');
         if(hInput) hInput.value = SVB_SELECTED_VIDEO_ID;
+        svbUpdateState({ selected_video_id: SVB_SELECTED_VIDEO_ID });
         svbSelectVideoTemplate(SVB_SELECTED_VIDEO_ID, false);
     }
 
     const isMobile = window.innerWidth <= 768;
+
+    if (selectionChangedNotice) {
+        const notice = document.createElement('div');
+        notice.className = 'svb-video-notice';
+        notice.textContent = selectionChangedNotice;
+        notice.style.margin = '10px 0';
+        notice.style.padding = '10px 12px';
+        notice.style.background = '#fff8e1';
+        notice.style.border = '1px solid #ffe08a';
+        notice.style.borderRadius = '8px';
+        container.appendChild(notice);
+    }
 
     if (isMobile) {
         // === МОБИЛЬНАЯ ВЕРСИЯ ===
@@ -166,8 +235,9 @@ function svbRenderUI() {
                 SVB_SELECTED_VIDEO_ID = vidId;
                 const hInput = document.getElementById('selected_video_id');
                 if(hInput) hInput.value = vidId;
+                svbUpdateState({ selected_video_id: vidId });
                 svbSelectVideoTemplate(vidId, false);
-                svbRenderUI(); 
+                svbRenderUI();
             };
 
             sliderContainer.appendChild(smallCard);
@@ -199,8 +269,9 @@ function svbRenderUI() {
                 SVB_SELECTED_VIDEO_ID = vidId;
                 const hInput = document.getElementById('selected_video_id');
                 if(hInput) hInput.value = vidId;
+                svbUpdateState({ selected_video_id: vidId });
                 svbSelectVideoTemplate(vidId, false);
-                svbRenderUI(); 
+                svbRenderUI();
             };
 
             grid.appendChild(card);
@@ -219,6 +290,7 @@ window.addEventListener('resize', svbRenderUI);
 // 2. Оновлена логіка вибору шаблону (завантаження даних у форми)
 function svbSelectVideoTemplate(videoId, shouldRenderUI = true) {
     SVB_SELECTED_VIDEO_ID = videoId;
+    svbUpdateState({ selected_video_id: videoId });
     
     // Оновлюємо hidden-поле
     const hiddenInput = document.getElementById('selected_video_id');
@@ -256,6 +328,7 @@ function svbBindChildCount() {
     const handleCountChange = () => {
         const checked = document.querySelector('input[name="child_count"]:checked');
         svbCurrentChildCount = checked ? parseInt(checked.value) : 1;
+        svbUpdateState({ child_count: svbCurrentChildCount, selected_video_id: SVB_SELECTED_VIDEO_ID });
 
         // Показуємо/ховаємо поля
         if (svbCurrentChildCount > 1) {
@@ -336,17 +409,32 @@ function svbReinitAfterRender(savedValues = {}) {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 SVB Init started (Final Fix Rebind)');
+    svbLoadState();
 
     // 1. Ініціалізуємо змінну кількості дітей перед усім іншим
     const checked = document.querySelector('input[name="child_count"]:checked');
     svbCurrentChildCount = checked ? parseInt(checked.value) : 1;
+    if (svbState && svbState.child_count) {
+        const savedRadio = document.querySelector(`input[name="child_count"][value="${svbState.child_count}"]`);
+        if (savedRadio) {
+            savedRadio.checked = true;
+            svbCurrentChildCount = parseInt(svbState.child_count, 10) || svbCurrentChildCount;
+        }
+    }
+
+    if (svbState && svbState.selected_video_id) {
+        SVB_SELECTED_VIDEO_ID = svbState.selected_video_id;
+        const hInput = document.getElementById('selected_video_id');
+        if (hInput) hInput.value = svbState.selected_video_id;
+    }
 
     // 2. Навішуємо обробник на перемикач кількості дітей
     // Це головний тригер: при зміні він викликає svbRenderUI, який перебудовує все
     const radios = document.querySelectorAll('input[name="child_count"]');
-    radios.forEach(r => r.addEventListener('change', () => {
-        const c = document.querySelector('input[name="child_count"]:checked');
-        svbCurrentChildCount = c ? parseInt(c.value) : 1;
+        radios.forEach(r => r.addEventListener('change', () => {
+            const c = document.querySelector('input[name="child_count"]:checked');
+            svbCurrentChildCount = c ? parseInt(c.value) : 1;
+            svbUpdateState({ child_count: svbCurrentChildCount, selected_video_id: SVB_SELECTED_VIDEO_ID });
         
         // Керування видимістю полів (для надійності дублюємо тут, хоча reinit теж це робить)
         const ageBlock = document.getElementById('svb-age-block');
@@ -362,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (field3) field3.style.display = (svbCurrentChildCount >= 3) ? 'block' : 'none';
 
         // Перемальовуємо інтерфейс (це автоматично викличе svbReinitAfterRender)
-        svbRenderUI(); 
+        svbRenderUI();
     }));
 
     // 3. Первинний рендер інтерфейсу при завантаженні сторінки
@@ -416,6 +504,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     svbRestoreStep2State();
     svbCheckInvoiceOnReturn();
+
+    const formEl = document.getElementById('svb-form');
+    if (formEl) {
+        formEl.addEventListener('change', () => {
+            svbPersistStep2State();
+        });
+    }
 
     const paymentToggle = document.getElementById('svb-payment-enabled');
     if (paymentToggle && typeof SVB_PAYMENT.enabled !== 'undefined') {
@@ -903,6 +998,7 @@ function svbSetStep(n){
   }
   const titles = {1:'Крок 1 — Дані дитини', 2:'Крок 2 — Фото', 3:'Крок 3 — Підтвердження та отримання'};
   $('#svb-title').textContent = titles[n] || '';
+  svbUpdateState({ step: n });
   svbScrollToTop();
 }
 // === ФУНКЦИЯ ФИЛЬТРАЦИИ АУДИО (ФИНАЛЬНАЯ) ===
@@ -1644,6 +1740,16 @@ function svbPersistStep2State() {
     payload[el.name] = el.value;
   });
 
+  payload.child_count = svbGetSelectedChildCount();
+  payload.selected_video_id = SVB_SELECTED_VIDEO_ID;
+
+  svbUpdateState({
+    step: 2,
+    child_count: payload.child_count,
+    selected_video_id: SVB_SELECTED_VIDEO_ID,
+    formData: payload
+  });
+
   try {
     localStorage.setItem(SVB_PAYMENT_STORAGE.step, JSON.stringify(payload));
   } catch (e) {
@@ -1652,15 +1758,21 @@ function svbPersistStep2State() {
 }
 
 function svbRestoreStep2State() {
-  const raw = localStorage.getItem(SVB_PAYMENT_STORAGE.step);
-  if (!raw) return;
+  const savedState = svbLoadState();
+  let payload = savedState.formData;
 
-  let payload = null;
-  try {
-    payload = JSON.parse(raw);
-  } catch (e) {
-    return;
+  if (!payload) {
+    const raw = localStorage.getItem(SVB_PAYMENT_STORAGE.step);
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+        svbUpdateState({ formData: payload });
+      } catch (e) {
+        payload = null;
+      }
+    }
   }
+
   if (!payload || typeof payload !== 'object') return;
 
   Object.entries(payload).forEach(([name, value]) => {
@@ -1673,6 +1785,23 @@ function svbRestoreStep2State() {
       }
     });
   });
+
+  if (payload.child_count) {
+    const radio = document.querySelector(`input[name="child_count"][value="${payload.child_count}"]`);
+    if (radio) {
+      radio.checked = true;
+      svbCurrentChildCount = parseInt(payload.child_count, 10) || svbCurrentChildCount;
+    }
+  }
+
+  if (payload.selected_video_id || savedState.selected_video_id) {
+    const chosen = payload.selected_video_id || savedState.selected_video_id;
+    SVB_SELECTED_VIDEO_ID = chosen;
+    const hInput = document.getElementById('selected_video_id');
+    if (hInput) hInput.value = chosen;
+  }
+
+  svbRenderUI();
 
   const checked = document.querySelector('input[name="child_count"]:checked');
   if (checked) {
@@ -1763,6 +1892,8 @@ async function svbRequestInvoiceStatus(invoiceId) {
 
 function svbProceedToGenerateFlow() {
   svbHidePaymentError();
+  svbPersistStep2State();
+  svbUpdateState({ step: 3 });
   buildSoundMap();
   svbSetStep(3);
   $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
@@ -1771,10 +1902,10 @@ function svbProceedToGenerateFlow() {
 
 async function svbHandleStep2Next() {
   svbHidePaymentError();
+  svbPersistStep2State();
   const childCount = svbGetSelectedChildCount();
-  const adminBypass = SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin();
   const paymentEnabled = !!SVB_PAYMENT.enabled;
-  const requirePayment = paymentEnabled && !adminBypass;
+  const requirePayment = paymentEnabled && (!SVB_PAYMENT.is_admin || !svbIsPaymentDisabledByAdmin());
 
   if (!requirePayment) {
     svbProceedToGenerateFlow();
@@ -1787,7 +1918,6 @@ async function svbHandleStep2Next() {
   }
 
   try {
-    svbPersistStep2State();
     svbPaymentStatus = 'pending';
     const invoice = await svbCreateInvoice(childCount);
 
@@ -1830,7 +1960,8 @@ async function svbCheckInvoiceOnReturn() {
     } else if (fromReturn) {
       svbPaymentStatus = status.status || 'failed';
       svbClearInvoiceId();
-      svbShowPaymentError('Оплата неуспешна. Генерация видео не будет выполнена.');
+      svbSetStep(2);
+      svbShowPaymentError('Оплата неуспішна. Генерація відео не буде виконана.');
     }
   } catch (err) {
     console.error(err);
@@ -1861,12 +1992,14 @@ if (paymentBackBtn) {
     svbPaymentStatus = 'unpaid';
     svbClearInvoiceId();
     svbHidePaymentError();
-    svbSetStep(1);
+    svbSetStep(2);
+    svbRestoreStep2State();
   });
 }
 $('#svb-back-3').addEventListener('click', ()=> {
   svbSetStep(2);
   if (svbPollInterval) clearInterval(svbPollInterval);
+  svbRestoreStep2State();
 });
   $('#svb-finish').addEventListener('click', async ()=>{
     const email = $('#svb-email').value.trim();
@@ -2141,7 +2274,7 @@ function svbPollProgress(token) {
     }
   $('#svb-finish').disabled = false;
   }
- function svbHandleSuccess(url) {
+function svbHandleSuccess(url) {
   svbGenerating = false;
   svbToggleVideoOverlay(false);
   svbVideoURL = url;
@@ -2155,6 +2288,10 @@ function svbPollProgress(token) {
 
   const finishBtn = document.getElementById('svb-finish');
   if (finishBtn) finishBtn.disabled = false;
+
+  svbClearInvoiceId();
+  svbClearState();
+  svbPaymentStatus = 'paid';
 }
 
 

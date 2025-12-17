@@ -1809,8 +1809,8 @@
           <button class="svb-btn primary" type="button" id="svb-next-2">Далі &nbsp; &rarr;</button>
         </div>
 
-        <div id="svb-payment-error" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#fff3cd; border:1px solid #ffeeba; border-radius:8px;">
-          <div class="svb-payment-error__text" style="margin-bottom:8px; color:#8a6d3b;">Оплата неуспешна. Генерация видео не будет выполнена.</div>
+          <div id="svb-payment-error" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#fff3cd; border:1px solid #ffeeba; border-radius:8px;">
+          <div class="svb-payment-error__text" style="margin-bottom:8px; color:#8a6d3b;">Оплата неуспішна. Генерація відео не буде виконана.</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button type="button" class="svb-btn primary" id="svb-payment-retry">Повторити оплату</button>
             <button type="button" class="svb-btn ghost" id="svb-payment-back">Назад</button>

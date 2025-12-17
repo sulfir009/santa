@@ -108,7 +108,7 @@ function svb_generate() {
         $payment_state = svb_get_user_payment_state($uid);
         $paid_children = isset($payment_state['child_count']) ? (int) $payment_state['child_count'] : 0;
         if (($payment_state['status'] ?? 'unpaid') !== 'paid') {
-            wp_send_json_error('Оплата неуспешна. Генерация видео не будет выполнена.');
+            wp_send_json_error('Оплата неуспішна. Генерація відео не буде виконана.');
         }
 
         if ($paid_children && $requested_child_count > $paid_children) {
