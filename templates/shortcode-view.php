@@ -238,6 +238,21 @@
     </button>
 </div>
 
+    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:12px 0 6px;">
+      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
+        <span>Ціна для 1 дитини (грн)</span>
+        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-1" value="<?php echo esc_attr($price_map_uah[1] ?? 249); ?>" />
+      </label>
+      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
+        <span>Ціна для 2 дітей (грн)</span>
+        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-2" value="<?php echo esc_attr($price_map_uah[2] ?? 249); ?>" />
+      </label>
+      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
+        <span>Ціна для 3 дітей (грн)</span>
+        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-3" value="<?php echo esc_attr($price_map_uah[3] ?? 249); ?>" />
+      </label>
+    </div>
+
     <div style="margin-bottom:10px; padding:6px; background:#eef; border-radius:6px; display:flex; align-items:center; gap:8px;">
     <strong>Налаштування сцени:</strong>
     <select class="svb-scene-select svb-input" data-key="child1" style="padding:4px; font-size:13px;">

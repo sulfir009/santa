@@ -2770,6 +2770,13 @@ if (saveBtn) {
         fd.append('video_id', SVB_SELECTED_VIDEO_ID);
         fd.append('scenes', JSON.stringify(scenesConfig));
 
+        const price1 = document.getElementById('svb-price-child-1');
+        const price2 = document.getElementById('svb-price-child-2');
+        const price3 = document.getElementById('svb-price-child-3');
+        if (price1) fd.append('price_child_1', price1.value || '');
+        if (price2) fd.append('price_child_2', price2.value || '');
+        if (price3) fd.append('price_child_3', price3.value || '');
+
         const oldText = saveBtn.textContent;
         saveBtn.disabled = true;
         saveBtn.textContent = 'Збереження...';

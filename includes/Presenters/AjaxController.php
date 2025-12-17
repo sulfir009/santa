@@ -36,6 +36,20 @@ function svb_save_config() {
         wp_send_json_error('Invalid data');
     }
 
+    for ($i = 1; $i <= 3; $i++) {
+        $price_key = 'price_child_' . $i;
+        if (isset($_POST[$price_key])) {
+            $val = (int) sanitize_text_field(wp_unslash($_POST[$price_key]));
+            if ($val < 0) {
+                $val = 0;
+            }
+            if ($val > 100000) {
+                $val = 100000;
+            }
+            update_option('svb_price_child_' . $i, $val);
+        }
+    }
+
     // 1. Получаем ПОЛНУЮ конфигурацию (Дефолтные настройки + то, что уже было в файле)
     // Функция svb_get_definitions() уже делает слияние за нас.
     $allVideos = svb_get_definitions();
@@ -1174,9 +1188,10 @@ function svb_monobank_create_invoice() {
     }
 
     $is_admin = current_user_can('manage_options');
-    $child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 1;
-    if ($child_count < 1) $child_count = 1;
-    if ($child_count > 3) $child_count = 3;
+    $child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 0;
+    if ($child_count < 1 || $child_count > 3) {
+        wp_send_json_error('Invalid child_count');
+    }
 
     $order_data = svb_init_user_order();
     $uid = $order_data['uid'] ?? '';
@@ -1197,11 +1212,17 @@ function svb_monobank_create_invoice() {
         wp_send_json_error('Payment is not configured.');
     }
 
-    $amount = svb_monobank_amount_for_children($child_count);
-    if ($amount <= 0) {
-        svb_pay_log('invoice.invalid_amount', ['child_count' => $child_count, 'amount' => $amount]);
+    $price_map = svb_get_price_map_uah();
+    $uah = (int) ($price_map[$child_count] ?? 0);
+    if ($uah <= 0) {
+        svb_pay_log('invoice.invalid_amount', [
+            'child_count' => $child_count,
+            'price_map' => $price_map,
+        ], $order_data);
         wp_send_json_error('Invalid amount for selected children');
     }
+
+    $amount = (int) ($uah * 100);
 
     $return_raw = isset($_POST['return_url']) ? esc_url_raw(wp_unslash($_POST['return_url'])) : '';
     $return_path = $return_raw ? wp_parse_url($return_raw, PHP_URL_PATH) : '/';

@@ -2,6 +2,32 @@
 
 if (!defined('ABSPATH')) { exit; }
 
+function svb_get_price_map_uah() {
+    $defaults = [1 => 249, 2 => 249, 3 => 249];
+    $map = [];
+
+    for ($i = 1; $i <= 3; $i++) {
+        $opt_key = 'svb_price_child_' . $i;
+        $const_key = 'SVB_MONOBANK_PRICE_' . $i;
+        $val_raw = defined($const_key) ? constant($const_key) : get_option($opt_key, null);
+        if ($val_raw === null || $val_raw === '') {
+            $map[$i] = $defaults[$i];
+            continue;
+        }
+
+        $val = (int) $val_raw;
+        if ($val < 0) {
+            $val = 0;
+        }
+        if ($val > 100000) {
+            $val = 100000;
+        }
+        $map[$i] = $val;
+    }
+
+    return $map;
+}
+
 function svb_monobank_get_token() {
     if (defined('SVB_MONOBANK_TOKEN') && SVB_MONOBANK_TOKEN) {
         return SVB_MONOBANK_TOKEN;
@@ -31,16 +57,11 @@ function svb_monobank_price_to_kop($val) {
 }
 
 function svb_monobank_price_map() {
+    $uah_map = svb_get_price_map_uah();
     $map = [];
-    for ($i = 1; $i <= 3; $i++) {
-        $const_key = 'SVB_MONOBANK_PRICE_' . $i;
-        if (defined($const_key)) {
-            $map[$i] = svb_monobank_price_to_kop(constant($const_key));
-            continue;
-        }
 
-        $opt_val = get_option('svb_monobank_price_' . $i);
-        $map[$i] = svb_monobank_price_to_kop($opt_val);
+    for ($i = 1; $i <= 3; $i++) {
+        $map[$i] = svb_monobank_price_to_kop($uah_map[$i] ?? 0);
     }
 
     return $map;
