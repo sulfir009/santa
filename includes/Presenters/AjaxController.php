@@ -397,6 +397,46 @@ function svb_generate() {
     $P_CHILD2  = $segments['child2'] ?? [];
     $P_PARENTS = $segments['parents'] ?? ($segments['parent1'] ?? []);
 
+    $order_id = (int) ($order_data['order_id'] ?? 0);
+    $permanent_photos = [];
+    if ($order_id) {
+        $upload_dirs = svb_get_orders_upload_dir($order_id);
+        foreach ($photos as $key => $path) {
+            $ext = pathinfo($path, PATHINFO_EXTENSION);
+            $dest = trailingslashit($upload_dirs['photos']) . sanitize_file_name($key . '.' . $ext);
+            @copy($path, $dest);
+            $permanent_photos[$key] = $dest;
+        }
+
+        $fingerprint_params = [
+            'child_count' => $child_count,
+            'selected_video_id' => $selected_video_id,
+            'voice' => array_keys($audio_sel),
+            'segments' => $segments,
+            'overlay_json' => json_decode($raw_overlay_json ?: '{}', true),
+        ];
+
+        $fingerprint_current = svb_compute_fingerprint($fingerprint_params, array_values($permanent_photos ?: $photos));
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'svb_orders';
+        $wpdb->update(
+            $table,
+            [
+                'child_count' => $child_count,
+                'selected_video_id' => $selected_video_id,
+                'overlay_json' => wp_json_encode($fingerprint_params['overlay_json']),
+                'segments' => wp_json_encode($segments),
+                'voice' => wp_json_encode($audio_sel),
+                'photos' => wp_json_encode($permanent_photos ?: $photos),
+                'fingerprint_current' => $fingerprint_current,
+            ],
+            ['order_id' => $order_id],
+            ['%d','%s','%s','%s','%s','%s','%s'],
+            ['%d']
+        );
+    }
+
     // --- Сборка командной строки FFmpeg ---
     $inputs = [];
     $inputs[] = '-i ' . escapeshellarg($template);
@@ -1072,12 +1112,31 @@ function svb_check_progress() {
         
         if (isset($_COOKIE['svb_user_uid'])) {
             $uid = sanitize_text_field($_COOKIE['svb_user_uid']);
+            $order_data = svb_init_user_order();
+            $order_id = (int) ($order_data['order_id'] ?? 0);
+            $upload_dirs = $order_id ? svb_get_orders_upload_dir($order_id) : null;
+            $permanent_path = $upload_dirs ? trailingslashit($upload_dirs['result']) . 'video.mp4' : $outputFile;
+            if ($upload_dirs) {
+                @copy($outputFile, $permanent_path);
+                $videoUrl = str_replace(trailingslashit(wp_upload_dir()['basedir']), trailingslashit(wp_upload_dir()['baseurl']), $permanent_path);
+            }
             svb_update_user_order($uid, [
+                'order_id' => $order_id,
                 'video_generated' => true,
-                'video_path' => $outputFile, 
+                'video_path' => $permanent_path,
                 'video_url' => $videoUrl,
                 'video_time' => time()
             ]);
+
+            if ($order_id) {
+                global $wpdb;
+                $table = $wpdb->prefix . 'svb_orders';
+                $result = [
+                    'video_path' => $permanent_path,
+                    'generated_at' => current_time('mysql'),
+                ];
+                $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => $order_id], ['%s'], ['%d']);
+            }
         }
 
         set_transient('svb_job_'.$token, [ 'dir'=>$data['job_dir'], 'url'=>$videoUrl ], HOUR_IN_SECONDS); 
