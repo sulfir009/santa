@@ -414,6 +414,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    svbRestoreStep2State();
+    svbCheckInvoiceOnReturn();
+
     // 5. Страховка: примусово оновлюємо прев'ю через мить, щоб переконатися, що DOM готовий
     setTimeout(() => {
         // Вибираємо правильне відео
@@ -448,6 +451,11 @@ const SVB_VIDEO_TEMPLATES = (window.SVB_DATA && window.SVB_DATA.video_templates)
 const SVB_TEMPLATE_TIMINGS = (window.SVB_DATA && window.SVB_DATA.template_timings)
     ? window.SVB_DATA.template_timings
     : {};
+
+const SVB_PAYMENT = (window.SVB_DATA && window.SVB_DATA.payment)
+    ? window.SVB_DATA.payment
+    : {};
+let svbPaymentStatus = SVB_PAYMENT.status || 'unpaid';
 
 /* === НАЛАШТУВАННЯ ПРОПОРЦІЙ (ASPECT RATIO) === */
 const SVB_ASPECT_RATIOS = {
@@ -1606,14 +1614,200 @@ function buildSoundMap(){
 
 $('#svb-next-1').addEventListener('click', ()=> svbSetStep(2));
 $('#svb-back-2').addEventListener('click', ()=> svbSetStep(1));
-let svbJobToken = null, svbVideoURL = null, svbGenerating = false;
-let svbPollInterval = null; 
-  $('#svb-next-2').addEventListener('click', ()=>{
-    buildSoundMap();
-    svbSetStep(3);
-    $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
-    svbStartGenerate();
+
+const SVB_PAYMENT_STORAGE = {
+  invoice: 'svb_payment_invoice',
+  step: 'svb_step2_state'
+};
+
+function svbGetSelectedChildCount() {
+  const checked = document.querySelector('input[name="child_count"]:checked');
+  return checked ? parseInt(checked.value, 10) || 1 : 1;
+}
+
+function svbPersistStep2State() {
+  const form = document.getElementById('svb-form');
+  if (!form) return;
+
+  const payload = {};
+  form.querySelectorAll('input, select, textarea').forEach(el => {
+    if (!el.name || el.type === 'file') return;
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      if (el.checked) payload[el.name] = el.value;
+      return;
+    }
+    payload[el.name] = el.value;
   });
+
+  try {
+    localStorage.setItem(SVB_PAYMENT_STORAGE.step, JSON.stringify(payload));
+  } catch (e) {
+    console.warn('Cannot persist step2 state', e);
+  }
+}
+
+function svbRestoreStep2State() {
+  const raw = localStorage.getItem(SVB_PAYMENT_STORAGE.step);
+  if (!raw) return;
+
+  let payload = null;
+  try {
+    payload = JSON.parse(raw);
+  } catch (e) {
+    return;
+  }
+  if (!payload || typeof payload !== 'object') return;
+
+  Object.entries(payload).forEach(([name, value]) => {
+    const nodes = document.querySelectorAll(`[name="${name}"]`);
+    nodes.forEach(el => {
+      if (el.type === 'radio' || el.type === 'checkbox') {
+        el.checked = (el.value === String(value));
+      } else {
+        el.value = value;
+      }
+    });
+  });
+
+  const checked = document.querySelector('input[name="child_count"]:checked');
+  if (checked) {
+    checked.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+function svbStoreInvoiceId(invoiceId) {
+  if (!invoiceId) return;
+  try { localStorage.setItem(SVB_PAYMENT_STORAGE.invoice, invoiceId); } catch(e) {}
+}
+
+function svbGetStoredInvoiceId() {
+  try { return localStorage.getItem(SVB_PAYMENT_STORAGE.invoice) || ''; } catch(e) { return ''; }
+}
+
+function svbClearInvoiceId() {
+  try { localStorage.removeItem(SVB_PAYMENT_STORAGE.invoice); } catch(e) {}
+}
+
+function svbIsPaymentDisabledByAdmin() {
+  const toggle = document.getElementById('svb-payment-enabled');
+  return !!(toggle && !toggle.checked);
+}
+
+async function svbCreateInvoice(childCount) {
+  const fd = new FormData();
+  fd.append('action', 'svb_monobank_create_invoice');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('child_count', childCount);
+  fd.append('return_url', SVB_PAYMENT.return_url || window.location.href);
+
+  if (SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin()) {
+    fd.append('payment_disabled', '1');
+  }
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    throw new Error('Помилка серверу під час ініціалізації оплати');
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Оплата недоступна');
+  }
+
+  return data.data;
+}
+
+async function svbRequestInvoiceStatus(invoiceId) {
+  const fd = new FormData();
+  fd.append('action', 'svb_monobank_check_status');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  if (invoiceId) fd.append('invoice_id', invoiceId);
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    throw new Error('Помилка серверу перевірки оплати');
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Не вдалося перевірити оплату');
+  }
+
+  return data.data;
+}
+
+function svbProceedToGenerateFlow() {
+  buildSoundMap();
+  svbSetStep(3);
+  $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
+  svbStartGenerate();
+}
+
+async function svbHandleStep2Next() {
+  const childCount = svbGetSelectedChildCount();
+  const adminBypass = SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin();
+  const paymentEnabled = !!SVB_PAYMENT.enabled;
+
+  if (!paymentEnabled || adminBypass || svbPaymentStatus === 'paid') {
+    svbProceedToGenerateFlow();
+    return;
+  }
+
+  try {
+    svbPersistStep2State();
+    const invoice = await svbCreateInvoice(childCount);
+
+    if (invoice && invoice.bypass) {
+      svbProceedToGenerateFlow();
+      return;
+    }
+
+    if (invoice && invoice.invoiceId) {
+      svbStoreInvoiceId(invoice.invoiceId);
+    }
+
+    if (invoice && invoice.pageUrl) {
+      window.location = invoice.pageUrl;
+      return;
+    }
+
+    alert('Не вдалося створити інвойс для оплати.');
+  } catch (err) {
+    console.error(err);
+    alert(err.message || 'Оплата тимчасово недоступна.');
+  }
+}
+
+async function svbCheckInvoiceOnReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const fromReturn = params.has('svb_payment_return');
+  if (!fromReturn && svbPaymentStatus === 'paid') return;
+
+  const invoiceId = params.get('invoiceId') || svbGetStoredInvoiceId() || (SVB_PAYMENT.invoice_id || '');
+  if (!invoiceId) return;
+
+  try {
+    const status = await svbRequestInvoiceStatus(invoiceId);
+    if (status.status === 'paid') {
+      svbPaymentStatus = 'paid';
+      svbClearInvoiceId();
+    } else if (fromReturn) {
+      alert('Оплата не завершена. Спробуйте ще раз.');
+    }
+  } catch (err) {
+    console.error(err);
+    if (fromReturn) {
+      alert('Не вдалося перевірити оплату: ' + err.message);
+    }
+  }
+}
+
+let svbJobToken = null, svbVideoURL = null, svbGenerating = false;
+let svbPollInterval = null;
+const next2Btn = document.getElementById('svb-next-2');
+if (next2Btn) {
+  next2Btn.addEventListener('click', svbHandleStep2Next);
+}
 $('#svb-back-3').addEventListener('click', ()=> {
   svbSetStep(2);
   if (svbPollInterval) clearInterval(svbPollInterval);

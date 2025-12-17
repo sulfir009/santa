@@ -20,6 +20,7 @@ if (!defined('SVB_DEBUG')) {
 require_once SVB_PLUGIN_DIR . 'includes/Models/Order.php';
 require_once SVB_PLUGIN_DIR . 'includes/Models/Config.php';
 require_once SVB_PLUGIN_DIR . 'includes/Services/MediaPipeline.php';
+require_once SVB_PLUGIN_DIR . 'includes/Services/MonobankGateway.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
 
@@ -70,3 +71,8 @@ add_action('wp_ajax_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_nopriv_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_svb_request_name', 'svb_request_name');
 add_action('wp_ajax_nopriv_svb_request_name', 'svb_request_name');
+add_action('wp_ajax_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
+add_action('wp_ajax_nopriv_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
+add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
+add_action('wp_ajax_nopriv_svb_monobank_check_status', 'svb_monobank_check_status');
+add_action('init', 'svb_handle_monobank_return', 2);
