@@ -1940,10 +1940,7 @@ async function svbRequestInvoiceStatus(invoiceId) {
 function svbProceedToGenerateFlow() {
   svbHidePaymentError();
   svbPersistStep2State();
-  svbUpdateState({ step: 3 });
   buildSoundMap();
-  svbSetStep(3);
-  $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
   svbStartGenerate();
 }
 
@@ -2169,13 +2166,36 @@ function svbRenderResultVideo(url) {
       percentBox.textContent = `Створення відео – ${percent}%`;
     }
   }
+  function svbHandleError(err) {
+    if (svbPollInterval) clearInterval(svbPollInterval);
+    svbGenerating = false;
+    svbToggleVideoOverlay(false);
+    svbShowPoster(true);
+
+    const msg = (err && err.msg) ? err.msg : 'Сталася помилка під час генерації відео.';
+    const status = document.getElementById('svb-status');
+    if (status) status.textContent = msg;
+
+    if (svbIsDebugMode() && err && err.log) {
+      console.error('[SVB GENERATE ERROR]', err.log);
+    }
+
+    svbSetStep(2);
+  }
+
+  function svbMarkGenerationStarted() {
+    svbUpdateState({ step: 3 });
+    svbSetStep(3);
+    svbShowPoster(true);
+    svbToggleVideoOverlay(true);
+    svbUpdateVideoPercent(0);
+    $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
+  }
+
   async function svbStartGenerate() {
       if (svbGenerating) return;
       svbGenerating = true;
       svbResetPreviewState();
-      svbShowPoster(true);
-      svbToggleVideoOverlay(true);
-      svbUpdateVideoPercent(0);
       $('#svb-status').textContent = 'Збирання даних...';
 
     // 1. Сохраняем сегменты времени
@@ -2268,8 +2288,9 @@ function svbRenderResultVideo(url) {
         }
 
         const data = await response.json();
-    
-          if (data.success && data.data.token) {
+
+          if (data.success && data.data && data.data.token) {
+              svbMarkGenerationStarted();
               svbJobToken = data.data.token;
               $('#svb-status').textContent = 'Генерація почалася...';
               svbPollProgress(svbJobToken);
@@ -2279,7 +2300,7 @@ function svbRenderResultVideo(url) {
     } catch (err) {
         console.error(err);
         svbHandleError({
-            msg: 'Критична помилка відправки даних.', 
+            msg: 'Критична помилка відправки даних.',
             log: err.message + "\n\nПеревірте розмір фото (upload_max_filesize)!"
         });
     }
@@ -2296,7 +2317,7 @@ function svbPollProgress(token) {
       const data = await response.json();
       
       if (data.success) {
-        
+
         // === DEBUG OUTPUT TO CONSOLE ===
         if (data.data.debug) {
             console.groupCollapsed(`🚀 SVB Progress: ${data.data.percent}%`);
@@ -2314,7 +2335,12 @@ function svbPollProgress(token) {
             $('#svb-status').textContent = ``;
           } else if (data.data.status === 'done') {
             clearInterval(svbPollInterval);
-          svbHandleSuccess(data.data.url);
+          const videoUrl = data.data && (data.data.video_url || data.data.url);
+          if (videoUrl && /\.mp4(\?|$)/i.test(videoUrl)) {
+            svbHandleSuccess(videoUrl);
+          } else {
+            svbHandleError({ msg: 'Не вдалося отримати mp4 посилання на відео.' });
+          }
         }
       } else {
         clearInterval(svbPollInterval);
@@ -2327,49 +2353,39 @@ function svbPollProgress(token) {
   }, 3000); 
 }
   function svbHandleSuccess(url) {
+    if (!url || !/\.mp4(\?|$)/i.test(url)) {
+      svbHandleError({ msg: 'Не вдалося отримати mp4 посилання на відео.' });
+      return;
+    }
+
     svbGenerating = false;
     svbToggleVideoOverlay(false);
     svbVideoURL = url;
     svbUpdateVideoPercent(100);
-    $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
-    const res = $('#svb-result');
-    if (res) {
-      const video = document.createElement('video');
-      video.src = url;
-      video.controls = true;
-      video.playsInline = true;
-      video.controlsList = 'nodownload';
 
+    const statusEl = document.getElementById('svb-status');
+    if (statusEl) {
+      statusEl.innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
+    }
+
+    svbRenderResultVideo(url);
+
+    const res = document.getElementById('svb-result');
+    if (res) {
       const meta = document.createElement('div');
       meta.className = 'svb-video-result-meta';
       meta.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
-
-      res.innerHTML = '';
-      res.appendChild(video);
       res.appendChild(meta);
       res.style.display = 'block';
     }
-  $('#svb-finish').disabled = false;
+
+    const finishBtn = document.getElementById('svb-finish');
+    if (finishBtn) finishBtn.disabled = false;
+
+    svbClearInvoiceId();
+    svbClearState();
+    svbPaymentStatus = 'paid';
   }
-function svbHandleSuccess(url) {
-  svbGenerating = false;
-  svbToggleVideoOverlay(false);
-  svbVideoURL = url;
-  svbUpdateVideoPercent(100);
-
-  // без ссылки
-  document.getElementById('svb-status').textContent = '✅ Відео зібрано';
-
-  // просто заполняем превью видео
-  svbRenderResultVideo(url);
-
-  const finishBtn = document.getElementById('svb-finish');
-  if (finishBtn) finishBtn.disabled = false;
-
-  svbClearInvoiceId();
-  svbClearState();
-  svbPaymentStatus = 'paid';
-}
 
 
 const _svbNorm = s => (s||'').toString().toLowerCase().trim().replace(/[\s_\-’']/g,'');

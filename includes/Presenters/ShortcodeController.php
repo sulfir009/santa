@@ -182,11 +182,14 @@ function svb_enqueue_shortcode_assets( $is_admin, array $localize ) {
         true
     );
 
+    $shortcode_js_path = SVB_PLUGIN_DIR . 'assets/js/shortcode.js';
+    $shortcode_js_ver  = file_exists($shortcode_js_path) ? filemtime($shortcode_js_path) : SVB_VER;
+
     wp_enqueue_script(
         'svb-shortcode',
         SVB_PLUGIN_URL . 'assets/js/shortcode.js',
         [ 'svb-heic2any' ],
-        SVB_VER,
+        $shortcode_js_ver,
         true
     );
 
