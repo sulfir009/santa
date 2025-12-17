@@ -1531,6 +1531,21 @@ function svb_monobank_create_invoice() {
         $order_data['token_hash'] = $order_row['token_hash'] ?? '';
     }
 
+    $order_row = svb_order_create_or_load_for_session($uid, $order_data);
+    if (is_wp_error($order_row)) {
+        $db_error = $order_row->get_error_data()['db_error'] ?? '';
+        if ($db_error) {
+            svb_pay_log('invoice.order_error', ['db_error' => $db_error], $order_data);
+        }
+        wp_send_json_error('Order storage error');
+    }
+
+    $order_data['order_id'] = (int) ($order_row['order_id'] ?? ($order_data['order_id'] ?? 0));
+    if (!empty($order_row['public_token'])) {
+        $order_data['public_token'] = $order_row['public_token'];
+        $order_data['token_hash'] = $order_row['token_hash'] ?? '';
+    }
+
     svb_pay_log('invoice.start', [
         'child_count' => $child_count,
         'is_admin' => $is_admin,
