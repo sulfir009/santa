@@ -4,6 +4,7 @@ function svb_render_form() {
     // Ініціалізуємо або отримуємо існуюче замовлення для цього користувача
     $order_data = svb_init_user_order();
     $order_id = $order_data['order_id'];
+    $payment_state = isset($order_data['payment']) ? $order_data['payment'] : svb_get_payment_defaults();
 
     $welcome_msg = "Раді бачити вас знову! Ваше замовлення №<strong>{$order_id}</strong>.";
     $video_ready_html = '';
@@ -66,6 +67,11 @@ function svb_render_form() {
     $ajax_url = admin_url('admin-ajax.php');
     $nonce = wp_create_nonce('svb_nonce');
 
+    $current_path = isset($_SERVER['REQUEST_URI']) ? wp_unslash($_SERVER['REQUEST_URI']) : '/';
+    $payment_return_url = add_query_arg('svb_payment_return', '1', home_url($current_path));
+    $payment_prices = svb_monobank_price_map();
+    $payment_enabled = svb_monobank_get_token() && (max($payment_prices ?: [0]) > 0);
+
     $ffmpeg_path = svb_exec_find('ffmpeg');
     $preview_caps = [
         'perspective' => $ffmpeg_path ? svb_ff_has_filter($ffmpeg_path, 'perspective') : false,
@@ -116,6 +122,15 @@ function svb_render_form() {
         'preview_caps'        => $preview_caps,
         'overlay_windows'     => $OVER,
         'processed_photo_size'=> 709,
+        'payment'             => [
+            'enabled'     => (bool) $payment_enabled,
+            'status'      => $payment_state['status'] ?? 'unpaid',
+            'invoice_id'  => $payment_state['invoice_id'] ?? '',
+            'child_count' => (int) ($payment_state['child_count'] ?? 1),
+            'prices'      => $payment_prices,
+            'return_url'  => esc_url($payment_return_url),
+            'is_admin'    => $is_admin,
+        ],
     ];
 
     svb_enqueue_shortcode_assets( $is_admin, $localize );
@@ -150,6 +165,14 @@ function svb_enqueue_shortcode_assets( $is_admin, array $localize ) {
     }
 
     wp_enqueue_script(
+        'svb-heic2any',
+        SVB_PLUGIN_URL . 'assets/js/heic2any.min.js',
+        [],
+        '0.0.4',
+        true
+    );
+
+    wp_enqueue_script(
         'svb-cropper',
         'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js',
         [],
@@ -160,7 +183,7 @@ function svb_enqueue_shortcode_assets( $is_admin, array $localize ) {
     wp_enqueue_script(
         'svb-shortcode',
         SVB_PLUGIN_URL . 'assets/js/shortcode.js',
-        [],
+        [ 'svb-heic2any' ],
         SVB_VER,
         true
     );
