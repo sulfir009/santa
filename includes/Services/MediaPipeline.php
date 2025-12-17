@@ -120,27 +120,28 @@ function svb_transcode_image_to_rgba($ffmpeg, $src, $dst, $cropSize = 0, $job_di
             // Обеспечиваем наличие альфа-канала
             $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
 
-            // Исправляем ориентацию (если есть EXIF данные о повороте)
+            // Fix orientation safely
             try {
-                if (!method_exists($img, 'autoOrientImage')) {
-                    throw new RuntimeException('autoOrientImage is not available');
+                if (method_exists($img, 'autoOrientImage')) {
+                    $img->autoOrientImage();
+                } else {
+                    $orientation = $img->getImageOrientation();
+                    switch ($orientation) {
+                        case Imagick::ORIENTATION_BOTTOMRIGHT:
+                            $img->rotateimage("#000", 180);
+                            break;
+                        case Imagick::ORIENTATION_RIGHTTOP:
+                            $img->rotateimage("#000", 90);
+                            break;
+                        case Imagick::ORIENTATION_LEFTBOTTOM:
+                            $img->rotateimage("#000", -90);
+                            break;
+                    }
                 }
-                $img->autoOrientImage();
             } catch (Throwable $e) {
-                $orientation = $img->getImageOrientation();
-                switch ($orientation) {
-                    case Imagick::ORIENTATION_BOTTOMRIGHT:
-                        $img->rotateimage("#000", 180);
-                        break;
-                    case Imagick::ORIENTATION_RIGHTTOP:
-                        $img->rotateimage("#000", 90);
-                        break;
-                    case Imagick::ORIENTATION_LEFTBOTTOM:
-                        $img->rotateimage("#000", -90);
-                        break;
-                }
-                $img->setImageOrientation(Imagick::ORIENTATION_TOPLEFT);
+                // do not fail hard on orientation issues
             }
+            $img->setImageOrientation(Imagick::ORIENTATION_TOPLEFT);
 
             // Кроп или ресайз
             if ($cropSize > 0) {

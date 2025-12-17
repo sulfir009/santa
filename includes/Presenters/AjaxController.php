@@ -178,33 +178,20 @@ function svb_generate() {
             }
 
             $destFile = $base . '.webp';
-            $isHeic   = in_array($ext, ['heic', 'heif'], true);
-
-            if ($isHeic && !svb_can_transcode_heic()) {
-                svb_dbg_write($job_dir, 'warn.heic_unsupported', ['file' => $file['name']]);
-                @unlink($tmp);
-                wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to WebP).');
-            }
+            $isHeic   = in_array($ext, ['heic','heif'], true);
 
             $transcoded = svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFile, 0, $job_dir);
 
-            if ($transcoded) {
-                if ($tmp !== $destFile && file_exists($tmp)) {
-                    @unlink($tmp);
-                }
+            if ($transcoded && file_exists($destFile)) {
+                if (file_exists($tmp)) { @unlink($tmp); }
                 $photos[$pk] = $destFile;
             } else {
                 if ($isHeic) {
-                    if (file_exists($destFile)) {
-                        @unlink($destFile);
-                    }
-                    if (file_exists($tmp)) {
-                        @unlink($tmp);
-                    }
+                    if (file_exists($destFile)) { @unlink($destFile); }
+                    if (file_exists($tmp)) { @unlink($tmp); }
                     wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to WebP).');
                 }
-
-                $photos[$pk] = $tmp;
+                $photos[$pk] = $tmp; // fallback for non-HEIC
             }
         }
     }
