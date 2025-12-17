@@ -35,6 +35,25 @@ function svb_exec_find($bin) {
     return false;
 }
 
+function svb_imagick_supports_format($format)
+{
+    if (!class_exists('Imagick') || !extension_loaded('imagick')) {
+        return false;
+    }
+
+    try {
+        $supported = Imagick::queryFormats(strtoupper($format));
+        return !empty($supported);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function svb_can_transcode_heic()
+{
+    return svb_imagick_supports_format('HEIC') || svb_imagick_supports_format('HEIF');
+}
+
 function svb_ff_has_filter($ffmpeg, $name){
     @exec($ffmpeg . ' -hide_banner -filters', $out, $rc);
     if ($rc !== 0 || empty($out)) return false;
@@ -102,19 +121,24 @@ function svb_transcode_image_to_rgba($ffmpeg, $src, $dst, $cropSize = 0, $job_di
             $img->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
 
             // Исправляем ориентацию (если есть EXIF данные о повороте)
-            $orientation = $img->getImageOrientation();
-            switch ($orientation) {
-                case Imagick::ORIENTATION_BOTTOMRIGHT:
-                    $img->rotateimage("#000", 180);
-                    break;
-                case Imagick::ORIENTATION_RIGHTTOP:
-                    $img->rotateimage("#000", 90);
-                    break;
-                case Imagick::ORIENTATION_LEFTBOTTOM:
-                    $img->rotateimage("#000", -90);
-                    break;
+            try {
+                $img->autoOrientImage();
+            } catch (Throwable $e) {
+                // fallback для старых версий Imagick
+                $orientation = $img->getImageOrientation();
+                switch ($orientation) {
+                    case Imagick::ORIENTATION_BOTTOMRIGHT:
+                        $img->rotateimage("#000", 180);
+                        break;
+                    case Imagick::ORIENTATION_RIGHTTOP:
+                        $img->rotateimage("#000", 90);
+                        break;
+                    case Imagick::ORIENTATION_LEFTBOTTOM:
+                        $img->rotateimage("#000", -90);
+                        break;
+                }
+                $img->setImageOrientation(Imagick::ORIENTATION_TOPLEFT);
             }
-            $img->setImageOrientation(Imagick::ORIENTATION_TOPLEFT);
 
             // Кроп или ресайз
             if ($cropSize > 0) {

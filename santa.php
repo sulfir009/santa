@@ -23,6 +23,34 @@ require_once SVB_PLUGIN_DIR . 'includes/Services/MediaPipeline.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
 
+// Allow HEIC/HEIF uploads when supported by WordPress core.
+add_filter('upload_mimes', function ($mimes) {
+    $mimes['heic'] = 'image/heic';
+    $mimes['heif'] = 'image/heif';
+    return $mimes;
+});
+
+// Help WordPress detect HEIC/HEIF mime types during upload validation.
+add_filter('wp_check_filetype_and_ext', function ($data, $file, $filename, $mimes, $real_mime = false) {
+    if (!empty($data['ext']) && !empty($data['type'])) {
+        return $data; // Core already resolved type.
+    }
+
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['heic', 'heif'], true)) {
+        return $data;
+    }
+
+    $heicMimes = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'];
+    $type = in_array($real_mime, $heicMimes, true) ? $real_mime : 'image/heic';
+
+    return [
+        'ext'             => $ext,
+        'type'            => $type,
+        'proper_filename' => $data['proper_filename'] ?? false,
+    ];
+}, 10, 5);
+
 // Хук init: запускаем как можно раньше, чтобы успеть поставить куки до вывода HTML
 add_action('init', 'svb_init_cookie_logic', 1); // Приоритет 1 (раньше всех)
 
