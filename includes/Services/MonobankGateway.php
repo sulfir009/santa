@@ -102,6 +102,9 @@ function svb_monobank_create_invoice_request($amount_kop, $redirect_url, $refere
         ]);
     }
 
+    $decoded['_http_status'] = (int) $code;
+    $decoded['_raw_body'] = $body_raw;
+
     return $decoded;
 }
 
