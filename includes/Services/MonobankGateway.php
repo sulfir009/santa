@@ -172,7 +172,12 @@ function svb_handle_monobank_return() {
     }
 
     $remote_status = $status['status'] ?? '';
-    $normalized_status = $remote_status === 'success' ? 'paid' : ($remote_status ?: 'pending');
+    $normalized_status = 'pending';
+    if ($remote_status === 'success') {
+        $normalized_status = 'paid';
+    } elseif (in_array($remote_status, ['failure', 'expired', 'canceled', 'reversed'], true)) {
+        $normalized_status = 'failed';
+    }
 
     svb_update_user_payment_state($uid, [
         'status' => $normalized_status,

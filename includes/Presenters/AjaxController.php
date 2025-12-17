@@ -108,7 +108,7 @@ function svb_generate() {
         $payment_state = svb_get_user_payment_state($uid);
         $paid_children = isset($payment_state['child_count']) ? (int) $payment_state['child_count'] : 0;
         if (($payment_state['status'] ?? 'unpaid') !== 'paid') {
-            wp_send_json_error('Оплата обов\'язкова перед генерацією.');
+            wp_send_json_error('Оплата неуспешна. Генерация видео не будет выполнена.');
         }
 
         if ($paid_children && $requested_child_count > $paid_children) {
@@ -1230,7 +1230,12 @@ function svb_monobank_check_status() {
         wp_send_json_error('Invoice does not match this session');
     }
 
-    $normalized_status = $remote_status === 'success' ? 'paid' : ($remote_status ?: 'pending');
+    $normalized_status = 'pending';
+    if ($remote_status === 'success') {
+        $normalized_status = 'paid';
+    } elseif (in_array($remote_status, ['failure', 'expired', 'canceled', 'reversed'], true)) {
+        $normalized_status = 'failed';
+    }
 
     svb_update_user_payment_state($uid, [
         'status' => $normalized_status,

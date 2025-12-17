@@ -417,6 +417,11 @@ document.addEventListener('DOMContentLoaded', () => {
     svbRestoreStep2State();
     svbCheckInvoiceOnReturn();
 
+    const paymentToggle = document.getElementById('svb-payment-enabled');
+    if (paymentToggle && typeof SVB_PAYMENT.enabled !== 'undefined') {
+        paymentToggle.checked = !!SVB_PAYMENT.enabled;
+    }
+
     // 5. Страховка: примусово оновлюємо прев'ю через мить, щоб переконатися, що DOM готовий
     setTimeout(() => {
         // Вибираємо правильне відео
@@ -1693,6 +1698,26 @@ function svbIsPaymentDisabledByAdmin() {
   return !!(toggle && !toggle.checked);
 }
 
+function svbHidePaymentError() {
+  const box = document.getElementById('svb-payment-error');
+  if (!box) return;
+  box.style.display = 'none';
+}
+
+function svbShowPaymentError(message) {
+  const box = document.getElementById('svb-payment-error');
+  if (!box) {
+    alert(message);
+    return;
+  }
+
+  const text = box.querySelector('.svb-payment-error__text');
+  if (text) {
+    text.textContent = message;
+  }
+  box.style.display = 'block';
+}
+
 async function svbCreateInvoice(childCount) {
   const fd = new FormData();
   fd.append('action', 'svb_monobank_create_invoice');
@@ -1737,6 +1762,7 @@ async function svbRequestInvoiceStatus(invoiceId) {
 }
 
 function svbProceedToGenerateFlow() {
+  svbHidePaymentError();
   buildSoundMap();
   svbSetStep(3);
   $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
@@ -1744,17 +1770,25 @@ function svbProceedToGenerateFlow() {
 }
 
 async function svbHandleStep2Next() {
+  svbHidePaymentError();
   const childCount = svbGetSelectedChildCount();
   const adminBypass = SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin();
   const paymentEnabled = !!SVB_PAYMENT.enabled;
+  const requirePayment = paymentEnabled && !adminBypass;
 
-  if (!paymentEnabled || adminBypass || svbPaymentStatus === 'paid') {
+  if (!requirePayment) {
+    svbProceedToGenerateFlow();
+    return;
+  }
+
+  if (svbPaymentStatus === 'paid') {
     svbProceedToGenerateFlow();
     return;
   }
 
   try {
     svbPersistStep2State();
+    svbPaymentStatus = 'pending';
     const invoice = await svbCreateInvoice(childCount);
 
     if (invoice && invoice.bypass) {
@@ -1771,10 +1805,10 @@ async function svbHandleStep2Next() {
       return;
     }
 
-    alert('Не вдалося створити інвойс для оплати.');
+    svbShowPaymentError('Не вдалося створити інвойс для оплати.');
   } catch (err) {
     console.error(err);
-    alert(err.message || 'Оплата тимчасово недоступна.');
+    svbShowPaymentError(err.message || 'Оплата тимчасово недоступна.');
   }
 }
 
@@ -1790,14 +1824,18 @@ async function svbCheckInvoiceOnReturn() {
     const status = await svbRequestInvoiceStatus(invoiceId);
     if (status.status === 'paid') {
       svbPaymentStatus = 'paid';
+      SVB_PAYMENT.status = 'paid';
       svbClearInvoiceId();
+      svbProceedToGenerateFlow();
     } else if (fromReturn) {
-      alert('Оплата не завершена. Спробуйте ще раз.');
+      svbPaymentStatus = status.status || 'failed';
+      svbClearInvoiceId();
+      svbShowPaymentError('Оплата неуспешна. Генерация видео не будет выполнена.');
     }
   } catch (err) {
     console.error(err);
     if (fromReturn) {
-      alert('Не вдалося перевірити оплату: ' + err.message);
+      svbShowPaymentError('Не вдалося перевірити оплату: ' + err.message);
     }
   }
 }
@@ -1807,6 +1845,24 @@ let svbPollInterval = null;
 const next2Btn = document.getElementById('svb-next-2');
 if (next2Btn) {
   next2Btn.addEventListener('click', svbHandleStep2Next);
+}
+const paymentRetryBtn = document.getElementById('svb-payment-retry');
+if (paymentRetryBtn) {
+  paymentRetryBtn.addEventListener('click', () => {
+    svbPaymentStatus = 'unpaid';
+    svbClearInvoiceId();
+    svbHidePaymentError();
+    svbHandleStep2Next();
+  });
+}
+const paymentBackBtn = document.getElementById('svb-payment-back');
+if (paymentBackBtn) {
+  paymentBackBtn.addEventListener('click', () => {
+    svbPaymentStatus = 'unpaid';
+    svbClearInvoiceId();
+    svbHidePaymentError();
+    svbSetStep(1);
+  });
 }
 $('#svb-back-3').addEventListener('click', ()=> {
   svbSetStep(2);
