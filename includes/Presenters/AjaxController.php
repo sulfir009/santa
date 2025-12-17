@@ -210,19 +210,20 @@ function svb_generate() {
                 wp_send_json_error('cannot save photo ' . $field);
             }
 
-            $destFile = $base . '.webp';
+            // Use PNG for FFmpeg overlays to avoid WebP incompatibilities
+            $destFilePng = $base . '_rgba.png';
             $isHeic   = in_array($ext, ['heic','heif'], true);
 
-            $transcoded = svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFile, 0, $job_dir);
+            $transcoded = svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFilePng, 0, $job_dir);
 
-            if ($transcoded && file_exists($destFile)) {
+            if ($transcoded && file_exists($destFilePng)) {
                 if (file_exists($tmp)) { @unlink($tmp); }
-                $photos[$pk] = $destFile;
+                $photos[$pk] = $destFilePng;
             } else {
                 if ($isHeic) {
-                    if (file_exists($destFile)) { @unlink($destFile); }
+                    if (file_exists($destFilePng)) { @unlink($destFilePng); }
                     if (file_exists($tmp)) { @unlink($tmp); }
-                    wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to WebP).');
+                    wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to PNG).');
                 }
                 $photos[$pk] = $tmp; // fallback for non-HEIC
             }
@@ -797,6 +798,8 @@ $makeAudioBlocks('name',   $A_NAME);
     
     $logFile = $job_dir . '/ffmpeg.log';
     $pidFile = $job_dir . '/ffmpeg.pid';
+    $rcFile  = $job_dir . '/ffmpeg.rc';
+    if (file_exists($rcFile)) { @unlink($rcFile); }
 
     if (file_put_contents($logFile, "Init...\n") === false) {
         wp_send_json_error(['msg' => 'Помилка: Неможливо створити файл логу. Перевірте права на папку: ' . $job_dir]);
@@ -809,9 +812,11 @@ $makeAudioBlocks('name',   $A_NAME);
         'pidFile'  => $pidFile,
         'tplDur'   => $tplDur,
         'job_url'  => $job_url,
+        'rcFile'   => $rcFile,
+        'cmd'      => $cmd,
     ], HOUR_IN_SECONDS);
 
-    $cmd_bg = $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1 & echo $!';
+    $cmd_bg = '(' . $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1; echo $? > ' . escapeshellarg($rcFile) . ') > /dev/null 2>&1 & echo $!';
     
     svb_dbg_write($job_dir, 'final.cmd_bg', $cmd_bg);
     
@@ -1103,10 +1108,37 @@ function svb_check_progress() {
     }
 
     // Якщо відео готове
+    $rcFile = isset($data['rcFile']) ? $data['rcFile'] : '';
+    $cmdRun = isset($data['cmd']) ? $data['cmd'] : '';
+
+    if ($rcFile && file_exists($rcFile)) {
+        $rcVal = (int) trim((string) @file_get_contents($rcFile));
+        if ($rcVal !== 0 && (!file_exists($outputFile) || filesize($outputFile) === 0)) {
+            $logTail = '';
+            if (file_exists($logFile)) {
+                $size = filesize($logFile);
+                $readSize = 8192;
+                $offset = max(0, $size - $readSize);
+                $logTail = file_get_contents($logFile, false, null, $offset) ?: '';
+            }
+            svb_dbg_write($data['job_dir'], 'warn.ffmpeg_render', [
+                'cmd' => $cmdRun,
+                'rc' => $rcVal,
+                'stderr' => $logTail,
+            ]);
+
+            delete_transient('svb_job_data_'.$token);
+            delete_transient('svb_job_'.$token);
+
+            wp_send_json_error(['status' => 'error', 'msg' => 'Помилка під час рендерингу відео. Спробуйте ще раз.']);
+        }
+    }
+
     if ($is_finished && file_exists($outputFile) && filesize($outputFile) > 10000) {
-        svb_schedule_cleanup($data['job_dir']); 
+        svb_schedule_cleanup($data['job_dir']);
         @unlink($data['pidFile']);
         @unlink($logFile);
+        if ($rcFile) { @unlink($rcFile); }
         
         $videoUrl = trailingslashit($data['job_url']) . 'video.mp4';
         
