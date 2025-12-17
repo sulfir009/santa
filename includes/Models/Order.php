@@ -35,6 +35,19 @@ function svb_orders_v2_enabled() {
     return defined('SVB_ORDERS_V2') && SVB_ORDERS_V2;
 }
 
+function svb_orders_decode_payment($raw) {
+    if (is_array($raw)) {
+        return $raw;
+    }
+
+    $decoded = json_decode((string) $raw, true);
+    return is_array($decoded) ? $decoded : svb_get_payment_defaults();
+}
+
+function svb_orders_normalize_payment(array $payment) {
+    return array_merge(svb_get_payment_defaults(), $payment);
+}
+
 function svb_get_orders_v2_table() {
     global $wpdb;
     return $wpdb->prefix . 'svb_orders_v2';
@@ -196,6 +209,20 @@ function svb_get_order_by_id($order_id) {
     return $row;
 }
 
+function svb_get_order_by_id_and_token($order_id, $token) {
+    $order = svb_get_order_by_id($order_id);
+    if (!$order) {
+        return null;
+    }
+
+    $token_hash = isset($order['token_hash']) ? $order['token_hash'] : '';
+    if (!$token_hash || !$token || !hash_equals($token_hash, hash('sha256', $token))) {
+        return null;
+    }
+
+    return $order;
+}
+
 function svb_order_create_or_load_for_session($uid, $fallback_data = []) {
     if (!$uid) {
         return new WP_Error('svb_order_missing_uid', 'Missing session UID');
@@ -225,6 +252,63 @@ function svb_order_create_or_load_for_session($uid, $fallback_data = []) {
     }
 
     return $verified;
+}
+
+function svb_create_new_order_for_session($uid, array $base_data = []) {
+    if (!$uid) {
+        return new WP_Error('svb_order_missing_uid', 'Missing session UID');
+    }
+
+    if (!svb_orders_table_exists()) {
+        return new WP_Error('svb_orders_table_missing', 'Orders table missing');
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $order_id = svb_get_next_order_id();
+    $token_data = svb_generate_public_token();
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $session = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
+    $created_at = current_time('mysql');
+
+    $payment = svb_orders_normalize_payment(isset($base_data['payment']) && is_array($base_data['payment']) ? $base_data['payment'] : []);
+
+    $inserted = $wpdb->insert(
+        $table,
+        [
+            'order_id' => $order_id,
+            'token_hash' => $token_data['hash'],
+            'created_at' => $created_at,
+            'ip' => $ip,
+            'user_agent' => $ua,
+            'session_id' => $uid,
+            'payment' => wp_json_encode($payment),
+        ],
+        ['%d','%s','%s','%s','%s','%s','%s']
+    );
+
+    if (!$inserted) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB] failed to insert new order row: ' . $wpdb->last_error);
+        }
+        return new WP_Error('svb_order_not_created', 'Order storage error', ['db_error' => $wpdb->last_error]);
+    }
+
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d LIMIT 1", $order_id), ARRAY_A);
+    if (!$row) {
+        return new WP_Error('svb_order_not_readable', 'Order storage error', ['db_error' => $wpdb->last_error]);
+    }
+
+    if (!headers_sent()) {
+        setcookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
+    }
+    $_COOKIE['svb_public_token'] = $token_data['token'];
+
+    $row['public_token'] = $token_data['token'];
+    $row['token_hash'] = $token_data['hash'];
+
+    return $row;
 }
 
 function svb_init_user_order() {
@@ -616,13 +700,42 @@ function svb_update_user_payment_state($uid, array $updates) {
 
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
-    $existing = $wpdb->get_row($wpdb->prepare("SELECT id,payment FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    $existing = $wpdb->get_row($wpdb->prepare("SELECT id,payment,fingerprint_current,order_id FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
     if ($existing) {
-        $new_payment = array_merge($defaults, is_array(json_decode($existing['payment'], true)) ? json_decode($existing['payment'], true) : [], $updates, [
+        $stored_payment = svb_orders_decode_payment($existing['payment']);
+        $new_payment = array_merge($defaults, $stored_payment, $updates, [
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
+
+        if (isset($updates['status']) && $updates['status'] === 'paid') {
+            if (!isset($new_payment['paid_fingerprint']) && !empty($existing['fingerprint_current'])) {
+                $new_payment['paid_fingerprint'] = $existing['fingerprint_current'];
+            }
+        }
+
         $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $existing['id']], ['%s'], ['%d']);
     }
+}
+
+function svb_update_order_payment_by_session($uid, array $updates) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT id,order_id,payment,fingerprint_current FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    if (!$row) {
+        return;
+    }
+
+    $defaults = svb_get_payment_defaults();
+    $existing = svb_orders_decode_payment($row['payment']);
+    $new_payment = array_merge($defaults, $existing, $updates, [
+        'updated_at' => date('Y-m-d H:i:s'),
+    ]);
+
+    if (isset($updates['status']) && $updates['status'] === 'paid' && empty($new_payment['paid_fingerprint']) && !empty($row['fingerprint_current'])) {
+        $new_payment['paid_fingerprint'] = $row['fingerprint_current'];
+    }
+
+    $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $row['id']], ['%s'], ['%d']);
 }
 
 function svb_init_cookie_logic() {
@@ -687,4 +800,31 @@ function svb_compute_fingerprint(array $params, array $photo_paths) {
     sort($photo_hashes);
     $payload = $normalized . '|' . implode('|', $photo_hashes);
     return hash('sha256', $payload);
+}
+
+function svb_compute_fingerprint_from_hashes(array $params, array $photo_hashes) {
+    $normalized = wp_json_encode($params);
+    $hashes = array_map('strval', $photo_hashes);
+    sort($hashes);
+    $payload = $normalized . '|' . implode('|', $hashes);
+    return hash('sha256', $payload);
+}
+
+function svb_update_order_fingerprint($order_id, $fingerprint_current, array $extra_fields = []) {
+    if (!$order_id || !svb_orders_table_exists()) {
+        return;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $fields = array_merge([
+        'fingerprint_current' => $fingerprint_current,
+    ], $extra_fields);
+
+    $formats = [];
+    foreach ($fields as $key => $val) {
+        $formats[] = is_int($val) ? '%d' : '%s';
+    }
+
+    $wpdb->update($table, $fields, ['order_id' => (int) $order_id], $formats, ['%d']);
 }

@@ -230,6 +230,8 @@ add_action('wp_ajax_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_nopriv_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_svb_request_name', 'svb_request_name');
 add_action('wp_ajax_nopriv_svb_request_name', 'svb_request_name');
+add_action('wp_ajax_svb_payment_gate', 'svb_payment_gate');
+add_action('wp_ajax_nopriv_svb_payment_gate', 'svb_payment_gate');
 add_action('wp_ajax_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
 add_action('wp_ajax_nopriv_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
 add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
