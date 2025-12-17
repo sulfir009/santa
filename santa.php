@@ -24,6 +24,54 @@ require_once SVB_PLUGIN_DIR . 'includes/Services/MonobankGateway.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
 
+register_activation_hook(__FILE__, 'svb_install_orders_table');
+register_activation_hook(__FILE__, function() {
+    if (!wp_next_scheduled('svb_cleanup_order_results')) {
+        wp_schedule_event(time() + MINUTE_IN_SECONDS, 'hourly', 'svb_cleanup_order_results');
+    }
+});
+
+add_action('svb_cleanup_order_results', 'svb_cleanup_order_results_cb');
+
+function svb_handle_public_order() {
+    if (empty($_GET['svb_order']) || empty($_GET['token'])) {
+        return;
+    }
+
+    $order_id = absint($_GET['svb_order']);
+    $token = sanitize_text_field(wp_unslash($_GET['token']));
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d", $order_id), ARRAY_A);
+    if (!$row) {
+        status_header(404);
+        exit('Order not found');
+    }
+
+    if (empty($row['token_hash']) || !hash_equals($row['token_hash'], hash('sha256', $token))) {
+        status_header(403);
+        exit('Access denied');
+    }
+
+    $result = is_array(json_decode($row['result'] ?? '', true)) ? json_decode($row['result'], true) : [];
+    $video_path = $result['video_path'] ?? '';
+    $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
+    if (!$video_path || !file_exists($video_path)) {
+        status_header(410);
+        exit('Video is not available');
+    }
+
+    if ($generated_at && (time() - $generated_at) > HOUR_IN_SECONDS) {
+        status_header(410);
+        exit('Video expired');
+    }
+
+    header('Content-Type: video/mp4');
+    header('Content-Disposition: attachment; filename="svb-video.mp4"');
+    readfile($video_path);
+    exit;
+}
+
 // Allow HEIC/HEIF uploads when supported by WordPress core.
 add_filter('upload_mimes', function ($mimes) {
     $mimes['heic'] = 'image/heic';
@@ -76,3 +124,4 @@ add_action('wp_ajax_nopriv_svb_monobank_create_invoice', 'svb_monobank_create_in
 add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
 add_action('wp_ajax_nopriv_svb_monobank_check_status', 'svb_monobank_check_status');
 add_action('init', 'svb_handle_monobank_return', 2);
+add_action('init', 'svb_handle_public_order', 3);

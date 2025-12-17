@@ -7,13 +7,39 @@ function svb_get_orders_dir() {
         wp_mkdir_p($dir);
         // Створюємо файл захисту і лічильник, якщо немає
         @file_put_contents($dir . '/index.php', '<?php // Silence is golden');
-        @file_put_contents($dir . '/.htaccess', 'deny from all');
+        @file_put_contents($dir . '/.htaccess', "deny from all\n");
         @file_put_contents($dir . '/counter.txt', '0');
     }
     return $dir;
 }
 
+function svb_get_orders_upload_dir($order_id) {
+    $base = trailingslashit(svb_get_orders_dir()) . 'orders/' . absint($order_id);
+    $photos = $base . '/photos';
+    $result = $base . '/result';
+
+    wp_mkdir_p($photos);
+    wp_mkdir_p($result);
+
+    @file_put_contents($base . '/index.php', '<?php // Silence');
+    @file_put_contents($base . '/.htaccess', "deny from all\n");
+
+    return [
+        'base' => $base,
+        'photos' => $photos,
+        'result' => $result,
+    ];
+}
+
 function svb_get_next_order_id() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+
+    $last = (int) $wpdb->get_var("SELECT MAX(order_id) FROM {$table}");
+    if ($last > 0) {
+        return $last + 1;
+    }
+
     $dir = svb_get_orders_dir();
     $counterFile = $dir . '/counter.txt';
 
@@ -32,9 +58,50 @@ function svb_get_next_order_id() {
     return $id;
 }
 
+function svb_install_orders_table() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $charset_collate = $wpdb->get_charset_collate();
+
+    $sql = "CREATE TABLE {$table} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        order_id BIGINT UNSIGNED NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        ip VARCHAR(64) DEFAULT '' NOT NULL,
+        user_agent TEXT,
+        session_id VARCHAR(128) DEFAULT '' NOT NULL,
+        child_count TINYINT NOT NULL DEFAULT 1,
+        selected_video_id VARCHAR(191) DEFAULT '' NOT NULL,
+        customer_name VARCHAR(191) DEFAULT '' NOT NULL,
+        customer_email VARCHAR(191) DEFAULT '' NOT NULL,
+        overlay_json LONGTEXT,
+        segments LONGTEXT,
+        voice LONGTEXT,
+        photos LONGTEXT,
+        fingerprint_current CHAR(64) DEFAULT '' NOT NULL,
+        payment LONGTEXT,
+        result LONGTEXT,
+        PRIMARY KEY  (id),
+        UNIQUE KEY order_id (order_id)
+    ) {$charset_collate};";
+
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    dbDelta($sql);
+}
+
 function svb_init_user_order() {
     $cookie_name = 'svb_user_uid';
+    $session_cookie = 'svb_session';
     $dir = svb_get_orders_dir();
+
+    if (empty($_COOKIE[$session_cookie])) {
+        $session_val = wp_generate_password(24, false, false);
+        if (!headers_sent()) {
+            setcookie($session_cookie, $session_val, time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
+        }
+        $_COOKIE[$session_cookie] = $session_val;
+    }
 
     // 1. Сначала ищем существующий ID в куках
     $uid = isset($_COOKIE[$cookie_name]) ? sanitize_text_field($_COOKIE[$cookie_name]) : '';
@@ -126,6 +193,13 @@ function svb_init_user_order() {
         }
     }
 
+    $order_row = svb_get_order_row_by_uid($uid, $data);
+    if ($order_row) {
+        $data['order_id'] = (int) $order_row['order_id'];
+        $data['public_token'] = $order_row['public_token'];
+        $data['token_hash'] = $order_row['token_hash'];
+    }
+
     return $data;
 }
 
@@ -140,6 +214,70 @@ function svb_get_payment_defaults() {
     ];
 }
 
+function svb_generate_public_token() {
+    $token = bin2hex(random_bytes(32));
+    return [
+        'token' => $token,
+        'hash' => hash('sha256', $token),
+    ];
+}
+
+function svb_get_order_row_by_uid($uid, $fallback_data = []) {
+    if (!$uid) {
+        return null;
+    }
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    if ($row) {
+        $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
+        if ($cookie_token && hash_equals($row['token_hash'], hash('sha256', $cookie_token))) {
+            $row['public_token'] = $cookie_token;
+        } else {
+            $row['public_token'] = '';
+        }
+        return $row;
+    }
+
+    $order_id = svb_get_next_order_id();
+    $token_data = svb_generate_public_token();
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $session = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
+
+    $payment = svb_get_payment_defaults();
+    $created_at = current_time('mysql');
+    $wpdb->insert(
+        $table,
+        [
+            'order_id' => $order_id,
+            'token_hash' => $token_data['hash'],
+            'created_at' => $created_at,
+            'ip' => $ip,
+            'user_agent' => $ua,
+            'session_id' => $uid,
+            'payment' => wp_json_encode($payment),
+        ],
+        ['%d','%s','%s','%s','%s','%s','%s']
+    );
+
+    if (!headers_sent()) {
+        setcookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
+    }
+    $_COOKIE['svb_public_token'] = $token_data['token'];
+
+    return [
+        'order_id' => $order_id,
+        'public_token' => $token_data['token'],
+        'token_hash' => $token_data['hash'],
+        'created_at' => $created_at,
+        'ip' => $ip,
+        'user_agent' => $ua,
+        'session_id' => $uid,
+        'payment' => wp_json_encode($payment),
+    ];
+}
+
 function svb_update_user_order($uid, $updates = []) {
     $dir = svb_get_orders_dir();
     $file = $dir . '/order_' . $uid . '.json';
@@ -151,12 +289,29 @@ function svb_update_user_order($uid, $updates = []) {
             file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         }
     }
+
+    if (!empty($updates['order_id'])) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'svb_orders';
+        $order_id = (int) $updates['order_id'];
+        $wpdb->update($table, ['customer_email' => $updates['customer_email'] ?? '', 'customer_name' => $updates['customer_name'] ?? ''], ['order_id' => $order_id]);
+    }
 }
 
 function svb_get_user_payment_state($uid = '') {
     $uid = $uid ?: (isset($_COOKIE['svb_user_uid']) ? sanitize_text_field($_COOKIE['svb_user_uid']) : '');
     if (!$uid) {
         return svb_get_payment_defaults();
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT payment FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    if ($row && !empty($row['payment'])) {
+        $decoded = json_decode($row['payment'], true);
+        if (is_array($decoded)) {
+            return array_merge(svb_get_payment_defaults(), $decoded);
+        }
     }
 
     $dir = svb_get_orders_dir();
@@ -196,6 +351,16 @@ function svb_update_user_payment_state($uid, array $updates) {
     ]);
 
     file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $existing = $wpdb->get_row($wpdb->prepare("SELECT id,payment FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    if ($existing) {
+        $new_payment = array_merge($defaults, is_array(json_decode($existing['payment'], true)) ? json_decode($existing['payment'], true) : [], $updates, [
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+        $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $existing['id']], ['%s'], ['%d']);
+    }
 }
 
 function svb_init_cookie_logic() {
@@ -224,3 +389,40 @@ function svb_schedule_cleanup($job_dir) {
 }
 
 function svb_cleanup_job_cb($job_dir) { svb_rrmdir($job_dir); }
+
+function svb_cleanup_order_results_cb() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $rows = $wpdb->get_results("SELECT id,result FROM {$table} WHERE result IS NOT NULL", ARRAY_A);
+    if (!$rows) {
+        return;
+    }
+    $now = time();
+    foreach ($rows as $row) {
+        $result = json_decode($row['result'], true);
+        if (!is_array($result) || empty($result['video_path']) || empty($result['generated_at'])) {
+            continue;
+        }
+        $generated_ts = strtotime($result['generated_at']);
+        if ($generated_ts && ($now - $generated_ts) > HOUR_IN_SECONDS) {
+            if (file_exists($result['video_path'])) {
+                @unlink($result['video_path']);
+            }
+            $result['video_path'] = '';
+            $wpdb->update($table, ['result' => wp_json_encode($result)], ['id' => $row['id']], ['%s'], ['%d']);
+        }
+    }
+}
+
+function svb_compute_fingerprint(array $params, array $photo_paths) {
+    $normalized = wp_json_encode($params);
+    $photo_hashes = [];
+    foreach ($photo_paths as $path) {
+        if ($path && file_exists($path)) {
+            $photo_hashes[] = hash_file('sha256', $path);
+        }
+    }
+    sort($photo_hashes);
+    $payload = $normalized . '|' . implode('|', $photo_hashes);
+    return hash('sha256', $payload);
+}
