@@ -122,9 +122,11 @@ function svb_transcode_image_to_rgba($ffmpeg, $src, $dst, $cropSize = 0, $job_di
 
             // Исправляем ориентацию (если есть EXIF данные о повороте)
             try {
+                if (!method_exists($img, 'autoOrientImage')) {
+                    throw new RuntimeException('autoOrientImage is not available');
+                }
                 $img->autoOrientImage();
             } catch (Throwable $e) {
-                // fallback для старых версий Imagick
                 $orientation = $img->getImageOrientation();
                 switch ($orientation) {
                     case Imagick::ORIENTATION_BOTTOMRIGHT:

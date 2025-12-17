@@ -42,11 +42,13 @@ add_filter('wp_check_filetype_and_ext', function ($data, $file, $filename, $mime
     }
 
     $heicMimes = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'];
-    $type = in_array($real_mime, $heicMimes, true) ? $real_mime : 'image/heic';
+    if (!$real_mime || !in_array($real_mime, $heicMimes, true)) {
+        return $data; // Do not guess mime types outside the allowed HEIC/HEIF list.
+    }
 
     return [
         'ext'             => $ext,
-        'type'            => $type,
+        'type'            => $real_mime,
         'proper_filename' => $data['proper_filename'] ?? false,
     ];
 }, 10, 5);
