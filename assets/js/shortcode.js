@@ -1726,13 +1726,13 @@ $('#svb-back-3').addEventListener('click', ()=> {
   fd.append('token', svbJobToken||'');
   fetch(SVB_AJAX.url, { method:'POST', body:fd })
     .then(r=>r.json()).then(data=>{
-      if(data.success){
-        const res = $('#svb-result');
-        res.style.display='block';
-        res.innerHTML = `<b>Готово!</b> <a href="${data.data.url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
-      } else {
-        alert(data.data||'Помилка підтвердження');
-      }
+      if (data.success) {
+  document.getElementById('svb-status').textContent = '✅ Готово';
+  svbRenderResultVideo(data.data.url);
+} else {
+  alert(data.data || 'Помилка підтвердження');
+}
+
     });
   });
   function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -1741,6 +1741,40 @@ $('#svb-back-3').addEventListener('click', ()=> {
     if (!overlay) return;
     overlay.classList.toggle('svb-video-overlay--hidden', !show);
   }
+
+  const SVB_POSTER_URL = 'https://e-santaa.com/wp-content/uploads/2025/11/posEr.png';
+
+function svbShowPoster(show) {
+  const poster = document.getElementById('svb-video-poster') || document.querySelector('.svb-video-bg');
+  if (!poster) return;
+  if (!poster.getAttribute('src')) poster.setAttribute('src', SVB_POSTER_URL);
+  poster.style.display = show ? '' : 'none';
+}
+
+function svbRenderResultVideo(url) {
+  const res = document.getElementById('svb-result');
+  if (!res) return;
+
+  // убираем мета-окно если оно есть
+  res.querySelectorAll('.svb-video-result-meta').forEach(n => n.remove());
+
+  let video = res.querySelector('video');
+  if (!video) {
+    video = document.createElement('video');
+    video.controls = true;
+    video.playsInline = true;
+    video.controlsList = 'nodownload';
+    res.appendChild(video);
+  }
+
+  video.src = url;
+  video.load();
+  video.play().catch(()=>{});
+
+  res.style.display = 'block';
+  svbShowPoster(false);
+}
+
 
   function svbResetPreviewState() {
     const res = $('#svb-result');
@@ -1759,6 +1793,8 @@ $('#svb-back-3').addEventListener('click', ()=> {
 
     const finishBtn = $('#svb-finish');
     if (finishBtn) finishBtn.disabled = true;
+    svbShowPoster(true);
+
   }
 
   function svbUpdateVideoPercent(percent) {
@@ -1771,12 +1807,14 @@ $('#svb-back-3').addEventListener('click', ()=> {
       if (svbGenerating) return;
       svbGenerating = true;
       svbResetPreviewState();
+      svbShowPoster(true);
       svbToggleVideoOverlay(true);
       svbUpdateVideoPercent(0);
       $('#svb-status').textContent = 'Збирання даних...';
 
     // 1. Сохраняем сегменты времени
     svbSerializeSegmentsToField();
+    
 
     const form = document.getElementById('svb-form');
     const fd = new FormData(form);
@@ -1907,7 +1945,7 @@ function svbPollProgress(token) {
           if (data.data.status === 'running') {
             const percent = data.data.percent || 0;
             svbUpdateVideoPercent(percent);
-            $('#svb-status').textContent = `Іде обробка... ${percent}%`;
+            $('#svb-status').textContent = ``;
           } else if (data.data.status === 'done') {
             clearInterval(svbPollInterval);
           svbHandleSuccess(data.data.url);
@@ -1947,33 +1985,22 @@ function svbPollProgress(token) {
     }
   $('#svb-finish').disabled = false;
   }
-  function svbHandleError(data) {
-    svbGenerating = false;
-    svbToggleVideoOverlay(false);
-    $('#svb-status').textContent = 'Сталася помилка при генерації відео';
-  const res = $('#svb-result');
-  if (res) {
-    let msg, cmd = '', log = '', hint = '';
+ function svbHandleSuccess(url) {
+  svbGenerating = false;
+  svbToggleVideoOverlay(false);
+  svbVideoURL = url;
+  svbUpdateVideoPercent(100);
 
-    if (typeof data === 'string') {
-      msg = data;                 // ← показываем строку, если это строка
-    } else {
-      msg  = (data && data.msg)  || 'Unknown error';
-      cmd  = (data && data.cmd)  || '';
-      log  = (data && data.log)  || '';
-      hint = (data && data.hint) || '';
-    }
+  // без ссылки
+  document.getElementById('svb-status').textContent = '✅ Відео зібрано';
 
-    res.style.display = 'block';
-    res.innerHTML = `<details open>
-       <summary><b>Деталі помилки</b></summary>
-       <div style="margin-top:8px"><b>Msg:</b> ${escapeHtml(msg)}</div>
-       ${cmd ? `<div><b>Cmd:</b> <code style="white-space:pre-wrap">${escapeHtml(cmd)}</code></div>` : ''}
-       ${hint? `<div><b>Hint:</b> ${escapeHtml(hint)}</div>` : ''}
-       <pre style="white-space:pre-wrap;max-height:260px;overflow:auto;margin-top:8px">${escapeHtml(String(log)).slice(0,8000)}</pre>
-    </details>`;
-  }
+  // просто заполняем превью видео
+  svbRenderResultVideo(url);
+
+  const finishBtn = document.getElementById('svb-finish');
+  if (finishBtn) finishBtn.disabled = false;
 }
+
 
 const _svbNorm = s => (s||'').toString().toLowerCase().trim().replace(/[\s_\-’']/g,'');
 

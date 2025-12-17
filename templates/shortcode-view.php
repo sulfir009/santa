@@ -1855,11 +1855,23 @@
             </aside>
 
             <!-- RIGHT -->
+             <?php
+$video_poster = !empty($video_poster)
+  ? $video_poster
+  : 'https://e-santaa.com/wp-content/uploads/2025/11/posEr.png';
+?>
+
               <div class="svb-video-right">
                 <div class="svb-video-preview">
-                  <div class="svb-video-preview__bg">
-                    <img class="svb-video-bg" src="<?php echo esc_url( $video_poster ?? '' ); ?>" alt="<?php echo esc_attr__( 'Попередній перегляд відео', 'santa' ); ?>">
-                  </div>
+                 <div class="svb-video-preview__bg">
+  <img
+    id="svb-video-poster"
+    class="svb-video-bg"
+    src="<?php echo esc_url($video_poster); ?>"
+    alt="<?php echo esc_attr__( 'Попередній перегляд відео', 'santa' ); ?>"
+  >
+</div>
+
 
                   <div class="svb-video-preview__media" id="svb-result"></div>
 
