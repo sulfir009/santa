@@ -1796,9 +1796,25 @@
 
           </div>
 
+        <div class="svb-field svb-admin-only" style="margin: 10px 0;">
+          <label class="svb-label" style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" id="svb-payment-enabled" checked />
+            <span>Оплата: вкл/викл (admin)</span>
+          </label>
+          <div style="font-size:12px; color:#555;">Вимикайте тільки для тестів або службової підтримки.</div>
+        </div>
+
         <div class="svb-actions">
           <button class="svb-btn ghost" type="button" id="svb-back-2">Назад</button>
           <button class="svb-btn primary" type="button" id="svb-next-2">Далі &nbsp; &rarr;</button>
+        </div>
+
+        <div id="svb-payment-error" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#fff3cd; border:1px solid #ffeeba; border-radius:8px;">
+          <div class="svb-payment-error__text" style="margin-bottom:8px; color:#8a6d3b;">Оплата неуспешна. Генерация видео не будет выполнена.</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" class="svb-btn primary" id="svb-payment-retry">Повторити оплату</button>
+            <button type="button" class="svb-btn ghost" id="svb-payment-back">Назад</button>
+          </div>
         </div>
       </section>
 

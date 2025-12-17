@@ -95,12 +95,31 @@ function svb_generate() {
     if (!isset($_POST['_svb_nonce']) || !wp_verify_nonce($_POST['_svb_nonce'], 'svb_nonce')) {
         wp_send_json_error('bad nonce');
     }
+    $order_data = svb_init_user_order();
+    $uid = $order_data['uid'] ?? '';
+
+    $requested_child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 1;
+    if ($requested_child_count < 1) $requested_child_count = 1;
+    if ($requested_child_count > 3) $requested_child_count = 3;
+
+    $payment_required = svb_monobank_get_token() && (svb_monobank_amount_for_children($requested_child_count) > 0);
+
+    if ($payment_required && !current_user_can('manage_options')) {
+        $payment_state = svb_get_user_payment_state($uid);
+        $paid_children = isset($payment_state['child_count']) ? (int) $payment_state['child_count'] : 0;
+        if (($payment_state['status'] ?? 'unpaid') !== 'paid') {
+            wp_send_json_error('Оплата неуспешна. Генерация видео не будет выполнена.');
+        }
+
+        if ($paid_children && $requested_child_count > $paid_children) {
+            wp_send_json_error('Оплата не відповідає вибраній кількості дітей.');
+        }
+    }
     // === ЗБЕРЕЖЕННЯ ДАНИХ ЗАМОВНИКА (КРОК 1) ===
-    if (isset($_COOKIE['svb_user_uid'])) {
-        $uid = sanitize_text_field($_COOKIE['svb_user_uid']);
+    if ($uid) {
         $cust_name = isset($_POST['customer_name']) ? sanitize_text_field(wp_unslash($_POST['customer_name'])) : '';
         $cust_email = isset($_POST['customer_email_step1']) ? sanitize_email(wp_unslash($_POST['customer_email_step1'])) : '';
-        
+
         // Оновлюємо файл замовлення
         svb_update_user_order($uid, [
             'customer_name' => $cust_name,
@@ -155,29 +174,43 @@ function svb_generate() {
     // === СОХРАНЕНИЕ ФОТО (WEBP) ===
     $photos = [];
     $photo_keys = ['child1','child2','parent1','parent2'];
+    $allowedExt  = ['png','jpg','jpeg','webp','heic','heif'];
+    $allowedMime = ['image/png','image/jpeg','image/webp','image/heic','image/heif','image/heic-sequence','image/heif-sequence'];
+
     foreach ($photo_keys as $pk) {
         $field = 'photo_' . $pk;
         if (!empty($_FILES[$field]['name']) && $_FILES[$field]['error'] === UPLOAD_ERR_OK) {
-            $ext = strtolower(pathinfo($_FILES[$field]['name'], PATHINFO_EXTENSION));
-            if (!in_array($ext, ['png','jpg','jpeg','webp'])) $ext = 'jpg';
-            
+            $file     = $_FILES[$field];
+            $checked  = wp_check_filetype_and_ext($file['tmp_name'], $file['name']);
+            $ext      = strtolower($checked['ext'] ?? '');
+            $mimeType = $checked['type'] ?? '';
+
+            if (!$ext || !$mimeType || !in_array($ext, $allowedExt, true) || !in_array($mimeType, $allowedMime, true)) {
+                wp_send_json_error('unsupported image type');
+            }
+
             $base = $job_dir . '/' . $field;
-            $tmp = $base . '_orig.' . $ext;
-            
+            $tmp  = $base . '_orig.' . $ext;
+
             if (!@move_uploaded_file($_FILES[$field]['tmp_name'], $tmp)) {
                 wp_send_json_error('cannot save photo ' . $field);
             }
 
             $destFile = $base . '.webp';
-            
-            if (svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFile, 0, $job_dir)) {
-                if ($tmp !== $destFile && file_exists($tmp)) @unlink($tmp);
-                $photos[$pk] = $destFile;
-            } elseif (file_exists($destFile)) {
-                @unlink($tmp);
+            $isHeic   = in_array($ext, ['heic','heif'], true);
+
+            $transcoded = svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFile, 0, $job_dir);
+
+            if ($transcoded && file_exists($destFile)) {
+                if (file_exists($tmp)) { @unlink($tmp); }
                 $photos[$pk] = $destFile;
             } else {
-                $photos[$pk] = $tmp;
+                if ($isHeic) {
+                    if (file_exists($destFile)) { @unlink($destFile); }
+                    if (file_exists($tmp)) { @unlink($tmp); }
+                    wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to WebP).');
+                }
+                $photos[$pk] = $tmp; // fallback for non-HEIC
             }
         }
     }
@@ -1107,4 +1140,110 @@ function svb_dbg_push(){
       svb_align_log($job_dir, 'browser.dump', $payload);
 
       wp_send_json_success(['ok'=>1]);
+}
+
+function svb_monobank_create_invoice() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $is_admin = current_user_can('manage_options');
+    $child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 1;
+    if ($child_count < 1) $child_count = 1;
+    if ($child_count > 3) $child_count = 3;
+
+    $order_data = svb_init_user_order();
+    $uid = $order_data['uid'] ?? '';
+
+    if ($is_admin && isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1') {
+        wp_send_json_success(['bypass' => true]);
+    }
+
+    if (!svb_monobank_get_token()) {
+        wp_send_json_error('Payment is not configured.');
+    }
+
+    $amount = svb_monobank_amount_for_children($child_count);
+    if ($amount <= 0) {
+        wp_send_json_error('Invalid amount for selected children');
+    }
+
+    $return_raw = isset($_POST['return_url']) ? esc_url_raw(wp_unslash($_POST['return_url'])) : '';
+    $return_path = $return_raw ? wp_parse_url($return_raw, PHP_URL_PATH) : '/';
+    $return_url = add_query_arg('svb_payment_return', '1', home_url($return_path ?: '/'));
+
+    $reference = 'SVB-' . ($order_data['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
+    $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_data['order_id'] ?? 'unknown');
+
+    $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment);
+    if (is_wp_error($invoice)) {
+        wp_send_json_error($invoice->get_error_message());
+    }
+
+    $invoice_id = isset($invoice['invoiceId']) ? sanitize_text_field($invoice['invoiceId']) : '';
+
+    svb_update_user_payment_state($uid, [
+        'status' => 'pending',
+        'invoice_id' => $invoice_id,
+        'reference' => $reference,
+        'amount' => $amount,
+        'child_count' => $child_count,
+    ]);
+
+    wp_send_json_success([
+        'pageUrl' => $invoice['pageUrl'] ?? '',
+        'invoiceId' => $invoice_id,
+        'amount' => $amount,
+    ]);
+}
+
+function svb_monobank_check_status() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $invoice_id = isset($_POST['invoice_id']) ? sanitize_text_field(wp_unslash($_POST['invoice_id'])) : '';
+    $order_data = svb_init_user_order();
+    $uid = $order_data['uid'] ?? '';
+    $payment_state = svb_get_user_payment_state($uid);
+
+    if (!$invoice_id && !empty($payment_state['invoice_id'])) {
+        $invoice_id = $payment_state['invoice_id'];
+    }
+
+    if (!$invoice_id) {
+        wp_send_json_error('Invoice not found');
+    }
+
+    $status = svb_monobank_get_invoice_status($invoice_id);
+    if (is_wp_error($status)) {
+        wp_send_json_error($status->get_error_message());
+    }
+
+    $remote_status = $status['status'] ?? '';
+    $is_reference_valid = true;
+    if (!empty($payment_state['reference']) && isset($status['paymentDetails']['merchantPaymInfo']['reference'])) {
+        $is_reference_valid = ($payment_state['reference'] === $status['paymentDetails']['merchantPaymInfo']['reference']);
+    }
+
+    if (!$is_reference_valid) {
+        wp_send_json_error('Invoice does not match this session');
+    }
+
+    $normalized_status = 'pending';
+    if ($remote_status === 'success') {
+        $normalized_status = 'paid';
+    } elseif (in_array($remote_status, ['failure', 'expired', 'canceled', 'reversed'], true)) {
+        $normalized_status = 'failed';
+    }
+
+    svb_update_user_payment_state($uid, [
+        'status' => $normalized_status,
+        'invoice_id' => $invoice_id,
+    ]);
+
+    wp_send_json_success([
+        'status' => $normalized_status,
+        'invoiceId' => $invoice_id,
+    ]);
 }

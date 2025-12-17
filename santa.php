@@ -20,8 +20,39 @@ if (!defined('SVB_DEBUG')) {
 require_once SVB_PLUGIN_DIR . 'includes/Models/Order.php';
 require_once SVB_PLUGIN_DIR . 'includes/Models/Config.php';
 require_once SVB_PLUGIN_DIR . 'includes/Services/MediaPipeline.php';
+require_once SVB_PLUGIN_DIR . 'includes/Services/MonobankGateway.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
+
+// Allow HEIC/HEIF uploads when supported by WordPress core.
+add_filter('upload_mimes', function ($mimes) {
+    $mimes['heic'] = 'image/heic';
+    $mimes['heif'] = 'image/heif';
+    return $mimes;
+});
+
+// Help WordPress detect HEIC/HEIF mime types during upload validation.
+add_filter('wp_check_filetype_and_ext', function ($data, $file, $filename, $mimes, $real_mime = false) {
+    if (!empty($data['ext']) && !empty($data['type'])) {
+        return $data; // Core already resolved type.
+    }
+
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['heic', 'heif'], true)) {
+        return $data;
+    }
+
+    $heicMimes = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'];
+    if (!$real_mime || !in_array($real_mime, $heicMimes, true)) {
+        return $data; // Do not guess mime types outside the allowed HEIC/HEIF list.
+    }
+
+    return [
+        'ext'             => $ext,
+        'type'            => $real_mime,
+        'proper_filename' => $data['proper_filename'] ?? false,
+    ];
+}, 10, 5);
 
 // Хук init: запускаем как можно раньше, чтобы успеть поставить куки до вывода HTML
 add_action('init', 'svb_init_cookie_logic', 1); // Приоритет 1 (раньше всех)
@@ -40,3 +71,8 @@ add_action('wp_ajax_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_nopriv_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_svb_request_name', 'svb_request_name');
 add_action('wp_ajax_nopriv_svb_request_name', 'svb_request_name');
+add_action('wp_ajax_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
+add_action('wp_ajax_nopriv_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
+add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
+add_action('wp_ajax_nopriv_svb_monobank_check_status', 'svb_monobank_check_status');
+add_action('init', 'svb_handle_monobank_return', 2);
