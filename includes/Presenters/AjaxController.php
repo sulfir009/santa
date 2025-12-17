@@ -85,6 +85,24 @@ function svb_save_config() {
         wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).');
     }
 }
+
+function svb_build_download_url($order_id, $token) {
+    $order_id = absint($order_id);
+    $token = sanitize_text_field($token);
+
+    if (!$order_id || !$token) {
+        return '';
+    }
+
+    return add_query_arg(
+        [
+            'svb_download' => 1,
+            'order_id' => $order_id,
+            'token' => $token,
+        ],
+        home_url('/')
+    );
+}
 function svb_generate() {
     @ini_set('memory_limit', '512M'); 
     @ini_set('max_execution_time', 300);
@@ -111,6 +129,21 @@ function svb_generate() {
     }
     $order_data = svb_init_user_order();
     $uid = $order_data['uid'] ?? '';
+
+    $order_row = svb_order_create_or_load_for_session($uid, $order_data);
+    if (is_wp_error($order_row)) {
+        $db_error = $order_row->get_error_data()['db_error'] ?? '';
+        if ($db_error) {
+            svb_pay_log('invoice.order_error', ['db_error' => $db_error], $order_data);
+        }
+        wp_send_json_error('Order storage error');
+    }
+
+    $order_data['order_id'] = (int) ($order_row['order_id'] ?? ($order_data['order_id'] ?? 0));
+    if (!empty($order_row['public_token'])) {
+        $order_data['public_token'] = $order_row['public_token'];
+        $order_data['token_hash'] = $order_row['token_hash'] ?? '';
+    }
 
     $requested_child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 1;
     if ($requested_child_count < 1) $requested_child_count = 1;
@@ -1141,11 +1174,14 @@ function svb_check_progress() {
         if ($rcFile) { @unlink($rcFile); }
         
         $videoUrl = trailingslashit($data['job_url']) . 'video.mp4';
-        
+        $permanent_path = $outputFile;
+
         if (isset($_COOKIE['svb_user_uid'])) {
             $uid = sanitize_text_field($_COOKIE['svb_user_uid']);
             $order_data = svb_init_user_order();
-            $order_id = (int) ($order_data['order_id'] ?? 0);
+            $order_row = svb_order_create_or_load_for_session($uid, $order_data);
+
+            $order_id = (int) ($order_row && !is_wp_error($order_row) ? ($order_row['order_id'] ?? 0) : ($order_data['order_id'] ?? 0));
             $upload_dirs = $order_id ? svb_get_orders_upload_dir($order_id) : null;
             $permanent_path = $upload_dirs ? trailingslashit($upload_dirs['result']) . 'video.mp4' : $outputFile;
             if ($upload_dirs) {
@@ -1160,7 +1196,7 @@ function svb_check_progress() {
                 'video_time' => time()
             ]);
 
-            if ($order_id) {
+            if ($order_id && !is_wp_error($order_row)) {
                 global $wpdb;
                 $table = $wpdb->prefix . 'svb_orders';
                 $result = [
@@ -1168,11 +1204,44 @@ function svb_check_progress() {
                     'generated_at' => current_time('mysql'),
                 ];
                 $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => $order_id], ['%s'], ['%d']);
+
+                $verified_order = svb_get_order_by_id($order_id);
+                $order_exists = (bool) $verified_order;
+
+                if ($verified_order && !empty($verified_order['public_token'])) {
+                    $downloadUrl = svb_build_download_url($order_id, $verified_order['public_token']);
+                    if ($downloadUrl) {
+                        $videoUrl = $downloadUrl;
+                    }
+                }
+
+                if (!empty($data['job_dir'])) {
+                    $masked_download_url = $videoUrl;
+                    if ($videoUrl && strpos($videoUrl, 'token=') !== false) {
+                        $masked_download_url = preg_replace('/(token=)([^&#]+)/', '$1***', $videoUrl);
+                    }
+                    svb_dbg_write($data['job_dir'], 'download.url', [
+                        'order_id' => $order_id,
+                        'order_exists' => $order_exists,
+                        'storage' => 'table',
+                        'download_url' => $masked_download_url,
+                        'abs_path' => $permanent_path,
+                    ]);
+                }
+            } elseif (!empty($data['job_dir'])) {
+                svb_dbg_write($data['job_dir'], 'download.url', [
+                    'order_id' => $order_id,
+                    'order_exists' => false,
+                    'storage' => 'table',
+                    'download_url' => $videoUrl,
+                    'abs_path' => $permanent_path,
+                    'reason' => is_wp_error($order_row) ? $order_row->get_error_message() : 'order_missing',
+                ]);
             }
         }
 
-        set_transient('svb_job_'.$token, [ 'dir'=>$data['job_dir'], 'url'=>$videoUrl ], HOUR_IN_SECONDS); 
-        delete_transient('svb_job_data_'.$token); 
+        set_transient('svb_job_'.$token, [ 'dir'=>$data['job_dir'], 'url'=>$videoUrl ], HOUR_IN_SECONDS);
+        delete_transient('svb_job_data_'.$token);
         
         wp_send_json_success(['status' => 'done', 'url' => $videoUrl]);
 
@@ -1286,6 +1355,21 @@ function svb_monobank_create_invoice() {
 
     $order_data = svb_init_user_order();
     $uid = $order_data['uid'] ?? '';
+
+    $order_row = svb_order_create_or_load_for_session($uid, $order_data);
+    if (is_wp_error($order_row)) {
+        $db_error = $order_row->get_error_data()['db_error'] ?? '';
+        if ($db_error) {
+            svb_pay_log('invoice.order_error', ['db_error' => $db_error], $order_data);
+        }
+        wp_send_json_error('Order storage error');
+    }
+
+    $order_data['order_id'] = (int) ($order_row['order_id'] ?? ($order_data['order_id'] ?? 0));
+    if (!empty($order_row['public_token'])) {
+        $order_data['public_token'] = $order_row['public_token'];
+        $order_data['token_hash'] = $order_row['token_hash'] ?? '';
+    }
 
     svb_pay_log('invoice.start', [
         'child_count' => $child_count,
