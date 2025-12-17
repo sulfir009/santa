@@ -85,6 +85,24 @@ function svb_save_config() {
         wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).');
     }
 }
+
+function svb_build_download_url($order_id, $token) {
+    $order_id = absint($order_id);
+    $token = sanitize_text_field($token);
+
+    if (!$order_id || !$token) {
+        return '';
+    }
+
+    return add_query_arg(
+        [
+            'svb_download' => 1,
+            'order_id' => $order_id,
+            'token' => $token,
+        ],
+        home_url('/')
+    );
+}
 function svb_generate() {
     @ini_set('memory_limit', '512M'); 
     @ini_set('max_execution_time', 300);
@@ -1141,7 +1159,8 @@ function svb_check_progress() {
         if ($rcFile) { @unlink($rcFile); }
         
         $videoUrl = trailingslashit($data['job_url']) . 'video.mp4';
-        
+        $permanent_path = $outputFile;
+
         if (isset($_COOKIE['svb_user_uid'])) {
             $uid = sanitize_text_field($_COOKIE['svb_user_uid']);
             $order_data = svb_init_user_order();
@@ -1168,7 +1187,26 @@ function svb_check_progress() {
                     'generated_at' => current_time('mysql'),
                 ];
                 $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => $order_id], ['%s'], ['%d']);
+
+                if (!empty($order_data['public_token'])) {
+                    $downloadUrl = svb_build_download_url($order_id, $order_data['public_token']);
+                    if ($downloadUrl) {
+                        $videoUrl = $downloadUrl;
+                    }
+                }
             }
+        }
+
+        if (!empty($data['job_dir'])) {
+            $masked_download_url = $videoUrl;
+            if ($videoUrl && strpos($videoUrl, 'token=') !== false) {
+                $masked_download_url = preg_replace('/(token=)([^&#]+)/', '$1***', $videoUrl);
+            }
+            svb_dbg_write($data['job_dir'], 'download.url', [
+                'order_id' => isset($order_id) ? $order_id : null,
+                'download_url' => $masked_download_url,
+                'abs_path' => $permanent_path,
+            ]);
         }
 
         set_transient('svb_job_'.$token, [ 'dir'=>$data['job_dir'], 'url'=>$videoUrl ], HOUR_IN_SECONDS); 
