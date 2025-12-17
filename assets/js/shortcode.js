@@ -557,6 +557,32 @@ const SVB_PAYMENT = (window.SVB_DATA && window.SVB_DATA.payment)
     : {};
 let svbPaymentStatus = SVB_PAYMENT.status || 'unpaid';
 
+function svbIsDebugMode() {
+    try {
+        return !!(
+            (typeof SVB_DEBUG !== 'undefined' && SVB_DEBUG) ||
+            (typeof window !== 'undefined' && window.SVB_DEBUG === true) ||
+            (SVB_PAYMENT && SVB_PAYMENT.is_admin)
+        );
+    } catch (e) {
+        return false;
+    }
+}
+
+function svbLog() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB PAY]');
+    console.log.apply(console, args);
+}
+
+function svbError() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB PAY]');
+    console.error.apply(console, args);
+}
+
 /* === НАЛАШТУВАННЯ ПРОПОРЦІЙ (ASPECT RATIO) === */
 const SVB_ASPECT_RATIOS = {
     // ЗАМЕНИТЕ NaN на конкретные пропорции, чтобы запретить изменение рамки!
@@ -1858,13 +1884,28 @@ async function svbCreateInvoice(childCount) {
     fd.append('payment_disabled', '1');
   }
 
+  const safeReturnUrl = (SVB_PAYMENT.return_url || window.location.href || '').split('#')[0];
+  svbLog('[SVB PAY] Preparing invoice request', {
+    action: 'svb_monobank_create_invoice',
+    hasNonce: !!SVB_AJAX.nonce,
+    payload: {
+      child_count: childCount,
+      return_url: safeReturnUrl,
+      payment_disabled: SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin() ? '1' : '0'
+    }
+  });
+
   const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  svbLog('[SVB PAY] Invoice fetch response', { ok: res.ok, status: res.status });
   if (!res.ok) {
+    svbError('[SVB PAY] Invoice request failed before JSON', { status: res.status });
     throw new Error('Помилка серверу під час ініціалізації оплати');
   }
 
   const data = await res.json();
+  svbLog('[SVB PAY] Invoice response body', data);
   if (!data.success) {
+    svbError('[SVB PAY] Invoice creation returned error', data.data || data);
     throw new Error(data.data || 'Оплата недоступна');
   }
 
@@ -1905,39 +1946,62 @@ async function svbHandleStep2Next() {
   svbPersistStep2State();
   const childCount = svbGetSelectedChildCount();
   const paymentEnabled = !!SVB_PAYMENT.enabled;
-  const requirePayment = paymentEnabled && (!SVB_PAYMENT.is_admin || !svbIsPaymentDisabledByAdmin());
+  const isAdmin = !!SVB_PAYMENT.is_admin;
+  const adminBypassCheckboxValue = svbIsPaymentDisabledByAdmin();
+  const requirePayment = paymentEnabled && (!isAdmin || !adminBypassCheckboxValue);
+
+  const savedState = svbLoadState();
+  svbLog('[SVB STEP2] Next click', {
+    payRequired: requirePayment,
+    paymentEnabled,
+    isAdmin,
+    adminBypassCheckboxValue,
+    child_count: childCount,
+    selected_video_id: SVB_SELECTED_VIDEO_ID,
+    formData: savedState.formData || {}
+  });
 
   if (!requirePayment) {
+    svbLog('[SVB STEP2] payRequired=false, skipping payment and going to step3');
     svbProceedToGenerateFlow();
     return;
   }
 
   if (svbPaymentStatus === 'paid') {
+    svbLog('[SVB STEP2] payment already marked paid, proceeding to generate');
     svbProceedToGenerateFlow();
     return;
   }
 
   try {
     svbPaymentStatus = 'pending';
+    svbLog('[SVB STEP2] payRequired=true → creating invoice');
     const invoice = await svbCreateInvoice(childCount);
 
     if (invoice && invoice.bypass) {
+      svbLog('[SVB STEP2] invoice bypass received, going to step3');
       svbProceedToGenerateFlow();
       return;
     }
 
     if (invoice && invoice.invoiceId) {
+      svbLog('[SVB PAY] invoiceId received', { invoiceId: invoice.invoiceId });
       svbStoreInvoiceId(invoice.invoiceId);
     }
 
     if (invoice && invoice.pageUrl) {
+      svbLog('[SVB PAY] redirecting to pageUrl', { pageUrl: invoice.pageUrl });
       window.location = invoice.pageUrl;
       return;
     }
 
+    svbLog('[SVB PAY] missing pageUrl, cannot redirect', invoice || {});
     svbShowPaymentError('Не вдалося створити інвойс для оплати.');
   } catch (err) {
-    console.error(err);
+    svbError('[SVB PAY] invoice creation failed', err);
+    if (svbIsDebugMode()) {
+      alert((err && err.message) ? err.message : 'Invoice creation failed');
+    }
     svbShowPaymentError(err.message || 'Оплата тимчасово недоступна.');
   }
 }

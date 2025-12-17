@@ -1142,6 +1142,32 @@ function svb_dbg_push(){
       wp_send_json_success(['ok'=>1]);
 }
 
+function svb_pay_should_log() {
+    return (defined('SVB_DEBUG') && SVB_DEBUG);
+}
+
+function svb_pay_trim($value, $limit = 800) {
+    $str = is_string($value) ? $value : wp_json_encode($value);
+    if (strlen($str) > $limit) {
+        return substr($str, 0, $limit) . '...';
+    }
+    return $str;
+}
+
+function svb_pay_log($message, $context = [], $order_data = []) {
+    if (!svb_pay_should_log()) return;
+    $job_dir = (is_array($order_data) && !empty($order_data['job_dir'])) ? $order_data['job_dir'] : '';
+    if ($job_dir && function_exists('svb_dbg_write')) {
+        svb_dbg_write($job_dir, 'pay.debug', [
+            'message' => $message,
+            'context' => $context,
+        ]);
+        return;
+    }
+
+    error_log('[SVB PAY] ' . $message . (!empty($context) ? ' ' . wp_json_encode($context) : ''));
+}
+
 function svb_monobank_create_invoice() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');
@@ -1155,16 +1181,25 @@ function svb_monobank_create_invoice() {
     $order_data = svb_init_user_order();
     $uid = $order_data['uid'] ?? '';
 
+    svb_pay_log('invoice.start', [
+        'child_count' => $child_count,
+        'is_admin' => $is_admin,
+        'payment_disabled_request' => ($is_admin && isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1'),
+    ], $order_data);
+
     if ($is_admin && isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1') {
+        svb_pay_log('invoice.bypass_admin', ['uid' => $uid], $order_data);
         wp_send_json_success(['bypass' => true]);
     }
 
     if (!svb_monobank_get_token()) {
+        svb_pay_log('invoice.no_token');
         wp_send_json_error('Payment is not configured.');
     }
 
     $amount = svb_monobank_amount_for_children($child_count);
     if ($amount <= 0) {
+        svb_pay_log('invoice.invalid_amount', ['child_count' => $child_count, 'amount' => $amount]);
         wp_send_json_error('Invalid amount for selected children');
     }
 
@@ -1175,12 +1210,47 @@ function svb_monobank_create_invoice() {
     $reference = 'SVB-' . ($order_data['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
     $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_data['order_id'] ?? 'unknown');
 
+    svb_pay_log('invoice.request', [
+        'child_count' => $child_count,
+        'amount_kop' => $amount,
+        'ccy' => 980,
+        'reference' => $reference,
+        'endpoint' => 'https://api.monobank.ua/api/merchant/invoice/create',
+        'return_path' => $return_path,
+    ], $order_data);
+
     $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment);
     if (is_wp_error($invoice)) {
-        wp_send_json_error($invoice->get_error_message());
+        $err_data = $invoice->get_error_data();
+        $status = is_array($err_data) ? ($err_data['status'] ?? '') : '';
+        $body_snippet = (is_array($err_data) && isset($err_data['body'])) ? svb_pay_trim($err_data['body']) : '';
+
+        svb_pay_log('invoice.request_failed', [
+            'http_code' => $status,
+            'body_snippet' => $body_snippet,
+            'message' => $invoice->get_error_message(),
+        ], $order_data);
+
+        $message_parts = [];
+        if ($status) $message_parts[] = 'http=' . $status;
+        if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
+        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        wp_send_json_error($public_message);
     }
 
     $invoice_id = isset($invoice['invoiceId']) ? sanitize_text_field($invoice['invoiceId']) : '';
+    $http_status = isset($invoice['_http_status']) ? (int) $invoice['_http_status'] : 0;
+    $raw_body = isset($invoice['_raw_body']) ? $invoice['_raw_body'] : '';
+    $body_snippet = $raw_body ? svb_pay_trim($raw_body) : '';
+
+    svb_pay_log('invoice.created', [
+        'http_code' => $http_status ?: 200,
+        'body_snippet' => $body_snippet,
+        'has_page_url' => !empty($invoice['pageUrl']),
+        'invoice_id' => $invoice_id,
+    ], $order_data);
+
+    unset($invoice['_http_status'], $invoice['_raw_body']);
 
     svb_update_user_payment_state($uid, [
         'status' => 'pending',
