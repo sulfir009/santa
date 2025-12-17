@@ -16,9 +16,6 @@ define('SVB_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('SVB_DEBUG')) {
     define('SVB_DEBUG', true);
 }
-if (!defined('SVB_ORDERS_V2')) {
-    define('SVB_ORDERS_V2', false);
-}
 
 require_once SVB_PLUGIN_DIR . 'includes/Models/Order.php';
 require_once SVB_PLUGIN_DIR . 'includes/Models/Config.php';
@@ -28,7 +25,6 @@ require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
 
 register_activation_hook(__FILE__, 'svb_install_orders_table');
-register_activation_hook(__FILE__, 'svb_install_orders_v2_table');
 register_activation_hook(__FILE__, function() {
     if (!wp_next_scheduled('svb_cleanup_order_results')) {
         wp_schedule_event(time() + MINUTE_IN_SECONDS, 'hourly', 'svb_cleanup_order_results');
