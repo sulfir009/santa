@@ -2356,6 +2356,7 @@ function svbPollProgress(token) {
       svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
       return;
     }
+    console.debug('SVB download URL', url);
     svbGenerating = false;
     svbToggleVideoOverlay(false);
     svbVideoURL = url;
@@ -2384,6 +2385,7 @@ function svbHandleSuccess(url) {
   svbGenerating = false;
   svbToggleVideoOverlay(false);
   svbVideoURL = url;
+  console.debug('SVB download URL', url);
   svbUpdateVideoPercent(100);
 
   // без ссылки
