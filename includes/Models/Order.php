@@ -96,7 +96,15 @@ function svb_init_user_order() {
             'video_time' => 0,
             'email' => '', // Email получателя видео (Крок 3)
             'customer_name' => '', // Новое поле: Имя заказчика (Крок 1)
-            'customer_email' => '' // Новое поле: Email заказчика (Крок 1)
+            'customer_email' => '', // Новое поле: Email заказчика (Крок 1)
+            'payment' => [
+                'status' => 'unpaid',
+                'invoice_id' => '',
+                'reference' => '',
+                'amount' => 0,
+                'child_count' => 1,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ],
         ];
         file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     } else {
@@ -105,9 +113,31 @@ function svb_init_user_order() {
              @unlink($file);
              return svb_init_user_order();
         }
+        if (!isset($data['payment']) || !is_array($data['payment'])) {
+            $data['payment'] = [
+                'status' => 'unpaid',
+                'invoice_id' => '',
+                'reference' => '',
+                'amount' => 0,
+                'child_count' => 1,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+            file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        }
     }
 
     return $data;
+}
+
+function svb_get_payment_defaults() {
+    return [
+        'status' => 'unpaid',
+        'invoice_id' => '',
+        'reference' => '',
+        'amount' => 0,
+        'child_count' => 1,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ];
 }
 
 function svb_update_user_order($uid, $updates = []) {
@@ -121,6 +151,51 @@ function svb_update_user_order($uid, $updates = []) {
             file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         }
     }
+}
+
+function svb_get_user_payment_state($uid = '') {
+    $uid = $uid ?: (isset($_COOKIE['svb_user_uid']) ? sanitize_text_field($_COOKIE['svb_user_uid']) : '');
+    if (!$uid) {
+        return svb_get_payment_defaults();
+    }
+
+    $dir = svb_get_orders_dir();
+    $file = $dir . '/order_' . $uid . '.json';
+    if (!file_exists($file)) {
+        return svb_get_payment_defaults();
+    }
+
+    $data = json_decode(file_get_contents($file), true);
+    if (!is_array($data)) {
+        return svb_get_payment_defaults();
+    }
+
+    $defaults = svb_get_payment_defaults();
+    $payment = isset($data['payment']) && is_array($data['payment']) ? $data['payment'] : [];
+
+    return array_merge($defaults, $payment);
+}
+
+function svb_update_user_payment_state($uid, array $updates) {
+    $dir = svb_get_orders_dir();
+    $file = $dir . '/order_' . $uid . '.json';
+    if (!file_exists($file)) {
+        return;
+    }
+
+    $content = file_get_contents($file);
+    $data = json_decode($content, true);
+    if (!is_array($data)) {
+        return;
+    }
+
+    $defaults = svb_get_payment_defaults();
+    $current = isset($data['payment']) && is_array($data['payment']) ? $data['payment'] : [];
+    $data['payment'] = array_merge($defaults, $current, $updates, [
+        'updated_at' => date('Y-m-d H:i:s'),
+    ]);
+
+    file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
 function svb_init_cookie_logic() {
