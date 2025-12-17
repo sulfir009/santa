@@ -583,6 +583,68 @@ function svbError() {
     console.error.apply(console, args);
 }
 
+function svbMaskToken(tkn) {
+    if (!tkn) return '';
+    const token = String(tkn);
+    if (token.length <= 6) return token;
+    if (token.length <= 12) return token.slice(0, 3) + '***' + token.slice(-2);
+    return token.slice(0, 6) + '***' + token.slice(-4);
+}
+
+function svbMaskUrlToken(url) {
+    try {
+        const u = new URL(url, window.location.origin);
+        const token = u.searchParams.get('token');
+        if (token) {
+            u.searchParams.set('token', svbMaskToken(token));
+        }
+        return u.toString();
+    } catch (e) {
+        return url;
+    }
+}
+
+async function svbHashFileSha256(file) {
+    if (!file || typeof file.arrayBuffer !== 'function') return '';
+    try {
+        const buffer = await file.arrayBuffer();
+        const digest = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+        svbError('[SVB GATE] hash failed, falling back to name+size', e);
+        return `${file.name || 'file'}-${file.size || 0}`;
+    }
+}
+
+async function svbCollectPhotoHashes() {
+    const hashes = [];
+    const inputs = document.querySelectorAll('input[type="file"][name^="photo_"]');
+    for (const input of inputs) {
+        const file = input.files && input.files[0];
+        if (file) {
+            const hash = await svbHashFileSha256(file);
+            if (hash) {
+                hashes.push(hash);
+            }
+        }
+    }
+    return hashes;
+}
+
+function svbLogDownload() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB DL]');
+    console.log.apply(console, args);
+}
+
+function svbErrorDownload() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB DL]');
+    console.error.apply(console, args);
+}
+
 /* === НАЛАШТУВАННЯ ПРОПОРЦІЙ (ASPECT RATIO) === */
 const SVB_ASPECT_RATIOS = {
     // ЗАМЕНИТЕ NaN на конкретные пропорции, чтобы запретить изменение рамки!
@@ -1879,12 +1941,19 @@ function svbShowPaymentError(message) {
   box.style.display = 'block';
 }
 
-async function svbCreateInvoice(childCount) {
+async function svbCreateInvoice(childCount, orderContext = {}) {
   const fd = new FormData();
   fd.append('action', 'svb_monobank_create_invoice');
   fd.append('_svb_nonce', SVB_AJAX.nonce);
   fd.append('child_count', childCount);
   fd.append('return_url', SVB_PAYMENT.return_url || window.location.href);
+
+  if (orderContext && orderContext.order_id) {
+    fd.append('order_id', orderContext.order_id);
+  }
+  if (orderContext && orderContext.public_token) {
+    fd.append('token', orderContext.public_token);
+  }
 
   if (SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin()) {
     fd.append('payment_disabled', '1');
@@ -1897,7 +1966,9 @@ async function svbCreateInvoice(childCount) {
     payload: {
       child_count: childCount,
       return_url: safeReturnUrl,
-      payment_disabled: SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin() ? '1' : '0'
+      payment_disabled: SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin() ? '1' : '0',
+      order_id: orderContext && orderContext.order_id ? orderContext.order_id : null,
+      token: orderContext && orderContext.public_token ? svbMaskToken(orderContext.public_token) : null,
     }
   });
 
@@ -1916,6 +1987,67 @@ async function svbCreateInvoice(childCount) {
   }
 
   return data.data;
+}
+
+async function svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes) {
+  const fd = new FormData();
+  fd.append('action', 'svb_payment_gate');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('child_count', childCount);
+  fd.append('selected_video_id', SVB_SELECTED_VIDEO_ID);
+  fd.append('overlay_json', JSON.stringify(overlayData || {}));
+  fd.append('segments', segmentsValue || '');
+  fd.append('voice_payload', JSON.stringify(voicePayload || {}));
+  fd.append('photo_hashes', JSON.stringify(photoHashes || []));
+
+  const saved = svbLoadState();
+  if (saved && saved.order_id) {
+    fd.append('order_id', saved.order_id);
+  }
+  if (saved && saved.public_token) {
+    fd.append('token', saved.public_token);
+  }
+
+  svbLog('[SVB GATE] request', {
+    child_count: childCount,
+    selected_video_id: SVB_SELECTED_VIDEO_ID,
+    overlay_keys: Object.keys(overlayData || {}),
+    has_segments: !!segmentsValue,
+    photo_hashes: (photoHashes || []).length,
+    order_id: saved && saved.order_id ? saved.order_id : null,
+    token: saved && saved.public_token ? svbMaskToken(saved.public_token) : null,
+  });
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    svbError('[SVB GATE] network error', { status: res.status });
+    throw new Error('Сервер помилки оплати');
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    svbError('[SVB GATE] error response', data);
+    throw new Error(data.data || 'Оплата недоступна');
+  }
+
+  const payload = data.data || {};
+  svbUpdateState({
+    order_id: payload.order_id,
+    public_token: payload.public_token,
+  });
+
+  svbLog('[SVB GATE] response', {
+    order_id: payload.order_id,
+    public_token: payload.public_token ? svbMaskToken(payload.public_token) : null,
+    fingerprint_current: payload.fingerprint_current,
+    paid_fingerprint: payload.paid_fingerprint,
+    payment_status: payload.payment_status,
+    is_paid_for_current: payload.is_paid_for_current,
+    reason: payload.reason,
+    storage: payload.storage,
+  });
+
+  return payload;
 }
 
 async function svbRequestInvoiceStatus(invoiceId) {
@@ -1947,6 +2079,7 @@ function svbProceedToGenerateFlow() {
 async function svbHandleStep2Next() {
   svbHidePaymentError();
   svbPersistStep2State();
+  svbSerializeSegmentsToField();
   const childCount = svbGetSelectedChildCount();
   const paymentEnabled = !!SVB_PAYMENT.enabled;
   const isAdmin = !!SVB_PAYMENT.is_admin;
@@ -1960,6 +2093,20 @@ async function svbHandleStep2Next() {
   const requirePayment = isAdmin ? toggleChecked : true;
 
   const savedState = svbLoadState();
+  let overlayData = {};
+  let segmentsValue = '';
+  let voicePayload = {};
+
+  try {
+    overlayData = svbCollectOverlayData();
+    const segField = document.getElementById('svb_segments');
+    segmentsValue = segField && segField.value ? segField.value : '';
+    buildSoundMap();
+    voicePayload = Object.assign({}, SVB_SELECTED);
+  } catch (collectErr) {
+    svbError('[SVB GATE] collect failed', collectErr);
+  }
+
   svbLog('[SVB STEP2] Next click', {
     payRequired: requirePayment,
     paymentEnabled,
@@ -1968,7 +2115,8 @@ async function svbHandleStep2Next() {
     adminToggleChecked: toggleChecked,
     child_count: childCount,
     selected_video_id: SVB_SELECTED_VIDEO_ID,
-    formData: savedState.formData || {}
+    formData: savedState.formData || {},
+    overlayKeys: Object.keys(overlayData || {}),
   });
 
   if (!requirePayment) {
@@ -1977,16 +2125,28 @@ async function svbHandleStep2Next() {
     return;
   }
 
-  if (svbPaymentStatus === 'paid') {
-    svbLog('[SVB STEP2] payment already marked paid, proceeding to generate');
-    svbProceedToGenerateFlow();
-    return;
-  }
-
   try {
+    const photoHashes = await svbCollectPhotoHashes();
+    const gate = await svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes);
+    svbPaymentStatus = gate.is_paid_for_current ? 'paid' : 'unpaid';
+
+    svbLog('[SVB STEP2] gate decision', {
+      order_id: gate.order_id,
+      fingerprint_current: gate.fingerprint_current,
+      paid_fingerprint: gate.paid_fingerprint,
+      payment_status: gate.payment_status,
+      decision: gate.reason,
+    });
+
+    if (gate.is_paid_for_current) {
+      svbLog('[SVB STEP2] gate says paid_match, proceeding to generate');
+      svbProceedToGenerateFlow();
+      return;
+    }
+
     svbPaymentStatus = 'pending';
     svbLog('[SVB STEP2] payRequired=true → creating invoice');
-    const invoice = await svbCreateInvoice(childCount);
+    const invoice = await svbCreateInvoice(childCount, gate);
 
     if (invoice && invoice.bypass) {
       svbLog('[SVB STEP2] invoice bypass received, going to step3');
@@ -2349,18 +2509,114 @@ function svbPollProgress(token) {
       clearInterval(svbPollInterval);
       svbHandleError({msg: 'Помилка мережі під час перевірки статусу.', log: err.message});
     }
-  }, 3000); 
+  }, 3000);
 }
-  function svbHandleSuccess(url) {
-    if (!url) {
-      svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
-      return;
+
+// Diagnostics: check download endpoint response before navigating (open browser Console to inspect status, content-type, final URL, headers).
+async function svbProbeDownload(url) {
+    if (!svbIsDebugMode()) {
+        return { okForVideo: true, reason: 'debug_off' };
     }
+
+    const maskedUrl = svbMaskUrlToken(url || '');
+    svbLogDownload('Probe start', { requestedUrl: maskedUrl });
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            redirect: 'follow',
+            headers: {
+                Range: 'bytes=0-512'
+            }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const contentDisposition = response.headers.get('content-disposition') || '';
+        const contentLength = response.headers.get('content-length') || '';
+        const dlHeader = response.headers.get('x-svb-download') || '';
+        const dlReason = response.headers.get('x-svb-download-reason') || '';
+
+        svbLogDownload('Probe response', {
+            requestedUrl: maskedUrl,
+            status: response.status,
+            ok: response.ok,
+            redirected: response.redirected,
+            finalUrl: svbMaskUrlToken(response.url || ''),
+            headers: {
+                'content-type': contentType,
+                'content-disposition': contentDisposition,
+                'content-length': contentLength,
+                'x-svb-download': dlHeader,
+                'x-svb-download-reason': dlReason
+            }
+        });
+
+        if (contentType.toLowerCase().startsWith('text/')) {
+            const body = await response.text();
+            svbLogDownload('Probe body (first 800 chars)', body.slice(0, 800));
+            return { okForVideo: false, reason: 'content-type ' + contentType };
+        }
+
+        if (!contentType.toLowerCase().startsWith('video/')) {
+            return { okForVideo: false, reason: 'content-type ' + (contentType || 'unknown') };
+        }
+
+        if (!(response.ok || response.status === 206)) {
+            return { okForVideo: false, reason: 'status ' + response.status };
+        }
+
+        return { okForVideo: true, reason: 'ok' };
+    } catch (err) {
+        svbErrorDownload('Probe failed', err);
+        return { okForVideo: false, reason: err && err.message ? err.message : 'probe_failed' };
+    }
+}
+
+async function svbNavigateToDownload(url) {
+    if (!url) return;
+    if (!svbIsDebugMode()) {
+        window.location.href = url;
+        return;
+    }
+
+    const probe = await svbProbeDownload(url);
+    if (probe.okForVideo) {
+        window.location.href = url;
+    } else {
+        alert('Download failed: ' + (probe.reason || 'unknown'));
+    }
+}
+
+function svbAttachDownloadDebug(container, url) {
+    if (!container || !url) return;
+    const anchors = container.querySelectorAll('.svb-download-link');
+    anchors.forEach(a => {
+        a.addEventListener('click', async (e) => {
+            if (!svbIsDebugMode()) return;
+            e.preventDefault();
+            await svbNavigateToDownload(url);
+        });
+    });
+}
+
+function svbHandleSuccessInternal(url) {
+    if (!url) {
+        svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
+        return;
+    }
+
+    const maskedUrl = svbMaskUrlToken(url);
+    svbLogDownload('Download URL issued', maskedUrl);
     svbGenerating = false;
     svbToggleVideoOverlay(false);
     svbVideoURL = url;
     svbUpdateVideoPercent(100);
-    $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
+    const statusEl = $('#svb-status');
+    if (statusEl) {
+        statusEl.innerHTML = `✅ Відео зібрано. <a class="svb-download-link" href="${url}" download>Скачати</a>`;
+        svbAttachDownloadDebug(statusEl, url);
+    }
     const res = $('#svb-result');
     if (res) {
       const video = document.createElement('video');
@@ -2371,33 +2627,22 @@ function svbPollProgress(token) {
 
       const meta = document.createElement('div');
       meta.className = 'svb-video-result-meta';
-      meta.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+      meta.innerHTML = `<b>Готово!</b> <a class="svb-download-link" href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
 
       res.innerHTML = '';
       res.appendChild(video);
       res.appendChild(meta);
       res.style.display = 'block';
+      svbAttachDownloadDebug(res, url);
     }
-  $('#svb-finish').disabled = false;
-  }
+    if (svbIsDebugMode()) {
+        svbProbeDownload(url);
+    }
+    $('#svb-finish').disabled = false;
+}
 function svbHandleSuccess(url) {
-  svbGenerating = false;
-  svbToggleVideoOverlay(false);
-  svbVideoURL = url;
-  svbUpdateVideoPercent(100);
-
-  // без ссылки
-  document.getElementById('svb-status').textContent = '✅ Відео зібрано';
-
-  // просто заполняем превью видео
-  svbRenderResultVideo(url);
-
-  const finishBtn = document.getElementById('svb-finish');
-  if (finishBtn) finishBtn.disabled = false;
-
-  svbClearInvoiceId();
-  svbClearState();
-  svbPaymentStatus = 'paid';
+    // Wrapper to keep legacy references working while ensuring download probes/logs.
+    svbHandleSuccessInternal(url);
 }
 
 
