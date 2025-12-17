@@ -40,6 +40,20 @@ function svb_get_orders_v2_table() {
     return $wpdb->prefix . 'svb_orders_v2';
 }
 
+function svb_orders_table_exists() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+    return $found === $table;
+}
+
+function svb_orders_v2_table_exists() {
+    global $wpdb;
+    $table = svb_get_orders_v2_table();
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+    return $found === $table;
+}
+
 function svb_install_orders_v2_table() {
     global $wpdb;
     $table = svb_get_orders_v2_table();
@@ -78,6 +92,20 @@ function svb_install_orders_v2_table() {
 
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql);
+}
+
+function svb_maybe_ensure_orders_schema() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    if (!svb_orders_table_exists()) {
+        svb_install_orders_table();
+    }
+
+    if (svb_orders_v2_enabled() && !svb_orders_v2_table_exists()) {
+        svb_install_orders_v2_table();
+    }
 }
 
 function svb_get_next_order_id() {
@@ -137,6 +165,66 @@ function svb_install_orders_table() {
 
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql);
+}
+
+function svb_get_order_by_id($order_id) {
+    if (!$order_id || !svb_orders_table_exists()) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d LIMIT 1", absint($order_id)), ARRAY_A);
+    if (!$row) {
+        return null;
+    }
+
+    if (isset($row['payment']) && $row['payment']) {
+        $decoded = json_decode($row['payment'], true);
+        if (is_array($decoded)) {
+            $row['payment'] = $decoded;
+        }
+    }
+
+    if (!isset($row['public_token']) || !$row['public_token']) {
+        $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
+        if ($cookie_token && isset($row['token_hash']) && hash_equals($row['token_hash'], hash('sha256', $cookie_token))) {
+            $row['public_token'] = $cookie_token;
+        }
+    }
+
+    return $row;
+}
+
+function svb_order_create_or_load_for_session($uid, $fallback_data = []) {
+    if (!$uid) {
+        return new WP_Error('svb_order_missing_uid', 'Missing session UID');
+    }
+
+    if (!svb_orders_table_exists()) {
+        return new WP_Error('svb_orders_table_missing', 'Orders table missing');
+    }
+
+    $row = svb_get_order_row_by_uid($uid, $fallback_data);
+    if (!$row) {
+        global $wpdb;
+        $db_error = $wpdb->last_error;
+        return new WP_Error('svb_order_not_created', 'Order storage error', ['db_error' => $db_error]);
+    }
+
+    $verified = svb_get_order_by_id($row['order_id']);
+    if (!$verified) {
+        global $wpdb;
+        $db_error = $wpdb->last_error;
+        return new WP_Error('svb_order_not_readable', 'Order storage error', ['db_error' => $db_error]);
+    }
+
+    if (!empty($row['public_token'])) {
+        $verified['public_token'] = $row['public_token'];
+        $verified['token_hash'] = $row['token_hash'];
+    }
+
+    return $verified;
 }
 
 function svb_init_user_order() {
@@ -384,6 +472,13 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
     if (!$uid) {
         return null;
     }
+
+    if (!svb_orders_table_exists()) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB] orders table missing during session lookup');
+        }
+        return null;
+    }
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
     $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
@@ -405,7 +500,7 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
 
     $payment = svb_get_payment_defaults();
     $created_at = current_time('mysql');
-    $wpdb->insert(
+    $inserted = $wpdb->insert(
         $table,
         [
             'order_id' => $order_id,
@@ -419,21 +514,30 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
         ['%d','%s','%s','%s','%s','%s','%s']
     );
 
+    if (!$inserted) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB] failed to insert order row: ' . $wpdb->last_error);
+        }
+        return null;
+    }
+
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d LIMIT 1", $order_id), ARRAY_A);
+    if (!$row) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB] order row not readable after insert: ' . $wpdb->last_error);
+        }
+        return null;
+    }
+
     if (!headers_sent()) {
         setcookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
     }
     $_COOKIE['svb_public_token'] = $token_data['token'];
 
-    return [
-        'order_id' => $order_id,
-        'public_token' => $token_data['token'],
-        'token_hash' => $token_data['hash'],
-        'created_at' => $created_at,
-        'ip' => $ip,
-        'user_agent' => $ua,
-        'session_id' => $uid,
-        'payment' => wp_json_encode($payment),
-    ];
+    $row['public_token'] = $token_data['token'];
+    $row['token_hash'] = $token_data['hash'];
+
+    return $row;
 }
 
 function svb_update_user_order($uid, $updates = []) {

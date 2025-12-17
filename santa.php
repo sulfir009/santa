@@ -45,6 +45,12 @@ add_filter('redirect_canonical', function($redirect_url, $requested_url) {
     return $redirect_url;
 }, 10, 2);
 
+add_action('init', function() {
+    if (is_admin()) {
+        svb_maybe_ensure_orders_schema();
+    }
+}, 0);
+
 function svb_stream_order_video($order_id, $token) {
     $order_id = absint($order_id);
     $token = sanitize_text_field($token);
@@ -71,8 +77,17 @@ function svb_stream_order_video($order_id, $token) {
 
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
+    if (!svb_orders_table_exists()) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB DOWNLOAD] orders table missing while streaming order_id=' . $order_id);
+        }
+        $send_error('no_order', 404);
+    }
     $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d", $order_id), ARRAY_A);
     if (!$row) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB DOWNLOAD] no_order for order_id=' . $order_id . ' storage=table');
+        }
         $send_error('no_order', 404);
     }
 
