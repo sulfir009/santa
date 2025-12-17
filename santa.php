@@ -37,43 +37,72 @@ register_activation_hook(__FILE__, function() {
 
 add_action('svb_cleanup_order_results', 'svb_cleanup_order_results_cb');
 
+add_filter('redirect_canonical', function($redirect_url, $requested_url) {
+    if (isset($_GET['svb_download'])) {
+        return false;
+    }
+
+    return $redirect_url;
+}, 10, 2);
+
 function svb_stream_order_video($order_id, $token) {
     $order_id = absint($order_id);
     $token = sanitize_text_field($token);
 
+    $send_error = function($reason_key, $status) {
+        header('X-SVB-Download: hit');
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            header('X-SVB-Download-Reason: ' . $reason_key);
+        }
+        status_header($status);
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo 'SVB download error: ' . $reason_key;
+        exit;
+    };
+
     if (!$order_id || !$token) {
-        return false;
+        $send_error('missing_params', 400);
     }
 
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
     $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE order_id = %d", $order_id), ARRAY_A);
     if (!$row) {
-        status_header(404);
-        exit('Order not found');
+        $send_error('no_order', 404);
     }
 
     if (empty($row['token_hash']) || !hash_equals($row['token_hash'], hash('sha256', $token))) {
-        status_header(403);
-        exit('Access denied');
+        $send_error('bad_token', 403);
     }
 
     $result = is_array(json_decode($row['result'] ?? '', true)) ? json_decode($row['result'], true) : [];
     $video_path = $result['video_path'] ?? '';
     $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
-    if (!$video_path || !file_exists($video_path)) {
-        status_header(410);
-        exit('Video is not available');
+
+    if (!$video_path || !file_exists($video_path) || !is_readable($video_path)) {
+        $send_error('no_file', 404);
     }
 
     if ($generated_at && (time() - $generated_at) > HOUR_IN_SECONDS) {
-        status_header(410);
-        exit('Video expired');
+        $send_error('expired', 410);
+    }
+
+    $fp = fopen($video_path, 'rb');
+    if (!$fp) {
+        $send_error('unreadable', 500);
     }
 
     while (ob_get_level()) {
         ob_end_clean();
     }
+
+    header('X-SVB-Download: hit');
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        header('X-SVB-Download-Reason: ok');
+    }
+
+    status_header(200);
+    nocache_headers();
 
     $ext = strtolower(pathinfo($video_path, PATHINFO_EXTENSION));
     $content_type = 'video/mp4';
@@ -86,8 +115,10 @@ function svb_stream_order_video($order_id, $token) {
     header('Content-Type: ' . $content_type);
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Content-Length: ' . filesize($video_path));
+    header('Accept-Ranges: bytes');
 
-    readfile($video_path);
+    fpassthru($fp);
+    fclose($fp);
     exit;
 }
 
@@ -104,12 +135,24 @@ function svb_handle_download_endpoint() {
         return;
     }
 
+    if (!defined('DONOTCACHEPAGE')) {
+        define('DONOTCACHEPAGE', true);
+    }
+
+    nocache_headers();
+
     $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
     $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
 
     if (!$order_id || !$token) {
+        header('X-SVB-Download: hit');
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            header('X-SVB-Download-Reason: missing_params');
+        }
         status_header(400);
-        exit('Missing download parameters');
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo 'SVB download error: missing_params';
+        exit;
     }
 
     svb_stream_order_video($order_id, $token);
@@ -168,4 +211,4 @@ add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
 add_action('wp_ajax_nopriv_svb_monobank_check_status', 'svb_monobank_check_status');
 add_action('init', 'svb_handle_monobank_return', 2);
 add_action('init', 'svb_handle_public_order', 3);
-add_action('init', 'svb_handle_download_endpoint', 3);
+add_action('template_redirect', 'svb_handle_download_endpoint', 0);
