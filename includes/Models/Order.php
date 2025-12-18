@@ -942,6 +942,33 @@ function svb_update_order_payment_by_session($uid, array $updates) {
     $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $row['id']], ['%s'], ['%d']);
 }
 
+function svb_update_order_payment_by_order_id($order_id, array $updates) {
+    if (!$order_id || !svb_orders_table_exists()) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT id,order_id,payment,fingerprint_current FROM {$table} WHERE order_id = %d LIMIT 1", (int) $order_id), ARRAY_A);
+    if (!$row) {
+        return null;
+    }
+
+    $defaults = svb_get_payment_defaults();
+    $existing = svb_orders_decode_payment($row['payment']);
+    $new_payment = array_merge($defaults, $existing, $updates, [
+        'updated_at' => date('Y-m-d H:i:s'),
+    ]);
+
+    if (isset($updates['status']) && in_array($updates['status'], ['paid', 'success'], true) && empty($new_payment['paid_fingerprint']) && !empty($row['fingerprint_current'])) {
+        $new_payment['paid_fingerprint'] = $row['fingerprint_current'];
+    }
+
+    $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $row['id']], ['%s'], ['%d']);
+
+    return $new_payment;
+}
+
 function svb_init_cookie_logic() {
     // Не запускаем в админке, но запускаем в AJAX и на фронте
     if (!is_admin() || defined('DOING_AJAX')) {

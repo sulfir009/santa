@@ -590,6 +590,13 @@ function svbError() {
     console.error.apply(console, args);
 }
 
+function svbMaskInvoiceId(invoiceId) {
+    if (!invoiceId) return '';
+    const id = String(invoiceId);
+    if (id.length <= 6) return id;
+    return `${id.slice(0, 6)}***${id.slice(-4)}`;
+}
+
 function svbMaskToken(tkn) {
     if (!tkn) return '';
     const token = String(tkn);
@@ -1961,6 +1968,13 @@ async function svbHandleStep1Next(e) {
   const email = emailInput && emailInput.value ? emailInput.value.trim() : '';
   const name = nameInput && nameInput.value ? nameInput.value.trim() : '';
 
+  const sessionCookie = svbReadCookie('svb_session') || '';
+  console.log('[SVB REC][CLICK]', {
+    email_present: !!email,
+    orderKnown: !!(saved && saved.order_id),
+    svb_session_cookie_prefix: sessionCookie ? sessionCookie.slice(0, 8) : '',
+  });
+
   if (!email) {
     svbSetStep(2);
     return;
@@ -1968,12 +1982,21 @@ async function svbHandleStep1Next(e) {
 
   try {
     const resp = await svbRecoverProbe(email, name);
+    console.log('[SVB REC][RESP]', {
+      action: resp.action,
+      reason: resp.reason,
+      order_id: resp.order && resp.order.order_id ? resp.order.order_id : null,
+    });
     const reason = resp.reason || 'no_reason';
 
     if (resp.action === 'popup' && resp.order) {
       svbLogRecover('popup decision', { order_id: resp.order.order_id, reason });
       svbShowRecoverModal(resp.order);
       return;
+    }
+
+    if (resp.action === 'info_pending') {
+      alert('Оплата ще не підтверджена. Очікуємо підтвердження від банку.');
     }
 
     if (resp.action === 'email_sent') {
@@ -2011,6 +2034,44 @@ const SVB_PAYMENT_STORAGE = {
   invoice: 'svb_payment_invoice',
   step: 'svb_step2_state'
 };
+
+const SVB_PAYMENT_SESSION = {
+  order: 'svb_last_order_id',
+  invoice: 'svb_last_invoice_masked',
+  fingerprint: 'svb_last_fingerprint_prefix'
+};
+
+function svbStorePaymentDebugMeta(orderId, invoiceId, fingerprint) {
+  try {
+    if (orderId) {
+      sessionStorage.setItem(SVB_PAYMENT_SESSION.order, String(orderId));
+    }
+    if (invoiceId) {
+      sessionStorage.setItem(SVB_PAYMENT_SESSION.invoice, svbMaskInvoiceId(invoiceId));
+    }
+    if (fingerprint) {
+      sessionStorage.setItem(SVB_PAYMENT_SESSION.fingerprint, String(fingerprint).slice(0, 12));
+    }
+  } catch (e) {}
+
+  console.log('[SVB PAY][STORE]', {
+    order_id: orderId || null,
+    invoice_masked: invoiceId ? svbMaskInvoiceId(invoiceId) : '',
+    fingerprint_prefix: fingerprint ? String(fingerprint).slice(0, 8) : '',
+  });
+}
+
+function svbLoadPaymentDebugMeta() {
+  try {
+    return {
+      order_id: parseInt(sessionStorage.getItem(SVB_PAYMENT_SESSION.order) || '0', 10) || 0,
+      invoice_masked: sessionStorage.getItem(SVB_PAYMENT_SESSION.invoice) || '',
+      fingerprint_prefix: sessionStorage.getItem(SVB_PAYMENT_SESSION.fingerprint) || '',
+    };
+  } catch (e) {
+    return { order_id: 0, invoice_masked: '', fingerprint_prefix: '' };
+  }
+}
 
 function svbGetSelectedChildCount() {
   const checked = document.querySelector('input[name="child_count"]:checked');
@@ -2272,6 +2333,36 @@ async function svbRequestInvoiceStatus(invoiceId) {
   return data.data;
 }
 
+async function svbPayDebugRequest(orderId) {
+  const fd = new FormData();
+  fd.append('action', 'svb_pay_debug_state');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('order_id', orderId);
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (!res.ok) {
+    throw new Error('HTTP ' + res.status);
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Sync error');
+  }
+
+  return data.data || {};
+}
+
+function svbShowPaymentProcessing(message) {
+  const box = document.getElementById('svb-payment-error');
+  const text = box ? box.querySelector('.svb-payment-error__text') : null;
+  if (text) {
+    text.textContent = message || 'Оплата обробляється…';
+  }
+  if (box) {
+    box.style.display = 'block';
+  }
+}
+
 function svbProceedToGenerateFlow() {
   svbHidePaymentError();
   svbPersistStep2State();
@@ -2360,6 +2451,7 @@ async function svbHandleStep2Next() {
     if (invoice && invoice.invoiceId) {
       svbLog('[SVB PAY] invoiceId received', { invoiceId: invoice.invoiceId });
       svbStoreInvoiceId(invoice.invoiceId);
+      svbStorePaymentDebugMeta(gate.order_id, invoice.invoiceId, gate.fingerprint_current);
     }
 
     if (invoice && invoice.pageUrl) {
@@ -2381,8 +2473,13 @@ async function svbHandleStep2Next() {
 
 async function svbCheckInvoiceOnReturn() {
   const params = new URLSearchParams(window.location.search);
-  const fromReturn = params.has('svb_payment_return');
-  if (!fromReturn && svbPaymentStatus === 'paid') return;
+  const isReturn = params.has('svb_payment_return') || params.has('svb_payment_success') || params.has('svb_payment_fail');
+  if (isReturn) {
+    await svbHandlePaymentReturnFlow(params);
+    return;
+  }
+
+  if (svbPaymentStatus === 'paid') return;
 
   const invoiceId = params.get('invoiceId') || svbGetStoredInvoiceId() || (SVB_PAYMENT.invoice_id || '');
   if (!invoiceId) return;
@@ -2394,17 +2491,100 @@ async function svbCheckInvoiceOnReturn() {
       SVB_PAYMENT.status = 'paid';
       svbClearInvoiceId();
       svbProceedToGenerateFlow();
-    } else if (fromReturn) {
-      svbPaymentStatus = status.status || 'failed';
-      svbClearInvoiceId();
-      svbSetStep(2);
-      svbShowPaymentError('Оплата неуспішна. Генерація відео не буде виконана.');
     }
   } catch (err) {
     console.error(err);
-    if (fromReturn) {
-      svbShowPaymentError('Не вдалося перевірити оплату: ' + err.message);
+  }
+}
+
+async function svbHandlePaymentDecision(orderId, state) {
+  const failureStates = ['failure', 'no_invoice', 'mono_error', 'no_order'];
+  const decision = state.decision || 'pending';
+
+  const markPaid = () => {
+    svbPaymentStatus = 'paid';
+    SVB_PAYMENT.status = 'paid';
+    svbClearInvoiceId();
+    svbProceedToGenerateFlow();
+  };
+
+  if (decision === 'success') {
+    markPaid();
+    return;
+  }
+
+  if (failureStates.includes(decision)) {
+    svbClearInvoiceId();
+    svbSetStep(2);
+    svbShowPaymentError('Оплата не підтверджена. Спробуйте оновити сторінку або зверніться в підтримку.');
+    return;
+  }
+
+  svbShowPaymentProcessing('Оплата обробляється, очікуємо підтвердження…');
+  const deadline = Date.now() + 60000;
+
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      const poll = await svbPayDebugRequest(orderId);
+      console.log('[SVB PAY][POLL]', {
+        decision: poll.decision,
+        payment_status: poll.server ? poll.server.payment_status : '',
+        modifiedDate: poll.server ? poll.server.modifiedDate : '',
+      });
+
+      if (poll.decision === 'success') {
+        markPaid();
+        return;
+      }
+
+      if (failureStates.includes(poll.decision)) {
+        svbClearInvoiceId();
+        svbSetStep(2);
+        svbShowPaymentError('Оплата не підтверджена. Спробуйте пізніше.');
+        return;
+      }
+    } catch (pollErr) {
+      console.error(pollErr);
     }
+  }
+
+  svbSetStep(2);
+  svbShowPaymentError('Оплата ще не підтверджена. Ми очікуємо підтвердження від банку.');
+}
+
+async function svbHandlePaymentReturnFlow(params) {
+  const savedState = svbLoadState();
+  const lastMeta = svbLoadPaymentDebugMeta();
+  const sessionCookie = svbReadCookie('svb_session') || '';
+  const cookiePrefix = sessionCookie ? sessionCookie.slice(0, 8) : '';
+
+  const orderId = lastMeta.order_id || (savedState && savedState.order_id ? savedState.order_id : 0);
+
+  console.log('[SVB PAY][RETURN]', {
+    url: window.location.href,
+    last_order_id: orderId || null,
+    last_invoice_masked: lastMeta.invoice_masked,
+    has_svb_session_cookie: !!sessionCookie,
+    cookie_prefix: cookiePrefix,
+  });
+
+  if (!orderId) {
+    svbShowPaymentProcessing('Повернення з оплати: немає order_id для синхронізації.');
+    return;
+  }
+
+  try {
+    const state = await svbPayDebugRequest(orderId);
+    console.log('[SVB PAY][SYNC]', {
+      server_before: state.server,
+      mono: state.mono,
+      decision: state.decision,
+    });
+    await svbHandlePaymentDecision(orderId, state);
+  } catch (err) {
+    console.error(err);
+    svbShowPaymentError('Не вдалося синхронізувати оплату: ' + err.message);
   }
 }
 

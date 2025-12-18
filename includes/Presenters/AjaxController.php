@@ -142,6 +142,7 @@ function svb_order_recover() {
         'storage' => svb_orders_table_exists() ? 'table' : 'options',
         'query_found_any' => 0,
         'query_found_success' => 0,
+        'query_found_pending' => 0,
         'selected_order_id' => null,
         'selected_payment_status' => null,
         'selected_order_session_prefix' => null,
@@ -152,7 +153,7 @@ function svb_order_recover() {
 
     if (!$email || !is_email($email)) {
         $debug['reason'] = 'invalid_email';
-        $payload = ['action' => 'continue', 'reason' => 'invalid_email'];
+        $payload = ['action' => 'continue', 'reason' => 'not_found'];
         if ($debug_mode) {
             $payload['debug'] = $debug;
         }
@@ -179,7 +180,7 @@ function svb_order_recover() {
     $attempts = (int) get_transient($rate_key);
     if ($attempts >= 5) {
         $debug['rate_limited'] = true;
-        $payload = ['action' => 'email_sent', 'reason' => 'rate_limited'];
+        $payload = ['action' => 'email_sent', 'reason' => 'not_found'];
         if ($debug_mode) {
             $debug['reason'] = 'rate_limited';
             $payload['debug'] = $debug;
@@ -190,6 +191,7 @@ function svb_order_recover() {
 
     global $wpdb;
     $order_row = null;
+    $pending_row = null;
     if (svb_orders_table_exists()) {
         $table = $wpdb->prefix . 'svb_orders';
         $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$table} WHERE email_hash = %s ORDER BY id DESC LIMIT 5", $email_hash), ARRAY_A);
@@ -204,14 +206,29 @@ function svb_order_recover() {
                         $order_row = $row;
                         $order_row['payment'] = $payment;
                     }
+                } elseif ($status) {
+                    $debug['query_found_pending']++;
+                    if (!$pending_row) {
+                        $pending_row = $row;
+                        $pending_row['payment'] = $payment;
+                    }
                 }
             }
         }
     }
-    if (!$order_row) {
-        $payload = ['action' => 'email_sent', 'reason' => 'no_success_orders'];
+    if (!$order_row && !empty($pending_row)) {
+        $payload = ['action' => 'info_pending', 'reason' => 'found_but_not_paid'];
         if ($debug_mode) {
-            $debug['reason'] = 'no_success_orders';
+            $debug['reason'] = 'found_but_not_paid';
+            $payload['debug'] = $debug;
+        }
+        wp_send_json_success($payload);
+    }
+
+    if (!$order_row) {
+        $payload = ['action' => 'continue', 'reason' => 'not_found'];
+        if ($debug_mode) {
+            $debug['reason'] = 'not_found';
             $payload['debug'] = $debug;
         }
         wp_send_json_success($payload);
@@ -256,6 +273,7 @@ function svb_order_recover() {
                 'can_regen' => $can_regen,
                 'resume_url' => $resume_url,
             ],
+            'reason' => 'popup_allowed',
         ];
         if ($debug_mode) {
             $debug['reason'] = 'popup';
@@ -272,7 +290,7 @@ function svb_order_recover() {
 
     $payload = [
         'action' => 'email_sent',
-        'reason' => $session_matches ? 'popup_missing' : 'session_mismatch',
+        'reason' => 'session_mismatch_email_sent',
     ];
     if ($debug_mode) {
         $debug['reason'] = $session_matches ? 'popup_missing' : 'session_mismatch';
@@ -1524,6 +1542,105 @@ function svb_pay_log($message, $context = [], $order_data = []) {
     }
 
     error_log('[SVB PAY] ' . $message . (!empty($context) ? ' ' . wp_json_encode($context) : ''));
+}
+
+function svb_pay_debug_state() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_id = isset($_REQUEST['order_id']) ? absint($_REQUEST['order_id']) : 0;
+    $debug_id = uniqid('svbdbg_', true);
+
+    $response = [
+        'server' => [
+            'order_id' => $order_id,
+            'invoiceId_masked' => '',
+            'payment_status' => '',
+            'paid_fingerprint_prefix' => '',
+            'modifiedDate' => '',
+            'session_id_prefix' => '',
+            'email_hash_prefix' => '',
+        ],
+        'mono' => [
+            'queried' => false,
+            'status' => '',
+            'modifiedDate' => '',
+            'failureReason' => '',
+        ],
+        'decision' => 'pending',
+        'debug_id' => $debug_id,
+    ];
+
+    if (!$order_id) {
+        $response['decision'] = 'no_order';
+        wp_send_json_success($response);
+    }
+
+    $order_row = svb_get_order_by_id($order_id);
+    if (!$order_row) {
+        $response['decision'] = 'no_order';
+        wp_send_json_success($response);
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $server_status = $payment['status'] ?? 'unpaid';
+    $invoice_id = $payment['invoice_id'] ?? '';
+
+    $response['server'] = [
+        'order_id' => (int) $order_id,
+        'invoiceId_masked' => svb_monobank_mask_invoice($invoice_id),
+        'payment_status' => $server_status,
+        'paid_fingerprint_prefix' => svb_monobank_prefix($payment['paid_fingerprint'] ?? ''),
+        'modifiedDate' => $payment['modifiedDate'] ?? ($payment['updated_at'] ?? ''),
+        'session_id_prefix' => svb_monobank_prefix($order_row['session_id'] ?? ''),
+        'email_hash_prefix' => svb_monobank_prefix($order_row['email_hash'] ?? ''),
+    ];
+
+    if (!$invoice_id) {
+        $response['decision'] = 'no_invoice';
+        wp_send_json_success($response);
+    }
+
+    $decision = ($server_status === 'success') ? 'success' : 'pending';
+
+    if ($server_status !== 'success') {
+        $lock_key = 'svb_mono_sync_' . $order_id;
+        $can_query = !get_transient($lock_key);
+        if ($can_query) {
+            set_transient($lock_key, 1, 10);
+            $status = svb_monobank_get_invoice_status($invoice_id);
+            $response['mono']['queried'] = true;
+
+            if (is_wp_error($status)) {
+                $response['mono']['failureReason'] = $status->get_error_message();
+                $response['decision'] = 'mono_error';
+                wp_send_json_success($response);
+            }
+
+            $response['mono']['status'] = $status['status'] ?? '';
+            $response['mono']['modifiedDate'] = svb_monobank_extract_modified($status);
+            $response['mono']['failureReason'] = $status['failureReason'] ?? '';
+
+            $payment = svb_monobank_apply_payment_status($order_row, $status);
+            $server_status = $payment['status'] ?? $server_status;
+
+            $response['server']['payment_status'] = $server_status;
+            $response['server']['modifiedDate'] = $payment['modifiedDate'] ?? ($payment['updated_at'] ?? $response['server']['modifiedDate']);
+            $response['server']['paid_fingerprint_prefix'] = svb_monobank_prefix($payment['paid_fingerprint'] ?? $response['server']['paid_fingerprint_prefix']);
+        }
+    }
+
+    if ($server_status === 'success') {
+        $decision = 'success';
+    } elseif ($server_status === 'failure' || $response['mono']['status'] === 'failure') {
+        $decision = 'failure';
+    } elseif ($server_status === 'processing' || $response['mono']['status'] === 'processing') {
+        $decision = 'processing';
+    }
+
+    $response['decision'] = $decision;
+    wp_send_json_success($response);
 }
 
 function svb_payment_gate() {
