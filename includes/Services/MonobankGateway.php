@@ -316,6 +316,46 @@ function svb_monobank_get_invoice_status($invoice_id) {
     return $decoded;
 }
 
+function svb_monobank_invalidate_invoice_request($invoice_id) {
+    $token = svb_monobank_get_token();
+    if (!$token) {
+        return new WP_Error('svb_monobank_no_token', 'Monobank token is not configured');
+    }
+
+    $payload = [
+        'invoiceId' => sanitize_text_field($invoice_id),
+    ];
+
+    $response = wp_remote_post(
+        'https://api.monobank.ua/api/merchant/invoice/cancel',
+        [
+            'headers' => [
+                'X-Token' => $token,
+                'Content-Type' => 'application/json',
+            ],
+            'body'    => wp_json_encode($payload),
+            'timeout' => 20,
+        ]
+    );
+
+    if (is_wp_error($response)) {
+        return $response;
+    }
+
+    $code = wp_remote_retrieve_response_code($response);
+    $body_raw = wp_remote_retrieve_body($response);
+    $decoded = json_decode($body_raw, true);
+
+    if ($code < 200 || $code >= 300) {
+        return new WP_Error('svb_monobank_bad_response', 'Invalid response from Monobank', [
+            'status' => $code,
+            'body'   => $body_raw,
+        ]);
+    }
+
+    return is_array($decoded) ? $decoded : ['_raw_body' => $body_raw, '_http_status' => $code];
+}
+
 function svb_handle_monobank_return() {
     if (empty($_GET['svb_payment_return'])) {
         return;

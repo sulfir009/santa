@@ -13,21 +13,31 @@ function svb_get_orders_dir() {
     return $dir;
 }
 
+function svb_detect_ssl() {
+    if (is_ssl()) {
+        return true;
+    }
+
+    $forwarded_proto = isset($_SERVER['HTTP_X_FORWARDED_PROTO']) ? strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) : '';
+    return $forwarded_proto === 'https';
+}
+
 function svb_set_lax_cookie($name, $value, $expires, $http_only = true) {
     if (headers_sent()) {
-        return;
+        error_log('[SVB SESSION] Cannot set cookie, headers already sent');
+        return false;
     }
 
     $options = [
         'expires' => (int) $expires,
         'path' => '/',
         'domain' => COOKIE_DOMAIN,
-        'secure' => is_ssl(),
+        'secure' => svb_detect_ssl(),
         'httponly' => (bool) $http_only,
         'samesite' => 'Lax',
     ];
 
-    setcookie($name, $value, $options);
+    return setcookie($name, $value, $options);
 }
 
 function svb_get_orders_upload_dir($order_id) {
@@ -440,7 +450,13 @@ function svb_init_user_order() {
     $dir = svb_get_orders_dir();
 
     if (empty($_COOKIE[$session_cookie])) {
-        $session_val = wp_generate_password(24, false, false);
+        try {
+            $session_val = bin2hex(random_bytes(16));
+        } catch (Exception $e) {
+            $fallback = wp_generate_password(16, false, false);
+            $session_val = $fallback ? bin2hex(substr($fallback, 0, 8)) : uniqid('svb', true);
+        }
+
         svb_set_lax_cookie($session_cookie, $session_val, time() + MONTH_IN_SECONDS, true);
         $_COOKIE[$session_cookie] = $session_val;
     }
@@ -550,6 +566,9 @@ function svb_get_payment_defaults() {
     return [
         'status' => 'unpaid',
         'invoice_id' => '',
+        'invoice_page_url' => '',
+        'invoice_fingerprint' => '',
+        'modifiedDate' => 0,
         'reference' => '',
         'amount' => 0,
         'child_count' => 1,
