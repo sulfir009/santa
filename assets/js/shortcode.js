@@ -3079,13 +3079,7 @@ async function svbHandlePaymentReturnFlow(params) {
 
       try {
         const resumeInfo = await svbOrderResumeInfoRequest(orderId, token);
-        if (resumeInfo && resumeInfo.download_url) {
-          svbSetStep(3);
-          svbHandleSuccessInternal(resumeInfo.download_url);
-        } else {
-          svbSetStep(3);
-          svbShowPaymentProcessing('Оплата підтверджена. Якщо відео ще не готове, натисніть "Згенерувати".');
-        }
+        await svbHandlePaidResume(orderId, token, resumeInfo || {});
       } catch (resumeErr) {
         console.log('[SVB RESUME][ERROR]', { message: resumeErr.message, stack: resumeErr.stack });
         svbSetStep(2);
@@ -3425,13 +3419,14 @@ function svbPollProgress(token) {
 }
 
 // Diagnostics: check download endpoint response before navigating (open browser Console to inspect status, content-type, final URL, headers).
-async function svbProbeDownload(url) {
-    if (!svbIsDebugMode()) {
+async function svbProbeDownload(url, options = {}) {
+    const force = !!options.force;
+    if (!force && !svbIsDebugMode()) {
         return { okForVideo: true, reason: 'debug_off' };
     }
 
     const maskedUrl = svbMaskUrlToken(url || '');
-    svbLogDownload('Probe start', { requestedUrl: maskedUrl });
+    svbLogDownload('Probe start', { requestedUrl: maskedUrl, forced: force });
 
     try {
         const response = await fetch(url, {
@@ -3464,6 +3459,10 @@ async function svbProbeDownload(url) {
             }
         });
 
+        if (response.status === 404) {
+            return { okForVideo: false, reason: dlReason || 'status 404' };
+        }
+
         if (contentType.toLowerCase().startsWith('text/')) {
             const body = await response.text();
             svbLogDownload('Probe body (first 800 chars)', body.slice(0, 800));
@@ -3478,7 +3477,7 @@ async function svbProbeDownload(url) {
             return { okForVideo: false, reason: 'status ' + response.status };
         }
 
-        return { okForVideo: true, reason: 'ok' };
+        return { okForVideo: true, reason: dlReason || 'ok' };
     } catch (err) {
         svbErrorDownload('Probe failed', err);
         return { okForVideo: false, reason: err && err.message ? err.message : 'probe_failed' };
@@ -4036,6 +4035,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (openBtn) {
                 openBtn.addEventListener('click', async (ev) => {
                     ev.preventDefault();
+                    svbCloseRecoverModal(ev, true);
                     const resumeUrl = openBtn.dataset.resumeUrl || '';
                     try {
                       const u = new URL(resumeUrl, window.location.origin);
@@ -4045,13 +4045,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         const info = await svbOrderResumeInfoRequest(orderId, token);
                         svbUpdateState({ order_id: orderId, public_token: token });
                         if (info && info.download_url) {
-                          svbSetStep(3);
-                          svbHandleSuccessInternal(info.download_url);
+                          await svbHandlePaidResume(orderId, token, info);
                           return;
                         }
                         if (info && info.can_regen) {
-                          svbSetStep(3);
-                          svbShowPaymentProcessing('Відновлюємо замовлення. Натисніть "Згенерувати", якщо відео ще не готове.');
+                          await svbHandlePaidResume(orderId, token, info);
                           return;
                         }
                       }
@@ -4184,6 +4182,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setTimeout(() => svbAutoResumeFromLocal({ isPaymentReturn }), 600);
 });
+
+async function svbHandlePaidResume(orderId, token, resumeInfo = {}) {
+  const downloadUrl = resumeInfo.download_url || '';
+
+  console.log('[SVB RETURN]', {
+    start: true,
+    chosen_order_id: orderId || null,
+    is_payment_return: true,
+    has_download_url: !!downloadUrl,
+    resume_source: 'payment_return'
+  });
+
+  if (orderId && token) {
+    svbUpdateState({ order_id: orderId, public_token: token, payment_status: 'success' });
+  }
+
+  svbSetStep(3);
+
+  if (downloadUrl) {
+    const probe = await svbProbeDownload(downloadUrl, { force: true });
+    console.log('[SVB DOWNLOAD] probe after payment', { order_id: orderId || null, reason: probe.reason });
+    if (probe.okForVideo) {
+      svbHandleSuccessInternal(downloadUrl);
+      return;
+    }
+    if (probe.reason && String(probe.reason).includes('no_file')) {
+      console.log('[SVB DOWNLOAD] video file missing, re-triggering generation', { order_id: orderId || null });
+    }
+  }
+
+  try {
+    svbShowPaymentProcessing('Оплата підтверджена. Генеруємо відео…');
+    if (resumeInfo && resumeInfo.form_data) {
+      try {
+        const current = svbLoadState() || {};
+        const restored = Object.assign({}, current, {
+          child_count: resumeInfo.form_data.child_count || current.child_count || 1,
+          selected_video_id: resumeInfo.form_data.selected_video_id || current.selected_video_id || 'video1',
+          formData: Object.assign({}, resumeInfo.form_data)
+        });
+        svbUpdateState(restored);
+        if (typeof svbRestoreStep2State === 'function') {
+          svbRestoreStep2State();
+        }
+      } catch (restoreErr) {
+        console.log('[SVB RESUME][ERROR]', { message: restoreErr.message, stack: restoreErr.stack });
+      }
+    }
+
+    if (typeof svbStartGenerate === 'function') {
+      svbStartGenerate();
+    }
+  } catch (err) {
+    console.log('[SVB RESUME][ERROR]', { message: err.message, stack: err.stack });
+  }
+}
 function svbDebugPrint(key) {
   const img = document.getElementById('img-' + key);
   if (!img) return;
