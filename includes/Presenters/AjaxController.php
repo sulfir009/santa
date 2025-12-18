@@ -347,19 +347,28 @@ function svb_order_resume_info() {
     $video_path = $result['video_path'] ?? '';
     $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
     $has_video = ($video_path && file_exists($video_path) && is_readable($video_path) && (!$generated_at || (time() - $generated_at) <= HOUR_IN_SECONDS));
-    $can_regen = ($payment_status === 'success' && $paid_fingerprint && $fingerprint_current && hash_equals($paid_fingerprint, $fingerprint_current));
+    $session_ok = ($session_id && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $session_id));
+    $can_regen = ($payment_status === 'success' && $session_ok && $paid_fingerprint && $fingerprint_current && hash_equals($paid_fingerprint, $fingerprint_current));
+    $can_download = ($has_video || ($payment_status === 'success' && $session_ok));
+    $video_file_status = $has_video ? 'ready' : (($payment_status === 'success') ? 'generating' : 'no_file');
 
     $resume_url = svb_build_resume_url($order_row['order_id'], $order_row['public_token'] ?? '');
-    $download_url = ($can_regen && !empty($order_row['public_token'])) ? svb_build_download_url($order_row['order_id'], $order_row['public_token']) : '';
+    $download_url = (!empty($order_row['public_token']) && $payment_status !== 'unpaid') ? svb_build_download_url($order_row['order_id'], $order_row['public_token']) : '';
+    $token_masked = $order_row['public_token'] ? substr($order_row['public_token'], 0, 4) . '***' : '';
 
     $response = [
         'found' => true,
         'order_id' => (int) $order_row['order_id'],
         'public_token' => $order_row['public_token'] ?? '',
         'has_video' => $has_video,
+        'session_ok' => $session_ok,
         'can_regen' => $can_regen,
+        'can_download' => $can_download,
         'resume_url' => $resume_url,
         'download_url' => $download_url,
+        'video_file_status' => $video_file_status,
+        'payment_status' => $payment_status,
+        'token_masked' => $token_masked,
         'fingerprint_current' => $fingerprint_current,
         'paid_fingerprint' => $paid_fingerprint,
         'reason' => 'popup_allowed',

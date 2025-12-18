@@ -57,9 +57,7 @@ function svb_stream_order_video($order_id, $token) {
 
     $set_reason_header = function($reason_key) {
         header('X-SVB-Download: hit');
-        if (defined('SVB_DEBUG') && SVB_DEBUG) {
-            header('X-SVB-Download-Reason: ' . $reason_key);
-        }
+        header('X-SVB-Download-Reason: ' . $reason_key);
     };
 
     $send_error = function($reason_key, $status) use ($set_reason_header) {
@@ -91,6 +89,11 @@ function svb_stream_order_video($order_id, $token) {
         $send_error('no_order', 404);
     }
 
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($row['payment'] ?? []));
+    $payment_status = $payment['status'] ?? '';
+    $paid_fingerprint = $payment['paid_fingerprint'] ?? '';
+    $fingerprint_current = $row['fingerprint_current'] ?? '';
+
     if (empty($row['token_hash']) || !hash_equals($row['token_hash'], hash('sha256', $token))) {
         $send_error('bad_token', 403);
     }
@@ -98,6 +101,18 @@ function svb_stream_order_video($order_id, $token) {
     $result = is_array(json_decode($row['result'] ?? '', true)) ? json_decode($row['result'], true) : [];
     $video_path = $result['video_path'] ?? '';
     $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
+
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        error_log(sprintf(
+            '[SVB DOWNLOAD] order_id=%d status=%s paid_fp=%s current_fp=%s video_path=%s exists=%s',
+            $order_id,
+            $payment_status,
+            $paid_fingerprint ? substr($paid_fingerprint, 0, 8) : '',
+            $fingerprint_current ? substr($fingerprint_current, 0, 8) : '',
+            $video_path,
+            $video_path && file_exists($video_path) ? 'true' : 'false'
+        ));
+    }
 
     if (!$video_path || !file_exists($video_path)) {
         $send_error('no_file', 404);
