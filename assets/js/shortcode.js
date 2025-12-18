@@ -590,6 +590,13 @@ function svbError() {
     console.error.apply(console, args);
 }
 
+function svbMaskInvoiceId(invoiceId) {
+    if (!invoiceId) return '';
+    const id = String(invoiceId);
+    if (id.length <= 6) return id;
+    return `${id.slice(0, 6)}***${id.slice(-4)}`;
+}
+
 function svbMaskToken(tkn) {
     if (!tkn) return '';
     const token = String(tkn);
@@ -1864,11 +1871,13 @@ async function svbRecoverProbe(email, name) {
     fd.append('name', name);
   }
 
-  svbLogRecover('request', {
+  const recoverPayload = {
     email_masked: emailMasked,
     email_normalized: emailNormalized,
     session_masked: sessionMasked,
-  });
+  };
+  svbLogRecover('request', recoverPayload);
+  console.log('[SVB RECOVER] ajax request', Object.assign({ action: 'svb_order_recover', hasNonce: noncePresent }, recoverPayload));
 
   try {
     const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
@@ -1905,6 +1914,13 @@ async function svbRecoverProbe(email, name) {
       order_id: orderId,
       resume_url: resumeMasked,
       reason: payload.reason || (debug && debug.reason) || '',
+    });
+
+    console.log('[SVB RECOVER] response', {
+      action: payload.action,
+      found: payload.found,
+      reasonCode: payload.reason || (debug && debug.reason) || '',
+      order_id: orderId,
     });
 
     return Object.assign({ usedRecover: true }, payload);
@@ -1961,6 +1977,13 @@ async function svbHandleStep1Next(e) {
   const email = emailInput && emailInput.value ? emailInput.value.trim() : '';
   const name = nameInput && nameInput.value ? nameInput.value.trim() : '';
 
+  const sessionCookie = svbReadCookie('svb_session') || '';
+  console.log('[SVB RECOVER] click', {
+    email_present: !!email,
+    orderKnown: !!(saved && saved.order_id),
+    svb_session_cookie_prefix: sessionCookie ? sessionCookie.slice(0, 8) : '',
+  });
+
   if (!email) {
     svbSetStep(2);
     return;
@@ -1968,6 +1991,11 @@ async function svbHandleStep1Next(e) {
 
   try {
     const resp = await svbRecoverProbe(email, name);
+    console.log('[SVB RECOVER] response', {
+      action: resp.action,
+      reason: resp.reason,
+      order_id: resp.order && resp.order.order_id ? resp.order.order_id : null,
+    });
     const reason = resp.reason || 'no_reason';
 
     if (resp.action === 'popup' && resp.order) {
@@ -1976,11 +2004,16 @@ async function svbHandleStep1Next(e) {
       return;
     }
 
+    if (resp.action === 'info_pending') {
+      alert('Оплата ще не підтверджена. Очікуємо підтвердження від банку.');
+    }
+
     if (resp.action === 'email_sent') {
       svbLogRecover('email_sent decision', { reason });
       alert('Якщо замовлення існує — ми надіслали посилання на email.');
     } else {
       svbLogRecover('continue decision', { reason });
+      console.log('[SVB RECOVER] popup not shown', { action: resp.action, reasonCode: reason });
     }
   } catch (err) {
     svbLogRecover('recover failed', err);
@@ -2004,6 +2037,42 @@ function svbApplyResumeFromQuery() {
   svbLogRecover('applied resume from URL', { order_id: orderId, token: svbMaskToken(token) });
 }
 
+async function svbAutoResumeFromLocal() {
+  const stored = svbLoadLastPaidOrder();
+  if (!stored || !stored.order_id || !stored.token) return;
+
+  console.log('[SVB RESUME] found local last order', {
+    order_id: stored.order_id,
+    token_prefix: svbMaskToken(stored.token),
+    saved_at: stored.saved_at || null,
+  });
+
+  try {
+    const resp = await svbOrderResumeInfoRequest(stored.order_id, stored.token);
+    console.log('[SVB RESUME] response', {
+      found: resp.found,
+      reason: resp.reason,
+      order_id: resp.order_id || null,
+      can_regen: resp.can_regen,
+    });
+
+    if (resp && resp.found) {
+      svbUpdateState({ order_id: resp.order_id, public_token: resp.public_token });
+      svbShowRecoverModal({
+        order_id: resp.order_id,
+        has_video: resp.has_video,
+        can_regen: resp.can_regen,
+        resume_url: resp.resume_url,
+      });
+      return;
+    }
+
+    console.log('[SVB RESUME] popup not shown', { reasonCode: resp && resp.reason ? resp.reason : 'not_found' });
+  } catch (e) {
+    console.error('[SVB RESUME] failed', e);
+  }
+}
+
 $('#svb-next-1').addEventListener('click', svbHandleStep1Next);
 $('#svb-back-2').addEventListener('click', ()=> svbSetStep(1));
 
@@ -2011,6 +2080,77 @@ const SVB_PAYMENT_STORAGE = {
   invoice: 'svb_payment_invoice',
   step: 'svb_step2_state'
 };
+
+const SVB_PAYMENT_SESSION = {
+  order: 'svb_last_order_id',
+  invoice: 'svb_last_invoice_masked',
+  fingerprint: 'svb_last_fingerprint_prefix'
+};
+
+const SVB_RESUME_STORAGE = 'svb_last_paid_order';
+
+function svbStorePaymentDebugMeta(orderId, invoiceId, fingerprint) {
+  try {
+    if (orderId) {
+      sessionStorage.setItem(SVB_PAYMENT_SESSION.order, String(orderId));
+    }
+    if (invoiceId) {
+      sessionStorage.setItem(SVB_PAYMENT_SESSION.invoice, svbMaskInvoiceId(invoiceId));
+    }
+    if (fingerprint) {
+      sessionStorage.setItem(SVB_PAYMENT_SESSION.fingerprint, String(fingerprint).slice(0, 12));
+    }
+  } catch (e) {}
+
+  console.log('[SVB PAY][STORE]', {
+    order_id: orderId || null,
+    invoice_masked: invoiceId ? svbMaskInvoiceId(invoiceId) : '',
+    fingerprint_prefix: fingerprint ? String(fingerprint).slice(0, 8) : '',
+  });
+}
+
+function svbLoadPaymentDebugMeta() {
+  try {
+    return {
+      order_id: parseInt(sessionStorage.getItem(SVB_PAYMENT_SESSION.order) || '0', 10) || 0,
+      invoice_masked: sessionStorage.getItem(SVB_PAYMENT_SESSION.invoice) || '',
+      fingerprint_prefix: sessionStorage.getItem(SVB_PAYMENT_SESSION.fingerprint) || '',
+    };
+  } catch (e) {
+    return { order_id: 0, invoice_masked: '', fingerprint_prefix: '' };
+  }
+}
+
+function svbSaveLastPaidOrder(orderId, token, paidFingerprint) {
+  if (!orderId || !token) return;
+  const payload = {
+    order_id: orderId,
+    token: token,
+    token_masked: svbMaskToken(token),
+    paid_fingerprint_prefix: paidFingerprint ? String(paidFingerprint).slice(0, 8) : '',
+    saved_at: Date.now()
+  };
+
+  try {
+    localStorage.setItem(SVB_RESUME_STORAGE, JSON.stringify(payload));
+  } catch (e) {}
+
+  console.log('[SVB RESUME] saved', { order_id: orderId, token_masked: payload.token_masked, paid_fp: payload.paid_fingerprint_prefix });
+}
+
+function svbLoadLastPaidOrder() {
+  try {
+    const raw = localStorage.getItem(SVB_RESUME_STORAGE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.order_id && parsed.token) return parsed;
+  } catch (e) {}
+  return null;
+}
+
+function svbClearLastPaidOrder() {
+  try { localStorage.removeItem(SVB_RESUME_STORAGE); } catch (e) {}
+}
 
 function svbGetSelectedChildCount() {
   const checked = document.querySelector('input[name="child_count"]:checked');
@@ -2272,6 +2412,78 @@ async function svbRequestInvoiceStatus(invoiceId) {
   return data.data;
 }
 
+async function svbPayDebugRequest(orderId) {
+  const fd = new FormData();
+  fd.append('action', 'svb_pay_debug_state');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('order_id', orderId);
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (!res.ok) {
+    throw new Error('HTTP ' + res.status);
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Sync error');
+  }
+
+  return data.data || {};
+}
+
+async function svbSyncPaymentStatus(orderId, token) {
+  const fd = new FormData();
+  fd.append('action', 'svb_monobank_sync_status');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('order_id', orderId);
+  if (token) {
+    fd.append('token', token);
+  }
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (!res.ok) {
+    throw new Error('HTTP ' + res.status);
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Sync error');
+  }
+
+  return data.data || {};
+}
+
+async function svbOrderResumeInfoRequest(orderId, token) {
+  const fd = new FormData();
+  fd.append('action', 'svb_order_resume_info');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('order_id', orderId);
+  fd.append('token', token || '');
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (!res.ok) {
+    throw new Error('HTTP ' + res.status);
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Resume error');
+  }
+
+  return data.data || {};
+}
+
+function svbShowPaymentProcessing(message) {
+  const box = document.getElementById('svb-payment-error');
+  const text = box ? box.querySelector('.svb-payment-error__text') : null;
+  if (text) {
+    text.textContent = message || 'Оплата обробляється…';
+  }
+  if (box) {
+    box.style.display = 'block';
+  }
+}
+
 function svbProceedToGenerateFlow() {
   svbHidePaymentError();
   svbPersistStep2State();
@@ -2332,18 +2544,32 @@ async function svbHandleStep2Next() {
     const photoHashes = await svbCollectPhotoHashes();
     const gate = await svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes);
     svbPaymentStatus = gate.is_paid_for_current ? 'paid' : 'unpaid';
+    const gateDecision = gate.decision || (gate.is_paid_for_current ? 'paid' : 'not_paid');
+    const gateToken = gate.public_token || (savedState && savedState.public_token ? savedState.public_token : '');
 
     svbLog('[SVB STEP2] gate decision', {
       order_id: gate.order_id,
       fingerprint_current: gate.fingerprint_current,
       paid_fingerprint: gate.paid_fingerprint,
       payment_status: gate.payment_status,
-      decision: gate.reason,
+      decision: gateDecision,
+      reason: gate.reason,
     });
 
-    if (gate.is_paid_for_current) {
+    if (gateDecision === 'paid') {
       svbLog('[SVB STEP2] gate says paid_match, proceeding to generate');
+      svbSaveLastPaidOrder(gate.order_id, gateToken, gate.fingerprint_current);
       svbProceedToGenerateFlow();
+      return;
+    }
+
+    if (gateDecision === 'pending') {
+      await svbHandlePaymentDecision(gate.order_id, gate, gateToken);
+      return;
+    }
+
+    if (gateDecision === 'failed') {
+      svbShowPaymentError('Оплата не підтверджена. Спробуйте ще раз.');
       return;
     }
 
@@ -2360,6 +2586,7 @@ async function svbHandleStep2Next() {
     if (invoice && invoice.invoiceId) {
       svbLog('[SVB PAY] invoiceId received', { invoiceId: invoice.invoiceId });
       svbStoreInvoiceId(invoice.invoiceId);
+      svbStorePaymentDebugMeta(gate.order_id, invoice.invoiceId, gate.fingerprint_current);
     }
 
     if (invoice && invoice.pageUrl) {
@@ -2381,8 +2608,13 @@ async function svbHandleStep2Next() {
 
 async function svbCheckInvoiceOnReturn() {
   const params = new URLSearchParams(window.location.search);
-  const fromReturn = params.has('svb_payment_return');
-  if (!fromReturn && svbPaymentStatus === 'paid') return;
+  const isReturn = params.has('svb_payment_return') || params.has('svb_payment_success') || params.has('svb_payment_fail');
+  if (isReturn) {
+    await svbHandlePaymentReturnFlow(params);
+    return;
+  }
+
+  if (svbPaymentStatus === 'paid') return;
 
   const invoiceId = params.get('invoiceId') || svbGetStoredInvoiceId() || (SVB_PAYMENT.invoice_id || '');
   if (!invoiceId) return;
@@ -2394,17 +2626,124 @@ async function svbCheckInvoiceOnReturn() {
       SVB_PAYMENT.status = 'paid';
       svbClearInvoiceId();
       svbProceedToGenerateFlow();
-    } else if (fromReturn) {
-      svbPaymentStatus = status.status || 'failed';
-      svbClearInvoiceId();
-      svbSetStep(2);
-      svbShowPaymentError('Оплата неуспішна. Генерація відео не буде виконана.');
     }
   } catch (err) {
     console.error(err);
-    if (fromReturn) {
-      svbShowPaymentError('Не вдалося перевірити оплату: ' + err.message);
+  }
+}
+
+async function svbHandlePaymentDecision(orderId, state, token) {
+  const successStates = ['paid', 'success'];
+  const failureStates = ['failed', 'failure', 'no_invoice', 'mono_error', 'no_order'];
+  const pendingStates = ['pending', 'processing'];
+  let decision = state.decision || 'pending';
+  const savedState = svbLoadState();
+  const tokenForMark = token || (savedState && savedState.public_token ? savedState.public_token : '');
+
+  const markPaid = () => {
+    svbPaymentStatus = 'paid';
+    SVB_PAYMENT.status = 'paid';
+    svbClearInvoiceId();
+    svbSaveLastPaidOrder(orderId, tokenForMark, state.paid_fingerprint || state.fingerprint_current);
+    svbProceedToGenerateFlow();
+  };
+
+  if (successStates.includes(decision)) {
+    markPaid();
+    return;
+  }
+
+  if (failureStates.includes(decision) || decision === 'not_paid') {
+    svbClearInvoiceId();
+    svbSetStep(2);
+    svbShowPaymentError('Оплата не підтверджена. Спробуйте оновити сторінку або зверніться в підтримку.');
+    console.log('[SVB PAY][SYNC]', { order_id: orderId, decision, reason: state.reason || '' });
+    return;
+  }
+
+  if (!pendingStates.includes(decision)) {
+    svbShowPaymentError('Оплата ще не підтверджена. Спробуйте ще раз.');
+    return;
+  }
+
+  svbShowPaymentProcessing('Оплата обробляється, очікуємо підтвердження…');
+  const deadline = Date.now() + 60000;
+
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      const poll = await svbSyncPaymentStatus(orderId, tokenForMark);
+      console.log('[SVB PAY][POLL]', {
+        decision: poll.decision,
+        payment_status: poll.payment_status,
+        modifiedDate: poll.modifiedDate,
+        reason: poll.reason,
+      });
+
+      if (successStates.includes(poll.decision)) {
+        state = poll;
+        markPaid();
+        return;
+      }
+
+      if (failureStates.includes(poll.decision) || poll.decision === 'not_paid') {
+        svbClearInvoiceId();
+        svbSetStep(2);
+        svbShowPaymentError('Оплата не підтверджена. Спробуйте пізніше.');
+        return;
+      }
+    } catch (pollErr) {
+      console.error(pollErr);
     }
+  }
+
+  svbSetStep(2);
+  svbShowPaymentError('Оплата ще не підтверджена. Ми очікуємо підтвердження від банку.');
+}
+
+async function svbHandlePaymentReturnFlow(params) {
+  const savedState = svbLoadState();
+  const lastMeta = svbLoadPaymentDebugMeta();
+  const lastPaid = svbLoadLastPaidOrder();
+  const sessionCookie = svbReadCookie('svb_session') || '';
+  const cookiePrefix = sessionCookie ? sessionCookie.slice(0, 8) : '';
+
+  let orderId = 0;
+  let orderSource = 'none';
+  if (lastMeta.order_id) { orderId = lastMeta.order_id; orderSource = 'sessionStorage'; }
+  else if (savedState && savedState.order_id) { orderId = savedState.order_id; orderSource = 'state'; }
+  else if (lastPaid && lastPaid.order_id) { orderId = lastPaid.order_id; orderSource = 'local_paid'; }
+
+  const token = (savedState && savedState.public_token) || (lastPaid && lastPaid.token) || '';
+
+  console.log('[SVB PAY][RETURN]', {
+    url: window.location.href,
+    last_order_id: orderId || null,
+    last_invoice_masked: lastMeta.invoice_masked,
+    has_svb_session_cookie: !!sessionCookie,
+    cookie_prefix: cookiePrefix,
+    order_source: orderSource,
+    token_prefix: token ? svbMaskToken(token) : '',
+  });
+
+  if (!orderId) {
+    svbShowPaymentProcessing('Повернення з оплати: немає order_id для синхронізації.');
+    return;
+  }
+
+  try {
+    const state = await svbSyncPaymentStatus(orderId, token);
+    console.log('[SVB PAY][SYNC]', {
+      decision: state.decision,
+      payment_status: state.payment_status,
+      paid_fingerprint: state.paid_fingerprint,
+      fingerprint_current: state.fingerprint_current,
+      reason: state.reason,
+    });
+    await svbHandlePaymentDecision(orderId, state, token);
+  } catch (err) {
+    console.error(err);
+    svbShowPaymentError('Не вдалося синхронізувати оплату: ' + err.message);
   }
 }
 
@@ -3293,6 +3632,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 SVB Init started (Final Fix)');
 
     svbApplyResumeFromQuery();
+    svbAutoResumeFromLocal();
 
     // 1. Сначала отрисовываем выбор видео
     if (typeof svbRenderUI === 'function') {
