@@ -129,6 +129,109 @@ function svb_monobank_create_invoice_request($amount_kop, $redirect_url, $refere
     return $decoded;
 }
 
+function svb_monobank_get_public_key() {
+    return get_option('svb_monobank_pubkey');
+}
+
+function svb_monobank_verify_signature($body, $signature_b64) {
+    $pubkey = svb_monobank_get_public_key();
+    if (!$pubkey || !$signature_b64) {
+        return null;
+    }
+
+    $signature = base64_decode($signature_b64);
+    if ($signature === false) {
+        return false;
+    }
+
+    $res = openssl_verify($body, $signature, $pubkey, OPENSSL_ALGO_SHA256);
+    if ($res === 1) return true;
+    if ($res === 0) return false;
+    return null;
+}
+
+function svb_handle_monobank_webhook() {
+    if (!isset($_GET['svb_monobank_webhook'])) {
+        return;
+    }
+
+    if (!defined('DONOTCACHEPAGE')) {
+        define('DONOTCACHEPAGE', true);
+    }
+
+    header('X-SVB-WEBHOOK: hit');
+
+    $raw = file_get_contents('php://input');
+    $payload = json_decode($raw, true);
+    $sig_header = isset($_SERVER['HTTP_X_SIGN']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_SIGN'])) : '';
+    $sig_present = !empty($sig_header);
+    $sig_valid = svb_monobank_verify_signature($raw, $sig_header);
+
+    if (function_exists('svb_dbg_write')) {
+        svb_dbg_write('mono.webhook.hit', [
+            'invoiceId' => $payload['invoiceId'] ?? '',
+            'status' => $payload['status'] ?? '',
+            'modifiedDate' => $payload['modifiedDate'] ?? '',
+            'sig_present' => $sig_present,
+            'sig_valid' => $sig_valid,
+            'http_code_returned' => null,
+        ]);
+    }
+
+    if ($sig_present && $sig_valid === false) {
+        status_header(400);
+        echo 'invalid signature';
+        exit;
+    }
+
+    if (!is_array($payload)) {
+        status_header(400);
+        echo 'bad payload';
+        exit;
+    }
+
+    $invoice_id = isset($payload['invoiceId']) ? sanitize_text_field($payload['invoiceId']) : '';
+    $status = isset($payload['status']) ? sanitize_text_field($payload['status']) : '';
+    $modified = isset($payload['modifiedDate']) ? sanitize_text_field($payload['modifiedDate']) : '';
+
+    $order_row = $invoice_id ? svb_get_order_by_invoice_id($invoice_id) : null;
+    if ($order_row && isset($order_row['order_id'])) {
+        $existing_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+        $current_mod = $existing_payment['modified_date'] ?? '';
+
+        if ($modified && (!$current_mod || $modified > $current_mod)) {
+            $updates = [
+                'status' => $status === 'success' ? 'success' : $status,
+                'invoice_id' => $invoice_id,
+                'modified_date' => $modified,
+            ];
+
+            if (!empty($existing_payment['fingerprint_at_invoice'])) {
+                $updates['fingerprint_at_invoice'] = $existing_payment['fingerprint_at_invoice'];
+            }
+
+            svb_update_order_payment_by_id((int) $order_row['order_id'], $updates, [
+                'current' => $order_row['fingerprint_current'] ?? '',
+            ]);
+        }
+    }
+
+    if (function_exists('svb_dbg_write')) {
+        svb_dbg_write('mono.webhook.hit', [
+            'invoiceId' => $payload['invoiceId'] ?? '',
+            'status' => $payload['status'] ?? '',
+            'modifiedDate' => $payload['modifiedDate'] ?? '',
+            'sig_present' => $sig_present,
+            'sig_valid' => $sig_valid,
+            'http_code_returned' => 200,
+        ]);
+    }
+
+    status_header(200);
+    echo 'ok';
+    exit;
+}
+
 function svb_monobank_get_invoice_status($invoice_id) {
     $token = svb_monobank_get_token();
     if (!$token) {

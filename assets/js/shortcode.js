@@ -576,10 +576,108 @@ function svbLog() {
     console.log.apply(console, args);
 }
 
+function svbLogRecover() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB REC]');
+    console.log.apply(console, args);
+}
+
 function svbError() {
     if (!svbIsDebugMode()) return;
     const args = Array.from(arguments);
     args.unshift('[SVB PAY]');
+    console.error.apply(console, args);
+}
+
+function svbMaskToken(tkn) {
+    if (!tkn) return '';
+    const token = String(tkn);
+    if (token.length <= 6) return token;
+    if (token.length <= 12) return token.slice(0, 3) + '***' + token.slice(-2);
+    return token.slice(0, 6) + '***' + token.slice(-4);
+}
+
+function svbMaskEmail(rawEmail) {
+    if (!rawEmail) return { masked: '', normalized: '' };
+    const normalized = (rawEmail || '').toString().toLowerCase().trim();
+    if (!normalized) return { masked: '', normalized: '' };
+    const parts = normalized.split('@');
+    if (parts.length !== 2) {
+        return { masked: normalized, normalized };
+    }
+
+    const user = parts[0];
+    const domain = parts[1];
+    const maskedUser = user.length <= 2 ? user : `${user.slice(0, 1)}***${user.slice(-1)}`;
+    const maskedDomain = domain.length <= 3 ? domain : `${domain.slice(0, 1)}***${domain.slice(-1)}`;
+
+    return {
+        masked: `${maskedUser}@${maskedDomain}`,
+        normalized
+    };
+}
+
+function svbReadCookie(name) {
+    try {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    } catch (e) {}
+    return '';
+}
+
+function svbMaskUrlToken(url) {
+    try {
+        const u = new URL(url, window.location.origin);
+        const token = u.searchParams.get('token');
+        if (token) {
+            u.searchParams.set('token', svbMaskToken(token));
+        }
+        return u.toString();
+    } catch (e) {
+        return url;
+    }
+}
+
+async function svbHashFileSha256(file) {
+    if (!file || typeof file.arrayBuffer !== 'function') return '';
+    try {
+        const buffer = await file.arrayBuffer();
+        const digest = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+        svbError('[SVB GATE] hash failed, falling back to name+size', e);
+        return `${file.name || 'file'}-${file.size || 0}`;
+    }
+}
+
+async function svbCollectPhotoHashes() {
+    const hashes = [];
+    const inputs = document.querySelectorAll('input[type="file"][name^="photo_"]');
+    for (const input of inputs) {
+        const file = input.files && input.files[0];
+        if (file) {
+            const hash = await svbHashFileSha256(file);
+            if (hash) {
+                hashes.push(hash);
+            }
+        }
+    }
+    return hashes;
+}
+
+function svbLogDownload() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB DL]');
+    console.log.apply(console, args);
+}
+
+function svbErrorDownload() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB DL]');
     console.error.apply(console, args);
 }
 
@@ -1739,12 +1837,185 @@ function buildSoundMap(){
   }
 }
 
-$('#svb-next-1').addEventListener('click', ()=> svbSetStep(2));
+async function svbRecoverProbe(email, name) {
+  const { masked: emailMasked, normalized: emailNormalized } = svbMaskEmail(email);
+  const noncePresent = !!(SVB_AJAX && SVB_AJAX.nonce);
+  const sessionCookie = svbReadCookie('svb_session') || '';
+  const sessionMasked = sessionCookie ? svbMaskToken(sessionCookie) : '';
+  const willCallRecover = !!(emailNormalized && noncePresent);
+
+  svbLogRecover('Step1 submit', {
+    enteredEmailMasked: emailMasked,
+    emailNormalized,
+    sessionCookieMasked: sessionMasked,
+    noncePresent,
+    willCallRecover,
+  });
+
+  if (!willCallRecover) {
+    return { action: 'continue', reason: 'missing_email_or_nonce', usedRecover: false };
+  }
+
+  const fd = new FormData();
+  fd.append('action', 'svb_order_recover');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('email', emailNormalized);
+  if (name) {
+    fd.append('name', name);
+  }
+
+  svbLogRecover('request', {
+    email_masked: emailMasked,
+    email_normalized: emailNormalized,
+    session_masked: sessionMasked,
+  });
+
+  try {
+    const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+    svbLogRecover('response status', {
+      status: res.status,
+      ok: res.ok,
+      redirected: res.redirected,
+      url: res.url,
+    });
+
+    if (!res.ok) {
+      return { action: 'continue', reason: 'http_error', status: res.status, usedRecover: true };
+    }
+
+    const data = await res.json();
+    svbLogRecover('response body', data);
+
+    if (!data || typeof data !== 'object') {
+      return { action: 'continue', reason: 'bad_json', usedRecover: true };
+    }
+
+    if (!data.success) {
+      return { action: 'continue', reason: data.data || 'recover_denied', usedRecover: true, raw: data };
+    }
+
+    const payload = data.data || {};
+    const debug = payload.debug || null;
+    const orderId = payload.order && payload.order.order_id ? payload.order.order_id : null;
+    const resumeMasked = payload.order && payload.order.resume_url ? svbMaskUrlToken(payload.order.resume_url) : '';
+
+    svbLogRecover('decision', {
+      action: payload.action,
+      found: payload.found,
+      order_id: orderId,
+      resume_url: resumeMasked,
+      reason: payload.reason || (debug && debug.reason) || '',
+    });
+
+    return Object.assign({ usedRecover: true }, payload);
+  } catch (err) {
+    svbLogRecover('recover failed', err);
+    return { action: 'continue', reason: 'fetch_error', usedRecover: true };
+  }
+}
+
+async function svbOrderRecoverRequest(email, name) {
+  return svbRecoverProbe(email, name);
+}
+
+function svbCloseRecoverModal(e, force = false) {
+  const modal = document.getElementById('svb-recover-modal');
+  if (!modal) return;
+  if (force || e.target === modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+}
+
+function svbShowRecoverModal(order) {
+  const modal = document.getElementById('svb-recover-modal');
+  if (!modal || !order) {
+    svbSetStep(2);
+    return;
+  }
+
+  const orderIdNode = modal.querySelector('[data-recover-order-id]');
+  const videoStateNode = modal.querySelector('[data-recover-video-state]');
+  const regenNode = modal.querySelector('[data-recover-regen]');
+  const openBtn = modal.querySelector('#svb-recover-open');
+
+  if (orderIdNode) orderIdNode.textContent = order.order_id || '';
+  if (videoStateNode) videoStateNode.textContent = order.has_video ? 'готове' : 'видалено';
+  if (regenNode) regenNode.textContent = order.can_regen ? 'Можна перегенерувати без нової оплати.' : 'Потрібна нова оплата для змінених параметрів.';
+  if (openBtn) openBtn.dataset.resumeUrl = order.resume_url || '';
+
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+}
+
+async function svbHandleStep1Next(e) {
+  e.preventDefault();
+  const saved = svbLoadState();
+  if (saved && saved.order_id && saved.public_token) {
+    svbSetStep(2);
+    return;
+  }
+
+  const emailInput = document.querySelector('input[name="customer_email_step1"]');
+  const nameInput = document.querySelector('input[name="customer_name"]');
+  const email = emailInput && emailInput.value ? emailInput.value.trim() : '';
+  const name = nameInput && nameInput.value ? nameInput.value.trim() : '';
+
+  if (!email) {
+    svbSetStep(2);
+    return;
+  }
+
+  try {
+    const resp = await svbRecoverProbe(email, name);
+    const reason = resp.reason || 'no_reason';
+
+    if (resp.action === 'popup' && resp.order) {
+      svbLogRecover('popup decision', { order_id: resp.order.order_id, reason });
+      svbShowRecoverModal(resp.order);
+      return;
+    }
+
+    if (resp.action === 'email_sent') {
+      svbLogRecover('email_sent decision', { reason });
+      alert('Якщо замовлення існує — ми надіслали посилання на email.');
+    } else {
+      svbLogRecover('continue decision', { reason });
+    }
+  } catch (err) {
+    svbLogRecover('recover failed', err);
+  }
+
+  svbSetStep(2);
+}
+
+function svbApplyResumeFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('svb_resume_order')) return;
+  const orderId = parseInt(params.get('order_id') || '0', 10);
+  const token = params.get('token') || '';
+  if (!orderId || !token) return;
+
+  svbUpdateState({ order_id: orderId, public_token: token });
+  try {
+    document.cookie = `svb_public_token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch (e) {}
+
+  svbLogRecover('applied resume from URL', { order_id: orderId, token: svbMaskToken(token) });
+}
+
+$('#svb-next-1').addEventListener('click', svbHandleStep1Next);
 $('#svb-back-2').addEventListener('click', ()=> svbSetStep(1));
 
 const SVB_PAYMENT_STORAGE = {
   invoice: 'svb_payment_invoice',
   step: 'svb_step2_state'
+};
+
+const SVB_PAYMENT_DEBUG_STORAGE = {
+  order: 'svb_last_order_id',
+  invoice: 'svb_last_invoice_id',
+  fingerprint: 'svb_last_fingerprint',
 };
 
 function svbGetSelectedChildCount() {
@@ -1848,6 +2119,36 @@ function svbClearInvoiceId() {
   try { localStorage.removeItem(SVB_PAYMENT_STORAGE.invoice); } catch(e) {}
 }
 
+function svbStoreLastPaymentDebug(orderId, invoiceId, fingerprint) {
+  try {
+    sessionStorage.setItem(SVB_PAYMENT_DEBUG_STORAGE.order, orderId ? String(orderId) : '');
+    sessionStorage.setItem(SVB_PAYMENT_DEBUG_STORAGE.invoice, invoiceId || '');
+    sessionStorage.setItem(SVB_PAYMENT_DEBUG_STORAGE.fingerprint, fingerprint || '');
+  } catch (e) {}
+
+  if (svbIsDebugMode()) {
+    const maskedInvoice = invoiceId ? svbMaskToken(invoiceId) : '';
+    svbLog('[SVB PAY][STORE]', {
+      order_id: orderId || null,
+      invoiceId: maskedInvoice,
+      fingerprint_prefix: fingerprint ? String(fingerprint).slice(0, 10) : '',
+    });
+  }
+}
+
+function svbReadLastPaymentDebug() {
+  let orderId = 0;
+  let invoiceId = '';
+  let fingerprint = '';
+  try {
+    orderId = parseInt(sessionStorage.getItem(SVB_PAYMENT_DEBUG_STORAGE.order) || '0', 10) || 0;
+    invoiceId = sessionStorage.getItem(SVB_PAYMENT_DEBUG_STORAGE.invoice) || '';
+    fingerprint = sessionStorage.getItem(SVB_PAYMENT_DEBUG_STORAGE.fingerprint) || '';
+  } catch (e) {}
+
+  return { order_id: orderId, invoice_id: invoiceId, fingerprint };
+}
+
 function svbIsPaymentDisabledByAdmin(logMissing = false) {
   const toggle = document.querySelector('#svb_payment_toggle');
   if (!toggle) {
@@ -1879,12 +2180,19 @@ function svbShowPaymentError(message) {
   box.style.display = 'block';
 }
 
-async function svbCreateInvoice(childCount) {
+async function svbCreateInvoice(childCount, orderContext = {}) {
   const fd = new FormData();
   fd.append('action', 'svb_monobank_create_invoice');
   fd.append('_svb_nonce', SVB_AJAX.nonce);
   fd.append('child_count', childCount);
   fd.append('return_url', SVB_PAYMENT.return_url || window.location.href);
+
+  if (orderContext && orderContext.order_id) {
+    fd.append('order_id', orderContext.order_id);
+  }
+  if (orderContext && orderContext.public_token) {
+    fd.append('token', orderContext.public_token);
+  }
 
   if (SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin()) {
     fd.append('payment_disabled', '1');
@@ -1897,7 +2205,9 @@ async function svbCreateInvoice(childCount) {
     payload: {
       child_count: childCount,
       return_url: safeReturnUrl,
-      payment_disabled: SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin() ? '1' : '0'
+      payment_disabled: SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin() ? '1' : '0',
+      order_id: orderContext && orderContext.order_id ? orderContext.order_id : null,
+      token: orderContext && orderContext.public_token ? svbMaskToken(orderContext.public_token) : null,
     }
   });
 
@@ -1916,6 +2226,67 @@ async function svbCreateInvoice(childCount) {
   }
 
   return data.data;
+}
+
+async function svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes) {
+  const fd = new FormData();
+  fd.append('action', 'svb_payment_gate');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('child_count', childCount);
+  fd.append('selected_video_id', SVB_SELECTED_VIDEO_ID);
+  fd.append('overlay_json', JSON.stringify(overlayData || {}));
+  fd.append('segments', segmentsValue || '');
+  fd.append('voice_payload', JSON.stringify(voicePayload || {}));
+  fd.append('photo_hashes', JSON.stringify(photoHashes || []));
+
+  const saved = svbLoadState();
+  if (saved && saved.order_id) {
+    fd.append('order_id', saved.order_id);
+  }
+  if (saved && saved.public_token) {
+    fd.append('token', saved.public_token);
+  }
+
+  svbLog('[SVB GATE] request', {
+    child_count: childCount,
+    selected_video_id: SVB_SELECTED_VIDEO_ID,
+    overlay_keys: Object.keys(overlayData || {}),
+    has_segments: !!segmentsValue,
+    photo_hashes: (photoHashes || []).length,
+    order_id: saved && saved.order_id ? saved.order_id : null,
+    token: saved && saved.public_token ? svbMaskToken(saved.public_token) : null,
+  });
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    svbError('[SVB GATE] network error', { status: res.status });
+    throw new Error('Сервер помилки оплати');
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    svbError('[SVB GATE] error response', data);
+    throw new Error(data.data || 'Оплата недоступна');
+  }
+
+  const payload = data.data || {};
+  svbUpdateState({
+    order_id: payload.order_id,
+    public_token: payload.public_token,
+  });
+
+  svbLog('[SVB GATE] response', {
+    order_id: payload.order_id,
+    public_token: payload.public_token ? svbMaskToken(payload.public_token) : null,
+    fingerprint_current: payload.fingerprint_current,
+    paid_fingerprint: payload.paid_fingerprint,
+    payment_status: payload.payment_status,
+    is_paid_for_current: payload.is_paid_for_current,
+    reason: payload.reason,
+    storage: payload.storage,
+  });
+
+  return payload;
 }
 
 async function svbRequestInvoiceStatus(invoiceId) {
@@ -1937,6 +2308,36 @@ async function svbRequestInvoiceStatus(invoiceId) {
   return data.data;
 }
 
+async function svbDebugPaymentStatus(orderId, allowRemote = false) {
+  const fd = new FormData();
+  fd.append('action', 'svb_monobank_debug_status');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('order_id', orderId);
+  if (allowRemote) {
+    fd.append('allow_remote', '1');
+  }
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    throw new Error('debug_status_http_' + res.status);
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'debug_status_failed');
+  }
+
+  const payload = data.data || {};
+
+  if (svbIsDebugMode()) {
+    svbLog('[SVB PAY][SYNC] server_before', payload.server || {});
+    svbLog('[SVB PAY][SYNC] mono_status', payload.mono || {});
+    svbLog('[SVB PAY][SYNC] server_after', payload.server_after || {});
+  }
+
+  return payload;
+}
+
 function svbProceedToGenerateFlow() {
   svbHidePaymentError();
   svbPersistStep2State();
@@ -1947,6 +2348,7 @@ function svbProceedToGenerateFlow() {
 async function svbHandleStep2Next() {
   svbHidePaymentError();
   svbPersistStep2State();
+  svbSerializeSegmentsToField();
   const childCount = svbGetSelectedChildCount();
   const paymentEnabled = !!SVB_PAYMENT.enabled;
   const isAdmin = !!SVB_PAYMENT.is_admin;
@@ -1960,6 +2362,20 @@ async function svbHandleStep2Next() {
   const requirePayment = isAdmin ? toggleChecked : true;
 
   const savedState = svbLoadState();
+  let overlayData = {};
+  let segmentsValue = '';
+  let voicePayload = {};
+
+  try {
+    overlayData = svbCollectOverlayData();
+    const segField = document.getElementById('svb_segments');
+    segmentsValue = segField && segField.value ? segField.value : '';
+    buildSoundMap();
+    voicePayload = Object.assign({}, SVB_SELECTED);
+  } catch (collectErr) {
+    svbError('[SVB GATE] collect failed', collectErr);
+  }
+
   svbLog('[SVB STEP2] Next click', {
     payRequired: requirePayment,
     paymentEnabled,
@@ -1968,7 +2384,8 @@ async function svbHandleStep2Next() {
     adminToggleChecked: toggleChecked,
     child_count: childCount,
     selected_video_id: SVB_SELECTED_VIDEO_ID,
-    formData: savedState.formData || {}
+    formData: savedState.formData || {},
+    overlayKeys: Object.keys(overlayData || {}),
   });
 
   if (!requirePayment) {
@@ -1977,16 +2394,28 @@ async function svbHandleStep2Next() {
     return;
   }
 
-  if (svbPaymentStatus === 'paid') {
-    svbLog('[SVB STEP2] payment already marked paid, proceeding to generate');
-    svbProceedToGenerateFlow();
-    return;
-  }
-
   try {
+    const photoHashes = await svbCollectPhotoHashes();
+    const gate = await svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes);
+    svbPaymentStatus = gate.is_paid_for_current ? 'paid' : 'unpaid';
+
+    svbLog('[SVB STEP2] gate decision', {
+      order_id: gate.order_id,
+      fingerprint_current: gate.fingerprint_current,
+      paid_fingerprint: gate.paid_fingerprint,
+      payment_status: gate.payment_status,
+      decision: gate.reason,
+    });
+
+    if (gate.is_paid_for_current) {
+      svbLog('[SVB STEP2] gate says paid_match, proceeding to generate');
+      svbProceedToGenerateFlow();
+      return;
+    }
+
     svbPaymentStatus = 'pending';
     svbLog('[SVB STEP2] payRequired=true → creating invoice');
-    const invoice = await svbCreateInvoice(childCount);
+    const invoice = await svbCreateInvoice(childCount, gate);
 
     if (invoice && invoice.bypass) {
       svbLog('[SVB STEP2] invoice bypass received, going to step3');
@@ -2000,6 +2429,7 @@ async function svbHandleStep2Next() {
     }
 
     if (invoice && invoice.pageUrl) {
+      svbStoreLastPaymentDebug(gate.order_id, invoice.invoiceId || '', gate.fingerprint_current || '');
       svbLog('[SVB PAY] redirecting to pageUrl', { pageUrl: invoice.pageUrl });
       window.location = invoice.pageUrl;
       return;
@@ -2018,35 +2448,103 @@ async function svbHandleStep2Next() {
 
 async function svbCheckInvoiceOnReturn() {
   const params = new URLSearchParams(window.location.search);
-  const fromReturn = params.has('svb_payment_return');
-  if (!fromReturn && svbPaymentStatus === 'paid') return;
+  const isReturn = params.has('svb_payment_return') || params.has('svb_payment_success') || params.has('svb_payment_fail');
+  if (!isReturn) return;
 
-  const invoiceId = params.get('invoiceId') || svbGetStoredInvoiceId() || (SVB_PAYMENT.invoice_id || '');
-  if (!invoiceId) return;
+  const lastMeta = svbReadLastPaymentDebug();
+  const sessionCookie = svbReadCookie('svb_session');
 
-  try {
-    const status = await svbRequestInvoiceStatus(invoiceId);
-    if (status.status === 'paid') {
+  if (svbIsDebugMode()) {
+    svbLog('[SVB PAY][RETURN]', {
+      url: window.location.href,
+      last_order_id: lastMeta.order_id || null,
+      last_invoice_id: lastMeta.invoice_id ? svbMaskToken(lastMeta.invoice_id) : '',
+      hasCookie_svb_session: !!sessionCookie,
+      cookie_prefix: sessionCookie ? sessionCookie.slice(0, 8) : '',
+    });
+  }
+
+  if (!lastMeta.order_id) {
+    return;
+  }
+
+  const handleSyncResult = (syncPayload) => {
+    if (!syncPayload || !syncPayload.server_after) return false;
+    const status = syncPayload.server_after.payment_status || '';
+    if (status === 'success') {
       svbPaymentStatus = 'paid';
       SVB_PAYMENT.status = 'paid';
       svbClearInvoiceId();
       svbProceedToGenerateFlow();
-    } else if (fromReturn) {
-      svbPaymentStatus = status.status || 'failed';
-      svbClearInvoiceId();
-      svbSetStep(2);
-      svbShowPaymentError('Оплата неуспішна. Генерація відео не буде виконана.');
+      return true;
+    }
+    return false;
+  };
+
+  let initialSync = null;
+  try {
+    initialSync = await svbDebugPaymentStatus(lastMeta.order_id, true);
+    if (initialSync && initialSync.mono && initialSync.mono.queried) {
+      svbLastMonoRemoteTs = Date.now();
     }
   } catch (err) {
-    console.error(err);
-    if (fromReturn) {
-      svbShowPaymentError('Не вдалося перевірити оплату: ' + err.message);
+    if (svbIsDebugMode()) {
+      console.error('[SVB PAY][RETURN] debug sync failed', err);
     }
   }
+
+  if (handleSyncResult(initialSync)) {
+    return;
+  }
+
+  svbShowPaymentError('Очікуємо підтвердження оплати...');
+
+  if (svbPaymentPollHandle) {
+    clearInterval(svbPaymentPollHandle);
+  }
+
+  let attempts = 0;
+  svbPaymentPollHandle = setInterval(async () => {
+    attempts++;
+    const allowRemote = (Date.now() - svbLastMonoRemoteTs) > 10000;
+    if (allowRemote) {
+      svbLastMonoRemoteTs = Date.now();
+    }
+
+    try {
+      const syncPayload = await svbDebugPaymentStatus(lastMeta.order_id, allowRemote);
+      if (svbIsDebugMode()) {
+        svbLog('[SVB PAY][POLL]', {
+          attempt: attempts,
+          allowRemote,
+          reason: syncPayload ? syncPayload.reason : '',
+          payment_status: syncPayload && syncPayload.server_after ? syncPayload.server_after.payment_status : '',
+        });
+      }
+
+      if (syncPayload && syncPayload.mono && syncPayload.mono.queried) {
+        svbLastMonoRemoteTs = Date.now();
+      }
+
+      if (handleSyncResult(syncPayload)) {
+        clearInterval(svbPaymentPollHandle);
+      }
+    } catch (err) {
+      if (svbIsDebugMode()) {
+        console.error('[SVB PAY][POLL] failed', err);
+      }
+    }
+
+    if (attempts >= 30) {
+      clearInterval(svbPaymentPollHandle);
+    }
+  }, 2000);
 }
 
 let svbJobToken = null, svbVideoURL = null, svbGenerating = false;
 let svbPollInterval = null;
+let svbPaymentPollHandle = null;
+let svbLastMonoRemoteTs = 0;
 const next2Btn = document.getElementById('svb-next-2');
 if (next2Btn) {
   next2Btn.addEventListener('click', svbHandleStep2Next);
@@ -2349,18 +2847,114 @@ function svbPollProgress(token) {
       clearInterval(svbPollInterval);
       svbHandleError({msg: 'Помилка мережі під час перевірки статусу.', log: err.message});
     }
-  }, 3000); 
+  }, 3000);
 }
-  function svbHandleSuccess(url) {
-    if (!url) {
-      svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
-      return;
+
+// Diagnostics: check download endpoint response before navigating (open browser Console to inspect status, content-type, final URL, headers).
+async function svbProbeDownload(url) {
+    if (!svbIsDebugMode()) {
+        return { okForVideo: true, reason: 'debug_off' };
     }
+
+    const maskedUrl = svbMaskUrlToken(url || '');
+    svbLogDownload('Probe start', { requestedUrl: maskedUrl });
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            redirect: 'follow',
+            headers: {
+                Range: 'bytes=0-512'
+            }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const contentDisposition = response.headers.get('content-disposition') || '';
+        const contentLength = response.headers.get('content-length') || '';
+        const dlHeader = response.headers.get('x-svb-download') || '';
+        const dlReason = response.headers.get('x-svb-download-reason') || '';
+
+        svbLogDownload('Probe response', {
+            requestedUrl: maskedUrl,
+            status: response.status,
+            ok: response.ok,
+            redirected: response.redirected,
+            finalUrl: svbMaskUrlToken(response.url || ''),
+            headers: {
+                'content-type': contentType,
+                'content-disposition': contentDisposition,
+                'content-length': contentLength,
+                'x-svb-download': dlHeader,
+                'x-svb-download-reason': dlReason
+            }
+        });
+
+        if (contentType.toLowerCase().startsWith('text/')) {
+            const body = await response.text();
+            svbLogDownload('Probe body (first 800 chars)', body.slice(0, 800));
+            return { okForVideo: false, reason: 'content-type ' + contentType };
+        }
+
+        if (!contentType.toLowerCase().startsWith('video/')) {
+            return { okForVideo: false, reason: 'content-type ' + (contentType || 'unknown') };
+        }
+
+        if (!(response.ok || response.status === 206)) {
+            return { okForVideo: false, reason: 'status ' + response.status };
+        }
+
+        return { okForVideo: true, reason: 'ok' };
+    } catch (err) {
+        svbErrorDownload('Probe failed', err);
+        return { okForVideo: false, reason: err && err.message ? err.message : 'probe_failed' };
+    }
+}
+
+async function svbNavigateToDownload(url) {
+    if (!url) return;
+    if (!svbIsDebugMode()) {
+        window.location.href = url;
+        return;
+    }
+
+    const probe = await svbProbeDownload(url);
+    if (probe.okForVideo) {
+        window.location.href = url;
+    } else {
+        alert('Download failed: ' + (probe.reason || 'unknown'));
+    }
+}
+
+function svbAttachDownloadDebug(container, url) {
+    if (!container || !url) return;
+    const anchors = container.querySelectorAll('.svb-download-link');
+    anchors.forEach(a => {
+        a.addEventListener('click', async (e) => {
+            if (!svbIsDebugMode()) return;
+            e.preventDefault();
+            await svbNavigateToDownload(url);
+        });
+    });
+}
+
+function svbHandleSuccessInternal(url) {
+    if (!url) {
+        svbHandleError({ msg: 'Не вдалося отримати посилання на відео.' });
+        return;
+    }
+
+    const maskedUrl = svbMaskUrlToken(url);
+    svbLogDownload('Download URL issued', maskedUrl);
     svbGenerating = false;
     svbToggleVideoOverlay(false);
     svbVideoURL = url;
     svbUpdateVideoPercent(100);
-    $('#svb-status').innerHTML = `✅ Відео зібрано. <a href="${url}" download>Скачати</a>`;
+    const statusEl = $('#svb-status');
+    if (statusEl) {
+        statusEl.innerHTML = `✅ Відео зібрано. <a class="svb-download-link" href="${url}" download>Скачати</a>`;
+        svbAttachDownloadDebug(statusEl, url);
+    }
     const res = $('#svb-result');
     if (res) {
       const video = document.createElement('video');
@@ -2371,33 +2965,22 @@ function svbPollProgress(token) {
 
       const meta = document.createElement('div');
       meta.className = 'svb-video-result-meta';
-      meta.innerHTML = `<b>Готово!</b> <a href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
+      meta.innerHTML = `<b>Готово!</b> <a class="svb-download-link" href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
 
       res.innerHTML = '';
       res.appendChild(video);
       res.appendChild(meta);
       res.style.display = 'block';
+      svbAttachDownloadDebug(res, url);
     }
-  $('#svb-finish').disabled = false;
-  }
+    if (svbIsDebugMode()) {
+        svbProbeDownload(url);
+    }
+    $('#svb-finish').disabled = false;
+}
 function svbHandleSuccess(url) {
-  svbGenerating = false;
-  svbToggleVideoOverlay(false);
-  svbVideoURL = url;
-  svbUpdateVideoPercent(100);
-
-  // без ссылки
-  document.getElementById('svb-status').textContent = '✅ Відео зібрано';
-
-  // просто заполняем превью видео
-  svbRenderResultVideo(url);
-
-  const finishBtn = document.getElementById('svb-finish');
-  if (finishBtn) finishBtn.disabled = false;
-
-  svbClearInvoiceId();
-  svbClearState();
-  svbPaymentStatus = 'paid';
+    // Wrapper to keep legacy references working while ensuring download probes/logs.
+    svbHandleSuccessInternal(url);
 }
 
 
@@ -2844,9 +3427,42 @@ function svbCloseNamePopup(e, force = false) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 SVB Init started (Final Fix)');
 
+    svbApplyResumeFromQuery();
+
     // 1. Сначала отрисовываем выбор видео
     if (typeof svbRenderUI === 'function') {
         svbRenderUI();
+    }
+
+    const recoverModal = document.getElementById('svb-recover-modal');
+    if (recoverModal) {
+        recoverModal.addEventListener('click', (ev) => svbCloseRecoverModal(ev));
+        const openBtn = document.getElementById('svb-recover-open');
+        const newBtn = document.getElementById('svb-recover-new');
+        if (openBtn) {
+            openBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const resumeUrl = openBtn.dataset.resumeUrl || '';
+                if (resumeUrl) {
+                    try {
+                        const u = new URL(resumeUrl, window.location.origin);
+                        const orderId = parseInt(u.searchParams.get('order_id') || '0', 10);
+                        const token = u.searchParams.get('token') || '';
+                        if (orderId && token) {
+                            svbUpdateState({ order_id: orderId, public_token: token });
+                        }
+                    } catch (e) {}
+                    window.location = resumeUrl;
+                }
+            });
+        }
+        if (newBtn) {
+            newBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                svbCloseRecoverModal(ev, true);
+                svbSetStep(2);
+            });
+        }
     }
 
     // 2. ВАЖНО: Сначала биндим переключатель детей, но НЕ вызываем обновление списков внутри него сразу
