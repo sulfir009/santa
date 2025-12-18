@@ -2055,7 +2055,12 @@ async function svbHandleStep1Next(e) {
 
 function svbApplyResumeFromQuery() {
   const params = new URLSearchParams(window.location.search);
+  
+  // Если в URL есть svb_payment_return, игнорируем параметры восстановления,
+  // так как они могут принадлежать старому заказу в кэше браузера
+  if (params.has('svb_payment_return')) return;
   if (!params.has('svb_resume_order')) return;
+
   const orderId = parseInt(params.get('order_id') || '0', 10);
   const token = params.get('token') || '';
   if (!orderId || !token) return;
@@ -2966,7 +2971,14 @@ async function svbHandlePaymentReturnFlow(params) {
       fingerprint_current: state.fingerprint_current,
       reason: state.reason,
     });
-    await svbHandlePaymentDecision(orderId, state, token);
+await svbHandlePaymentDecision(orderId, state, token);
+
+    // Очищаем URL от параметров оплаты и старых ID, чтобы кнопка «Скачать» 
+    // не вызывала перезагрузку страницы с неверными данными
+    if (state.decision === 'success' || state.decision === 'paid') {
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
   } catch (err) {
     console.error(err);
     svbShowPaymentError('Не вдалося синхронізувати оплату: ' + err.message);

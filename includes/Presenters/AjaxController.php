@@ -363,6 +363,15 @@ function svb_order_resume_info() {
         'fingerprint_current' => $fingerprint_current,
         'paid_fingerprint' => $paid_fingerprint,
         'reason' => 'popup_allowed',
+        // Добавляем данные для заполнения Крока 2
+        'form_data' => [
+            'child_count' => (int)($order_row['child_count'] ?? 1),
+            'selected_video_id' => $order_row['selected_video_id'] ?? 'video1',
+            'voice' => json_decode($order_row['voice'] ?? '[]', true),
+            'overlay_json' => json_decode($order_row['overlay_json'] ?? '[]', true),
+            'segments' => json_decode($order_row['segments'] ?? '[]', true),
+            'photos' => json_decode($order_row['photos'] ?? '[]', true),
+        ]
     ];
 
     $debug['chosen_action'] = 'popup';

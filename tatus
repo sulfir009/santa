@@ -1,0 +1,10 @@
+[33m8d5fd07[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Revert "Merge pull request #48 from sulfir009/codex/implement-order-model-and-payment-integration-7b449g"
+[33mf6faa7e[m Merge pull request #48 from sulfir009/codex/implement-order-model-and-payment-integration-7b449g
+[33m2294247[m[33m ([m[1;31morigin/codex/implement-order-model-and-payment-integration-7b449g[m[33m)[m Merge branch 'main' into codex/implement-order-model-and-payment-integration-7b449g
+[33md960c9d[m Return mp4 URLs and guard video rendering
+[33m8d28d58[m Merge pull request #47 from sulfir009/codex/implement-order-model-and-payment-integration-rgjxft
+[33ma030121[m[33m ([m[1;31morigin/codex/implement-order-model-and-payment-integration-rgjxft[m[33m)[m Improve generation error handling and ffmpeg reliability
+[33m204ff93[m Merge pull request #46 from sulfir009/codex/implement-order-model-and-payment-integration
+[33mb031f09[m[33m ([m[1;31morigin/codex/implement-order-model-and-payment-integration[m[33m)[m Add persistent orders and result cleanup
+[33m83eea65[m Merge pull request #45 from sulfir009/codex/fix-multiple-issues-in-santa-video-builder-l27115
+[33m33eb753[m[33m ([m[1;31morigin/codex/fix-multiple-issues-in-santa-video-builder-l27115[m[33m)[m Merge branch 'main' into codex/fix-multiple-issues-in-santa-video-builder-l27115
