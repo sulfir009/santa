@@ -234,6 +234,8 @@ add_action('wp_ajax_svb_order_recover', 'svb_order_recover');
 add_action('wp_ajax_nopriv_svb_order_recover', 'svb_order_recover');
 add_action('wp_ajax_svb_payment_gate', 'svb_payment_gate');
 add_action('wp_ajax_nopriv_svb_payment_gate', 'svb_payment_gate');
+add_action('wp_ajax_svb_pay_debug_state', 'svb_pay_debug_state');
+add_action('wp_ajax_nopriv_svb_pay_debug_state', 'svb_pay_debug_state');
 add_action('wp_ajax_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
 add_action('wp_ajax_nopriv_svb_monobank_create_invoice', 'svb_monobank_create_invoice');
 add_action('wp_ajax_svb_monobank_check_status', 'svb_monobank_check_status');
