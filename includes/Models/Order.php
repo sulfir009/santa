@@ -457,7 +457,7 @@ function svb_init_user_order() {
             $session_val = $fallback ? bin2hex(substr($fallback, 0, 8)) : uniqid('svb', true);
         }
 
-        svb_set_lax_cookie($session_cookie, $session_val, time() + MONTH_IN_SECONDS, false);
+        svb_set_lax_cookie($session_cookie, $session_val, time() + MONTH_IN_SECONDS, true);
         $_COOKIE[$session_cookie] = $session_val;
     }
 

@@ -569,11 +569,17 @@ function svbIsDebugMode() {
     }
 }
 
-function svbLog() {
+function svbLog(tag, obj) {
     if (!svbIsDebugMode()) return;
-    const args = Array.from(arguments);
-    args.unshift('[SVB PAY]');
-    console.log.apply(console, args);
+    if (typeof tag === 'string' && tag.startsWith('[SVB')) {
+        console.log(tag, obj);
+        return;
+    }
+    if (typeof obj === 'undefined') {
+        console.log(`[SVB PAY][${tag}]`);
+        return;
+    }
+    console.log(`[SVB PAY][${tag}]`, obj);
 }
 
 function svbLogRecover() {
@@ -2360,6 +2366,9 @@ async function svbPendingNewInvoice() {
   const childCount = ctx.child_count || svbGetSelectedChildCount();
 
   try {
+    if (orderCtx.order_id && ctx.invoice_id) {
+      await svbInvalidateInvoice(orderCtx.order_id, orderCtx.public_token || '');
+    }
     const invoice = await svbCreateInvoice(childCount, orderCtx, true);
     if (invoice && invoice.invoiceId) {
       svbStoreInvoiceId(invoice.invoiceId);
@@ -2517,6 +2526,29 @@ async function svbCreateInvoice(childCount, orderContext = {}, forceNew = false)
   }
 
   return data.data;
+}
+
+async function svbInvalidateInvoice(orderId, token) {
+  const fd = new FormData();
+  fd.append('action', 'svb_monobank_invalidate_invoice');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('order_id', orderId);
+  if (token) {
+    fd.append('token', token);
+  }
+
+  svbLog('INVALIDATE request', {
+    order_id: orderId,
+    token_prefix: token ? svbMaskToken(token) : '',
+  });
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+  const data = await res.json();
+  svbLog('INVALIDATE response', data);
+  if (!data.success) {
+    throw new Error(data.data || 'Invalidate failed');
+  }
+  return data.data || {};
 }
 
 async function svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes) {
@@ -3341,7 +3373,16 @@ function svbAttachDownloadDebug(container, url) {
     const anchors = container.querySelectorAll('.svb-download-link');
     anchors.forEach(a => {
         a.addEventListener('click', async (e) => {
-            if (!svbIsDebugMode()) return;
+            const maskedUrl = svbMaskUrlToken(url);
+            const payload = {
+              action: 'clicked_open_download',
+              url: maskedUrl,
+              preventedDefault: true,
+              navigationAttempted: true,
+            };
+            if (svbIsDebugMode()) {
+              svbLogDownload('Download click', payload);
+            }
             e.preventDefault();
             await svbNavigateToDownload(url);
         });

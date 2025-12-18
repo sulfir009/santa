@@ -1627,14 +1627,20 @@ function svb_debug_session() {
 
     $cookie_val = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
     $forwarded_proto = isset($_SERVER['HTTP_X_FORWARDED_PROTO']) ? sanitize_text_field($_SERVER['HTTP_X_FORWARDED_PROTO']) : '';
+    $debug_mode = (defined('SVB_DEBUG') && SVB_DEBUG) || current_user_can('manage_options');
 
-    wp_send_json_success([
+    $payload = [
         'has_cookie' => !empty($cookie_val),
         'cookie_prefix' => $cookie_val ? substr($cookie_val, 0, 8) : '',
-        'is_ssl_detected' => svb_detect_ssl(),
-        'forwarded_proto' => $forwarded_proto,
-        'headers_sent' => headers_sent(),
-    ]);
+    ];
+
+    if ($debug_mode) {
+        $payload['is_ssl_detected'] = svb_detect_ssl();
+        $payload['forwarded_proto'] = $forwarded_proto;
+        $payload['headers_sent'] = headers_sent();
+    }
+
+    wp_send_json_success($payload);
 }
 
 function svb_mask_page_url($url) {
@@ -2104,15 +2110,28 @@ function svb_monobank_create_invoice() {
 
     if (!$force_new && in_array($normalized_payment_status, ['pending', 'processing'], true) && !empty($current_payment['invoice_id'])) {
         $page_url = $current_payment['invoice_page_url'] ?? '';
+        $created_ts = isset($current_payment['invoice_created_at']) ? (int) $current_payment['invoice_created_at'] : 0;
+        $is_recent = $created_ts > 0 ? ((time() - $created_ts) < 1800) : false;
 
-        wp_send_json_success([
-            'pageUrl' => $page_url,
-            'pageUrl_masked' => svb_mask_page_url($page_url),
-            'invoiceId' => $current_payment['invoice_id'],
-            'invoice_masked' => svb_monobank_mask_invoice($current_payment['invoice_id']),
-            'amount' => $current_payment['amount'] ?? 0,
-            'reused' => true,
-        ]);
+        if ($page_url && $is_recent) {
+            wp_send_json_success([
+                'pageUrl' => $page_url,
+                'pageUrl_masked' => svb_mask_page_url($page_url),
+                'invoiceId' => $current_payment['invoice_id'],
+                'invoice_masked' => svb_monobank_mask_invoice($current_payment['invoice_id']),
+                'amount' => $current_payment['amount'] ?? 0,
+                'reused' => true,
+            ]);
+        }
+
+        if (!$force_new && $current_payment['invoice_id']) {
+            $invalidate = svb_monobank_invalidate_invoice_request($current_payment['invoice_id']);
+            if (is_wp_error($invalidate)) {
+                svb_pay_log('invoice.invalidate_failed', ['error' => $invalidate->get_error_message()], $order_data);
+            } else {
+                svb_pay_log('invoice.invalidated', ['invoice_id' => svb_monobank_mask_invoice($current_payment['invoice_id'])], $order_data);
+            }
+        }
     }
 
     svb_pay_log('invoice.start', [
@@ -2203,6 +2222,7 @@ function svb_monobank_create_invoice() {
         'amount' => $amount,
         'child_count' => $child_count,
         'modifiedDate' => 0,
+        'invoice_created_at' => time(),
     ];
 
     svb_update_user_payment_state($uid, $payment_updates);
@@ -2264,5 +2284,66 @@ function svb_monobank_check_status() {
     wp_send_json_success([
         'status' => $normalized_status,
         'invoiceId' => $invoice_id,
+    ]);
+}
+
+function svb_monobank_invalidate_invoice() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+    $token_req = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+    $session_id = svb_orders_get_session_id();
+
+    if (!$order_id) {
+        wp_send_json_error('Missing order_id');
+    }
+
+    $order_row = svb_get_order_by_id($order_id);
+    if (!$order_row) {
+        wp_send_json_error('Order not found');
+    }
+
+    $authorized = false;
+    if ($token_req && !empty($order_row['token_hash']) && hash_equals($order_row['token_hash'], hash('sha256', $token_req))) {
+        $authorized = true;
+    }
+
+    if (!$authorized && $session_id && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $session_id)) {
+        $authorized = true;
+    }
+
+    if (!$authorized && current_user_can('manage_options')) {
+        $authorized = true;
+    }
+
+    if (!$authorized) {
+        wp_send_json_error('Unauthorized');
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $invoice_id = $payment['invoice_id'] ?? '';
+    if (!$invoice_id) {
+        wp_send_json_error('Invoice not found');
+    }
+
+    $invalidate = svb_monobank_invalidate_invoice_request($invoice_id);
+    if (is_wp_error($invalidate)) {
+        wp_send_json_error($invalidate->get_error_message());
+    }
+
+    svb_update_order_payment_by_order_id($order_id, [
+        'status' => 'canceled',
+        'invoice_id' => '',
+        'invoice_page_url' => '',
+        'invoice_fingerprint' => '',
+        'modifiedDate' => isset($payment['modifiedDate']) ? $payment['modifiedDate'] : 0,
+        'invoice_invalidated_at' => time(),
+    ]);
+
+    wp_send_json_success([
+        'invalidated' => true,
+        'invoice_masked' => svb_monobank_mask_invoice($invoice_id),
     ]);
 }
