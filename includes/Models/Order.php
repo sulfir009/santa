@@ -13,6 +13,23 @@ function svb_get_orders_dir() {
     return $dir;
 }
 
+function svb_set_lax_cookie($name, $value, $expires, $http_only = true) {
+    if (headers_sent()) {
+        return;
+    }
+
+    $options = [
+        'expires' => (int) $expires,
+        'path' => '/',
+        'domain' => COOKIE_DOMAIN,
+        'secure' => is_ssl(),
+        'httponly' => (bool) $http_only,
+        'samesite' => 'Lax',
+    ];
+
+    setcookie($name, $value, $options);
+}
+
 function svb_get_orders_upload_dir($order_id) {
     $base = trailingslashit(svb_get_orders_dir()) . 'orders/' . absint($order_id);
     $photos = $base . '/photos';
@@ -408,9 +425,7 @@ function svb_create_new_order_for_session($uid, array $base_data = []) {
         return new WP_Error('svb_order_not_readable', 'Order storage error', ['db_error' => $wpdb->last_error]);
     }
 
-    if (!headers_sent()) {
-        setcookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
-    }
+    svb_set_lax_cookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, true);
     $_COOKIE['svb_public_token'] = $token_data['token'];
 
     $row['public_token'] = $token_data['token'];
@@ -426,9 +441,7 @@ function svb_init_user_order() {
 
     if (empty($_COOKIE[$session_cookie])) {
         $session_val = wp_generate_password(24, false, false);
-        if (!headers_sent()) {
-            setcookie($session_cookie, $session_val, time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
-        }
+        svb_set_lax_cookie($session_cookie, $session_val, time() + MONTH_IN_SECONDS, true);
         $_COOKIE[$session_cookie] = $session_val;
     }
 
@@ -470,8 +483,8 @@ function svb_init_user_order() {
     }
 
     // 4. Устанавливаем куки
-    if ($need_set_cookie && !headers_sent()) {
-        setcookie($cookie_name, $uid, time() + (86400 * 30), '/', COOKIE_DOMAIN);
+    if ($need_set_cookie) {
+        svb_set_lax_cookie($cookie_name, $uid, time() + (86400 * 30), false);
         $_COOKIE[$cookie_name] = $uid;
     }
 
@@ -750,9 +763,7 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
         return null;
     }
 
-    if (!headers_sent()) {
-        setcookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, '/', COOKIE_DOMAIN, false, true);
-    }
+    svb_set_lax_cookie('svb_public_token', $token_data['token'], time() + MONTH_IN_SECONDS, true);
     $_COOKIE['svb_public_token'] = $token_data['token'];
 
     $row['public_token'] = $token_data['token'];
