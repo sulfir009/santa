@@ -579,7 +579,7 @@ function svbLog() {
 function svbLogRecover() {
     if (!svbIsDebugMode()) return;
     const args = Array.from(arguments);
-    args.unshift('[SVB RECOVER]');
+    args.unshift('[SVB REC]');
     console.log.apply(console, args);
 }
 
@@ -596,6 +596,35 @@ function svbMaskToken(tkn) {
     if (token.length <= 6) return token;
     if (token.length <= 12) return token.slice(0, 3) + '***' + token.slice(-2);
     return token.slice(0, 6) + '***' + token.slice(-4);
+}
+
+function svbMaskEmail(rawEmail) {
+    if (!rawEmail) return { masked: '', normalized: '' };
+    const normalized = (rawEmail || '').toString().toLowerCase().trim();
+    if (!normalized) return { masked: '', normalized: '' };
+    const parts = normalized.split('@');
+    if (parts.length !== 2) {
+        return { masked: normalized, normalized };
+    }
+
+    const user = parts[0];
+    const domain = parts[1];
+    const maskedUser = user.length <= 2 ? user : `${user.slice(0, 1)}***${user.slice(-1)}`;
+    const maskedDomain = domain.length <= 3 ? domain : `${domain.slice(0, 1)}***${domain.slice(-1)}`;
+
+    return {
+        masked: `${maskedUser}@${maskedDomain}`,
+        normalized
+    };
+}
+
+function svbReadCookie(name) {
+    try {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    } catch (e) {}
+    return '';
 }
 
 function svbMaskUrlToken(url) {
@@ -1808,30 +1837,85 @@ function buildSoundMap(){
   }
 }
 
-async function svbOrderRecoverRequest(email, name) {
+async function svbRecoverProbe(email, name) {
+  const { masked: emailMasked, normalized: emailNormalized } = svbMaskEmail(email);
+  const noncePresent = !!(SVB_AJAX && SVB_AJAX.nonce);
+  const sessionCookie = svbReadCookie('svb_session') || '';
+  const sessionMasked = sessionCookie ? svbMaskToken(sessionCookie) : '';
+  const willCallRecover = !!(emailNormalized && noncePresent);
+
+  svbLogRecover('Step1 submit', {
+    enteredEmailMasked: emailMasked,
+    emailNormalized,
+    sessionCookieMasked: sessionMasked,
+    noncePresent,
+    willCallRecover,
+  });
+
+  if (!willCallRecover) {
+    return { action: 'continue', reason: 'missing_email_or_nonce', usedRecover: false };
+  }
+
   const fd = new FormData();
   fd.append('action', 'svb_order_recover');
   fd.append('_svb_nonce', SVB_AJAX.nonce);
-  fd.append('email', email);
+  fd.append('email', emailNormalized);
   if (name) {
     fd.append('name', name);
   }
 
-  svbLogRecover('request', { email_masked: email ? email.replace(/(.{2}).+(@.+)/, '$1***$2') : '', name });
+  svbLogRecover('request', {
+    email_masked: emailMasked,
+    email_normalized: emailNormalized,
+    session_masked: sessionMasked,
+  });
 
-  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
-  if (!res.ok) {
-    throw new Error('Recover request failed');
+  try {
+    const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+    svbLogRecover('response status', {
+      status: res.status,
+      ok: res.ok,
+      redirected: res.redirected,
+      url: res.url,
+    });
+
+    if (!res.ok) {
+      return { action: 'continue', reason: 'http_error', status: res.status, usedRecover: true };
+    }
+
+    const data = await res.json();
+    svbLogRecover('response body', data);
+
+    if (!data || typeof data !== 'object') {
+      return { action: 'continue', reason: 'bad_json', usedRecover: true };
+    }
+
+    if (!data.success) {
+      return { action: 'continue', reason: data.data || 'recover_denied', usedRecover: true, raw: data };
+    }
+
+    const payload = data.data || {};
+    const debug = payload.debug || null;
+    const orderId = payload.order && payload.order.order_id ? payload.order.order_id : null;
+    const resumeMasked = payload.order && payload.order.resume_url ? svbMaskUrlToken(payload.order.resume_url) : '';
+
+    svbLogRecover('decision', {
+      action: payload.action,
+      found: payload.found,
+      order_id: orderId,
+      resume_url: resumeMasked,
+      reason: payload.reason || (debug && debug.reason) || '',
+    });
+
+    return Object.assign({ usedRecover: true }, payload);
+  } catch (err) {
+    svbLogRecover('recover failed', err);
+    return { action: 'continue', reason: 'fetch_error', usedRecover: true };
   }
+}
 
-  const data = await res.json();
-  if (!data.success) {
-    throw new Error(data.data || 'Recover denied');
-  }
-
-  const payload = data.data || {};
-  svbLogRecover('response', payload);
-  return payload;
+async function svbOrderRecoverRequest(email, name) {
+  return svbRecoverProbe(email, name);
 }
 
 function svbCloseRecoverModal(e, force = false) {
@@ -1883,14 +1967,20 @@ async function svbHandleStep1Next(e) {
   }
 
   try {
-    const resp = await svbOrderRecoverRequest(email, name);
+    const resp = await svbRecoverProbe(email, name);
+    const reason = resp.reason || 'no_reason';
+
     if (resp.action === 'popup' && resp.order) {
+      svbLogRecover('popup decision', { order_id: resp.order.order_id, reason });
       svbShowRecoverModal(resp.order);
       return;
     }
 
     if (resp.action === 'email_sent') {
+      svbLogRecover('email_sent decision', { reason });
       alert('Якщо замовлення існує — ми надіслали посилання на email.');
+    } else {
+      svbLogRecover('continue decision', { reason });
     }
   } catch (err) {
     svbLogRecover('recover failed', err);

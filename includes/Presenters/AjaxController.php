@@ -132,8 +132,31 @@ function svb_order_recover() {
     $email = sanitize_email($email_raw);
     $name = sanitize_text_field($name_raw);
 
+    $debug_mode = (defined('SVB_DEBUG') && SVB_DEBUG) || current_user_can('manage_options');
+    $debug = [
+        'email_valid' => ($email && is_email($email)),
+        'email_norm' => $debug_mode ? strtolower(trim((string) $email)) : '',
+        'email_hash_prefix' => '',
+        'session_cookie_present' => false,
+        'session_cookie_prefix' => '',
+        'storage' => svb_orders_table_exists() ? 'table' : 'options',
+        'query_found_any' => 0,
+        'query_found_success' => 0,
+        'selected_order_id' => null,
+        'selected_payment_status' => null,
+        'selected_order_session_prefix' => null,
+        'session_match' => null,
+        'rate_limited' => false,
+        'reason' => '',
+    ];
+
     if (!$email || !is_email($email)) {
-        wp_send_json_success(['action' => 'continue']);
+        $debug['reason'] = 'invalid_email';
+        $payload = ['action' => 'continue', 'reason' => 'invalid_email'];
+        if ($debug_mode) {
+            $payload['debug'] = $debug;
+        }
+        wp_send_json_success($payload);
     }
 
     $order_data = svb_init_user_order();
@@ -146,19 +169,52 @@ function svb_order_recover() {
     }
 
     $email_hash = svb_orders_email_hash($email);
+    $debug['email_hash_prefix'] = $email_hash ? substr($email_hash, 0, 8) : '';
     $session_id = svb_orders_get_session_id();
+    $debug['session_cookie_present'] = !empty($session_id);
+    $debug['session_cookie_prefix'] = $session_id ? substr($session_id, 0, 8) : '';
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
 
     $rate_key = 'svb_recover_' . md5($email_hash . '_' . $ip);
     $attempts = (int) get_transient($rate_key);
     if ($attempts >= 5) {
-        wp_send_json_success(['action' => 'email_sent']);
+        $debug['rate_limited'] = true;
+        $payload = ['action' => 'email_sent', 'reason' => 'rate_limited'];
+        if ($debug_mode) {
+            $debug['reason'] = 'rate_limited';
+            $payload['debug'] = $debug;
+        }
+        wp_send_json_success($payload);
     }
     set_transient($rate_key, $attempts + 1, MINUTE_IN_SECONDS * 10);
 
-    $order_row = svb_find_latest_paid_order_by_email_hash($email_hash);
+    global $wpdb;
+    $order_row = null;
+    if (svb_orders_table_exists()) {
+        $table = $wpdb->prefix . 'svb_orders';
+        $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$table} WHERE email_hash = %s ORDER BY id DESC LIMIT 5", $email_hash), ARRAY_A);
+        $debug['query_found_any'] = is_array($rows) ? count($rows) : 0;
+        if ($rows) {
+            foreach ($rows as $row) {
+                $payment = svb_orders_decode_payment($row['payment'] ?? []);
+                $status = $payment['status'] ?? '';
+                if (in_array($status, ['paid', 'success'], true)) {
+                    $debug['query_found_success']++;
+                    if (!$order_row) {
+                        $order_row = $row;
+                        $order_row['payment'] = $payment;
+                    }
+                }
+            }
+        }
+    }
     if (!$order_row) {
-        wp_send_json_success(['action' => 'email_sent']);
+        $payload = ['action' => 'email_sent', 'reason' => 'no_success_orders'];
+        if ($debug_mode) {
+            $debug['reason'] = 'no_success_orders';
+            $payload['debug'] = $debug;
+        }
+        wp_send_json_success($payload);
     }
 
     $resolved_token = svb_resolve_order_public_token($order_row);
@@ -172,6 +228,7 @@ function svb_order_recover() {
     $payment = svb_orders_decode_payment($order_row['payment'] ?? []);
     $payment_status = $payment['status'] ?? '';
     $can_regen = in_array($payment_status, ['paid', 'success'], true);
+    $debug['selected_payment_status'] = $payment_status;
 
     $session_matches = false;
     $session_candidates = array_filter([$session_id, $uid]);
@@ -182,8 +239,14 @@ function svb_order_recover() {
         }
     }
 
+    if (!empty($order_row['session_id'])) {
+        $debug['selected_order_session_prefix'] = substr($order_row['session_id'], 0, 8);
+    }
+    $debug['session_match'] = $session_matches;
+    $debug['selected_order_id'] = (int) $order_row['order_id'];
+
     if ($session_matches && $resume_url) {
-        wp_send_json_success([
+        $payload = [
             'found' => true,
             'action' => 'popup',
             'order' => [
@@ -193,7 +256,12 @@ function svb_order_recover() {
                 'can_regen' => $can_regen,
                 'resume_url' => $resume_url,
             ],
-        ]);
+        ];
+        if ($debug_mode) {
+            $debug['reason'] = 'popup';
+            $payload['debug'] = $debug;
+        }
+        wp_send_json_success($payload);
     }
 
     if ($resume_url) {
@@ -202,7 +270,15 @@ function svb_order_recover() {
         wp_mail($email, $subject, $message, ['Content-Type: text/plain; charset=UTF-8']);
     }
 
-    wp_send_json_success(['action' => 'email_sent']);
+    $payload = [
+        'action' => 'email_sent',
+        'reason' => $session_matches ? 'popup_missing' : 'session_mismatch',
+    ];
+    if ($debug_mode) {
+        $debug['reason'] = $session_matches ? 'popup_missing' : 'session_mismatch';
+        $payload['debug'] = $debug;
+    }
+    wp_send_json_success($payload);
 }
 function svb_generate() {
     @ini_set('memory_limit', '512M'); 
@@ -1531,6 +1607,15 @@ function svb_payment_gate() {
     $is_status_paid = in_array($payment['status'], ['paid', 'success'], true);
     $is_paid_for_current = ($is_status_paid && $paid_fingerprint && hash_equals($paid_fingerprint, $fingerprint_current));
     $reason = 'not_paid';
+
+    if (svb_pay_should_log()) {
+        svb_pay_log('payment_gate.order_state', [
+            'order_id' => $order_row['order_id'],
+            'payment_status' => $payment['status'] ?? '',
+            'email_hash_prefix' => substr($order_row['email_hash'] ?? '', 0, 8),
+            'session_id_prefix' => substr($order_row['session_id'] ?? '', 0, 8),
+        ], $order_data);
+    }
 
     if ($is_paid_for_current) {
         $reason = 'paid_match';
