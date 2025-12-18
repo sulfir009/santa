@@ -91,6 +91,14 @@ let svbCurrentChildCount = 1;
 const SVB_STATE_KEY = 'svb_state_v1';
 let svbState = null;
 
+function svbGetVideoSelectionMap() {
+    const state = svbLoadState();
+    if (!state.video_selection_per_count || typeof state.video_selection_per_count !== 'object') {
+        state.video_selection_per_count = {};
+    }
+    return state.video_selection_per_count;
+}
+
 function svbLoadState() {
     if (svbState && typeof svbState === 'object') return svbState;
     try {
@@ -157,8 +165,11 @@ function svbRenderUI() {
     if (saved.child_count) {
         svbCurrentChildCount = parseInt(saved.child_count, 10) || svbCurrentChildCount;
     }
-    if (saved.selected_video_id) {
-        SVB_SELECTED_VIDEO_ID = saved.selected_video_id;
+
+    const selectionMap = svbGetVideoSelectionMap();
+    const preferredVideoId = selectionMap[svbCurrentChildCount] || saved.selected_video_id;
+    if (preferredVideoId) {
+        SVB_SELECTED_VIDEO_ID = preferredVideoId;
         const hInput = document.getElementById('selected_video_id');
         if (hInput) hInput.value = SVB_SELECTED_VIDEO_ID;
     }
@@ -187,7 +198,13 @@ function svbRenderUI() {
         selectionChangedNotice = 'Відео недоступне для вибраної кількості дітей, обрано інше.';
         const hInput = document.getElementById('selected_video_id');
         if(hInput) hInput.value = SVB_SELECTED_VIDEO_ID;
-        svbUpdateState({ selected_video_id: SVB_SELECTED_VIDEO_ID });
+
+        const selectionMap = svbGetVideoSelectionMap();
+        selectionMap[svbCurrentChildCount] = SVB_SELECTED_VIDEO_ID;
+        svbUpdateState({
+            selected_video_id: SVB_SELECTED_VIDEO_ID,
+            video_selection_per_count: selectionMap
+        });
         svbSelectVideoTemplate(SVB_SELECTED_VIDEO_ID, false);
     }
 
@@ -251,7 +268,9 @@ function svbRenderUI() {
                 SVB_SELECTED_VIDEO_ID = vidId;
                 const hInput = document.getElementById('selected_video_id');
                 if(hInput) hInput.value = vidId;
-                svbUpdateState({ selected_video_id: vidId });
+                const selectionMap = svbGetVideoSelectionMap();
+                selectionMap[svbCurrentChildCount] = vidId;
+                svbUpdateState({ selected_video_id: vidId, video_selection_per_count: selectionMap });
                 svbSelectVideoTemplate(vidId, false);
                 svbRenderUI();
             };
@@ -285,7 +304,9 @@ function svbRenderUI() {
                 SVB_SELECTED_VIDEO_ID = vidId;
                 const hInput = document.getElementById('selected_video_id');
                 if(hInput) hInput.value = vidId;
-                svbUpdateState({ selected_video_id: vidId });
+                const selectionMap = svbGetVideoSelectionMap();
+                selectionMap[svbCurrentChildCount] = vidId;
+                svbUpdateState({ selected_video_id: vidId, video_selection_per_count: selectionMap });
                 svbSelectVideoTemplate(vidId, false);
                 svbRenderUI();
             };
@@ -306,7 +327,9 @@ window.addEventListener('resize', svbRenderUI);
 // 2. Оновлена логіка вибору шаблону (завантаження даних у форми)
 function svbSelectVideoTemplate(videoId, shouldRenderUI = true) {
     SVB_SELECTED_VIDEO_ID = videoId;
-    svbUpdateState({ selected_video_id: videoId });
+    const selectionMap = svbGetVideoSelectionMap();
+    selectionMap[svbCurrentChildCount] = videoId;
+    svbUpdateState({ selected_video_id: videoId, video_selection_per_count: selectionMap });
     
     // Оновлюємо hidden-поле
     const hiddenInput = document.getElementById('selected_video_id');
@@ -344,7 +367,17 @@ function svbBindChildCount() {
     const handleCountChange = () => {
         const checked = document.querySelector('input[name="child_count"]:checked');
         svbCurrentChildCount = checked ? parseInt(checked.value) : 1;
-        svbUpdateState({ child_count: svbCurrentChildCount, selected_video_id: SVB_SELECTED_VIDEO_ID });
+        const selectionMap = svbGetVideoSelectionMap();
+        if (selectionMap[svbCurrentChildCount]) {
+            SVB_SELECTED_VIDEO_ID = selectionMap[svbCurrentChildCount];
+            const hInput = document.getElementById('selected_video_id');
+            if (hInput) hInput.value = SVB_SELECTED_VIDEO_ID;
+        }
+        svbUpdateState({
+            child_count: svbCurrentChildCount,
+            selected_video_id: SVB_SELECTED_VIDEO_ID,
+            video_selection_per_count: selectionMap
+        });
 
         // Показуємо/ховаємо поля
         if (svbCurrentChildCount > 1) {
@@ -438,10 +471,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    if (svbState && svbState.selected_video_id) {
-        SVB_SELECTED_VIDEO_ID = svbState.selected_video_id;
-        const hInput = document.getElementById('selected_video_id');
-        if (hInput) hInput.value = svbState.selected_video_id;
+    if (svbState) {
+        const map = svbGetVideoSelectionMap();
+        const initialVid = map[svbCurrentChildCount] || svbState.selected_video_id;
+        if (initialVid) {
+            SVB_SELECTED_VIDEO_ID = initialVid;
+            const hInput = document.getElementById('selected_video_id');
+            if (hInput) hInput.value = initialVid;
+        }
     }
 
     // 2. Навішуємо обробник на перемикач кількості дітей
@@ -450,7 +487,17 @@ document.addEventListener('DOMContentLoaded', () => {
         radios.forEach(r => r.addEventListener('change', () => {
             const c = document.querySelector('input[name="child_count"]:checked');
             svbCurrentChildCount = c ? parseInt(c.value) : 1;
-            svbUpdateState({ child_count: svbCurrentChildCount, selected_video_id: SVB_SELECTED_VIDEO_ID });
+            const selectionMap = svbGetVideoSelectionMap();
+            if (selectionMap[svbCurrentChildCount]) {
+                SVB_SELECTED_VIDEO_ID = selectionMap[svbCurrentChildCount];
+                const hInput = document.getElementById('selected_video_id');
+                if (hInput) hInput.value = SVB_SELECTED_VIDEO_ID;
+            }
+            svbUpdateState({
+                child_count: svbCurrentChildCount,
+                selected_video_id: SVB_SELECTED_VIDEO_ID,
+                video_selection_per_count: selectionMap
+            });
         
         // Керування видимістю полів (для надійності дублюємо тут, хоча reinit теж це робить)
         const ageBlock = document.getElementById('svb-age-block');
