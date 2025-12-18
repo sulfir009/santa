@@ -2056,11 +2056,13 @@ async function svbHandleStep1Next(e) {
 function svbApplyResumeFromQuery() {
   const params = new URLSearchParams(window.location.search);
   
-  // Если в URL есть svb_payment_return, игнорируем параметры восстановления,
-  // так как они могут принадлежать старому заказу в кэше браузера
-  if (params.has('svb_payment_return')) return;
-  if (!params.has('svb_resume_order')) return;
+  // FIX: Если мы вернулись после оплаты, игнорируем ID в URL, чтобы не восстановить старый заказ поверх нового
+  if (params.has('svb_payment_return')) {
+      console.log('[SVB REC] payment_return detected, skipping URL resume');
+      return;
+  }
 
+  if (!params.has('svb_resume_order')) return;
   const orderId = parseInt(params.get('order_id') || '0', 10);
   const token = params.get('token') || '';
   if (!orderId || !token) return;
@@ -2972,12 +2974,12 @@ async function svbHandlePaymentReturnFlow(params) {
       reason: state.reason,
     });
 await svbHandlePaymentDecision(orderId, state, token);
-
-    // Очищаем URL от параметров оплаты и старых ID, чтобы кнопка «Скачать» 
-    // не вызывала перезагрузку страницы с неверными данными
-    if (state.decision === 'success' || state.decision === 'paid') {
-      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
+    
+    // FIX: Если оплата подтверждена, немедленно вычищаем URL, чтобы параметры не провоцировали редиректы
+    if (state.decision === 'paid' || state.decision === 'success') {
+        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        console.log('[SVB PAY] URL cleaned after success');
     }
   } catch (err) {
     console.error(err);
