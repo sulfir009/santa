@@ -1618,6 +1618,38 @@ function svb_pay_log($message, $context = [], $order_data = []) {
     error_log('[SVB PAY] ' . $message . (!empty($context) ? ' ' . wp_json_encode($context) : ''));
 }
 
+function svb_debug_session() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    svb_init_cookie_logic();
+
+    $cookie_val = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
+    $forwarded_proto = isset($_SERVER['HTTP_X_FORWARDED_PROTO']) ? sanitize_text_field($_SERVER['HTTP_X_FORWARDED_PROTO']) : '';
+
+    wp_send_json_success([
+        'has_cookie' => !empty($cookie_val),
+        'cookie_prefix' => $cookie_val ? substr($cookie_val, 0, 8) : '',
+        'is_ssl_detected' => svb_detect_ssl(),
+        'forwarded_proto' => $forwarded_proto,
+        'headers_sent' => headers_sent(),
+    ]);
+}
+
+function svb_mask_page_url($url) {
+    if (!$url) {
+        return '';
+    }
+
+    $parsed = wp_parse_url($url);
+    $path = isset($parsed['path']) ? $parsed['path'] : '';
+    $prefix = $path ? substr($path, 0, 12) : substr($url, 0, 12);
+    $suffix = $path ? substr($path, -6) : substr($url, -6);
+
+    return $prefix . '...' . $suffix;
+}
+
 function svb_payment_normalize_status($status) {
     if ($status === 'paid') {
         return 'success';
@@ -1758,7 +1790,11 @@ function svb_monobank_sync_status() {
         'paid_fingerprint' => '',
         'fingerprint_current' => '',
         'invoice_masked' => '',
-        'modifiedDate' => '',
+        'invoice_page_url_masked' => '',
+        'pageUrl' => '',
+        'has_page_url' => false,
+        'invoice_fingerprint' => '',
+        'modifiedDate' => 0,
         'decision' => 'not_paid',
         'reason' => 'not_found',
     ];
@@ -1797,12 +1833,17 @@ function svb_monobank_sync_status() {
 
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $invoice_id = $payment['invoice_id'] ?? '';
+    $invoice_page_url = $payment['invoice_page_url'] ?? '';
 
     $response['payment_status'] = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
     $response['paid_fingerprint'] = $payment['paid_fingerprint'] ?? '';
     $response['fingerprint_current'] = $order_row['fingerprint_current'] ?? '';
+    $response['invoice_fingerprint'] = $payment['invoice_fingerprint'] ?? '';
     $response['invoice_masked'] = svb_monobank_mask_invoice($invoice_id);
-    $response['modifiedDate'] = $payment['modifiedDate'] ?? ($payment['updated_at'] ?? '');
+    $response['invoice_page_url_masked'] = svb_mask_page_url($invoice_page_url);
+    $response['pageUrl'] = $invoice_page_url;
+    $response['has_page_url'] = !empty($invoice_page_url);
+    $response['modifiedDate'] = isset($payment['modifiedDate']) ? (int) $payment['modifiedDate'] : 0;
     $response['public_token'] = $authorized ? ($order_row['public_token'] ?? '') : '';
 
     if (!$invoice_id) {
@@ -1828,10 +1869,16 @@ function svb_monobank_sync_status() {
                 'failureReason' => $status['failureReason'] ?? '',
             ];
 
+            // Monobank: webHookUrl may arrive out of order, rely on modifiedDate to decide updates.
             $payment = svb_monobank_apply_payment_status($order_row, $status);
             $response['payment_status'] = svb_payment_normalize_status($payment['status'] ?? $response['payment_status']);
             $response['paid_fingerprint'] = $payment['paid_fingerprint'] ?? $response['paid_fingerprint'];
-            $response['modifiedDate'] = $payment['modifiedDate'] ?? $response['modifiedDate'];
+            $response['modifiedDate'] = isset($payment['modifiedDate']) ? (int) $payment['modifiedDate'] : $response['modifiedDate'];
+            $response['invoice_page_url_masked'] = svb_mask_page_url($payment['invoice_page_url'] ?? $invoice_page_url);
+            if (!empty($payment['invoice_page_url'])) {
+                $response['pageUrl'] = $payment['invoice_page_url'];
+            }
+            $response['has_page_url'] = $response['has_page_url'] || !empty($payment['invoice_page_url']);
         }
     }
 
@@ -1988,6 +2035,10 @@ function svb_payment_gate() {
         'paid_fingerprint' => $paid_fingerprint,
         'payment_status' => $normalized_status,
         'payment_status_raw' => $payment['status'] ?? 'unpaid',
+        'invoice_id' => $payment['invoice_id'] ?? '',
+        'invoice_page_url' => $payment['invoice_page_url'] ?? '',
+        'invoice_masked' => svb_monobank_mask_invoice($payment['invoice_id'] ?? ''),
+        'invoice_page_url_masked' => svb_mask_page_url($payment['invoice_page_url'] ?? ''),
         'is_paid_for_current' => $is_paid_for_current,
         'decision' => $decision,
         'reason' => $reason,
@@ -2018,6 +2069,8 @@ function svb_monobank_create_invoice() {
         wp_send_json_error('Invalid child_count');
     }
 
+    $force_new = isset($_POST['force_new']) && $_POST['force_new'] === '1';
+
     $order_data = svb_init_user_order();
     $uid = $order_data['uid'] ?? '';
     $order_id_req = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
@@ -2046,6 +2099,22 @@ function svb_monobank_create_invoice() {
         $order_data['token_hash'] = $order_row['token_hash'] ?? '';
     }
 
+    $current_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $normalized_payment_status = svb_payment_normalize_status($current_payment['status'] ?? 'unpaid');
+
+    if (!$force_new && in_array($normalized_payment_status, ['pending', 'processing'], true) && !empty($current_payment['invoice_id'])) {
+        $page_url = $current_payment['invoice_page_url'] ?? '';
+
+        wp_send_json_success([
+            'pageUrl' => $page_url,
+            'pageUrl_masked' => svb_mask_page_url($page_url),
+            'invoiceId' => $current_payment['invoice_id'],
+            'invoice_masked' => svb_monobank_mask_invoice($current_payment['invoice_id']),
+            'amount' => $current_payment['amount'] ?? 0,
+            'reused' => true,
+        ]);
+    }
+
     svb_pay_log('invoice.start', [
         'child_count' => $child_count,
         'is_admin' => $is_admin,
@@ -2072,6 +2141,7 @@ function svb_monobank_create_invoice() {
         wp_send_json_error('Invalid amount for selected children');
     }
 
+    // Monobank: amount must be sent in minimal units (kopecks for UAH).
     $amount = (int) ($uah * 100);
 
     $return_raw = isset($_POST['return_url']) ? esc_url_raw(wp_unslash($_POST['return_url'])) : '';
@@ -2123,16 +2193,24 @@ function svb_monobank_create_invoice() {
 
     unset($invoice['_http_status'], $invoice['_raw_body']);
 
-    svb_update_user_payment_state($uid, [
+    $invoice_page_url = $invoice['pageUrl'] ?? '';
+    $payment_updates = [
         'status' => 'pending',
         'invoice_id' => $invoice_id,
+        'invoice_page_url' => $invoice_page_url,
+        'invoice_fingerprint' => $order_row['fingerprint_current'] ?? '',
         'reference' => $reference,
         'amount' => $amount,
         'child_count' => $child_count,
-    ]);
+        'modifiedDate' => 0,
+    ];
 
+    svb_update_user_payment_state($uid, $payment_updates);
+    svb_update_order_payment_by_order_id($order_data['order_id'], $payment_updates);
+
+    // Monobank: after invoice creation user must be redirected to the provided payment pageUrl.
     wp_send_json_success([
-        'pageUrl' => $invoice['pageUrl'] ?? '',
+        'pageUrl' => $invoice_page_url,
         'invoiceId' => $invoice_id,
         'amount' => $amount,
     ]);
