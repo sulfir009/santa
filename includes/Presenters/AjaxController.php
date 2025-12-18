@@ -103,6 +103,107 @@ function svb_build_download_url($order_id, $token) {
         home_url('/')
     );
 }
+
+function svb_build_resume_url($order_id, $token) {
+    $order_id = absint($order_id);
+    $token = sanitize_text_field($token);
+
+    if (!$order_id || !$token) {
+        return '';
+    }
+
+    return add_query_arg(
+        [
+            'svb_resume_order' => 1,
+            'order_id' => $order_id,
+            'token' => $token,
+        ],
+        home_url('/')
+    );
+}
+
+function svb_order_recover() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $email_raw = isset($_POST['email']) ? wp_unslash($_POST['email']) : '';
+    $name_raw = isset($_POST['name']) ? wp_unslash($_POST['name']) : '';
+    $email = sanitize_email($email_raw);
+    $name = sanitize_text_field($name_raw);
+
+    if (!$email || !is_email($email)) {
+        wp_send_json_success(['action' => 'continue']);
+    }
+
+    $order_data = svb_init_user_order();
+    $uid = $order_data['uid'] ?? '';
+    if ($uid) {
+        svb_update_user_order($uid, [
+            'customer_email' => $email,
+            'customer_name' => $name,
+        ]);
+    }
+
+    $email_hash = svb_orders_email_hash($email);
+    $session_id = svb_orders_get_session_id();
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+
+    $rate_key = 'svb_recover_' . md5($email_hash . '_' . $ip);
+    $attempts = (int) get_transient($rate_key);
+    if ($attempts >= 5) {
+        wp_send_json_success(['action' => 'email_sent']);
+    }
+    set_transient($rate_key, $attempts + 1, MINUTE_IN_SECONDS * 10);
+
+    $order_row = svb_find_latest_paid_order_by_email_hash($email_hash);
+    if (!$order_row) {
+        wp_send_json_success(['action' => 'email_sent']);
+    }
+
+    $resolved_token = svb_resolve_order_public_token($order_row);
+    $resume_url = $resolved_token ? svb_build_resume_url($order_row['order_id'], $resolved_token) : '';
+
+    $result = is_array(json_decode($order_row['result'] ?? '', true)) ? json_decode($order_row['result'], true) : [];
+    $video_path = $result['video_path'] ?? '';
+    $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
+    $has_video = ($video_path && file_exists($video_path) && is_readable($video_path) && (!$generated_at || (time() - $generated_at) <= HOUR_IN_SECONDS));
+
+    $payment = svb_orders_decode_payment($order_row['payment'] ?? []);
+    $payment_status = $payment['status'] ?? '';
+    $can_regen = in_array($payment_status, ['paid', 'success'], true);
+
+    $session_matches = false;
+    $session_candidates = array_filter([$session_id, $uid]);
+    foreach ($session_candidates as $candidate) {
+        if ($candidate && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $candidate)) {
+            $session_matches = true;
+            break;
+        }
+    }
+
+    if ($session_matches && $resume_url) {
+        wp_send_json_success([
+            'found' => true,
+            'action' => 'popup',
+            'order' => [
+                'order_id' => (int) $order_row['order_id'],
+                'created_at' => $order_row['created_at'] ?? '',
+                'has_video' => $has_video,
+                'can_regen' => $can_regen,
+                'resume_url' => $resume_url,
+            ],
+        ]);
+    }
+
+    if ($resume_url) {
+        $subject = 'Ваше замовлення Santa Video';
+        $message = "Вітаємо! Якщо ви створювали відео раніше, скористайтесь посиланням для повернення до замовлення:\n\n{$resume_url}\n\nЯкщо ви не запитували посилання, просто ігноруйте цей лист.";
+        wp_mail($email, $subject, $message, ['Content-Type: text/plain; charset=UTF-8']);
+    }
+
+    wp_send_json_success(['action' => 'email_sent']);
+}
 function svb_generate() {
     @ini_set('memory_limit', '512M'); 
     @ini_set('max_execution_time', 300);
@@ -1523,21 +1624,6 @@ function svb_monobank_create_invoice() {
             }
             wp_send_json_error('Order storage error');
         }
-    }
-
-    $order_data['order_id'] = (int) ($order_row['order_id'] ?? ($order_data['order_id'] ?? 0));
-    if (!empty($order_row['public_token'])) {
-        $order_data['public_token'] = $order_row['public_token'];
-        $order_data['token_hash'] = $order_row['token_hash'] ?? '';
-    }
-
-    $order_row = svb_order_create_or_load_for_session($uid, $order_data);
-    if (is_wp_error($order_row)) {
-        $db_error = $order_row->get_error_data()['db_error'] ?? '';
-        if ($db_error) {
-            svb_pay_log('invoice.order_error', ['db_error' => $db_error], $order_data);
-        }
-        wp_send_json_error('Order storage error');
     }
 
     $order_data['order_id'] = (int) ($order_row['order_id'] ?? ($order_data['order_id'] ?? 0));

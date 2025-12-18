@@ -53,6 +53,29 @@ function svb_get_orders_v2_table() {
     return $wpdb->prefix . 'svb_orders_v2';
 }
 
+function svb_orders_get_session_id() {
+    $session_cookie = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
+    $uid_cookie = isset($_COOKIE['svb_user_uid']) ? sanitize_text_field($_COOKIE['svb_user_uid']) : '';
+
+    return $session_cookie ? $session_cookie : $uid_cookie;
+}
+
+function svb_orders_email_hash($email) {
+    $clean = sanitize_email($email);
+    if (!$clean || !is_email($clean)) {
+        return '';
+    }
+
+    $normalized = strtolower(trim($clean));
+    return hash('sha256', $normalized . AUTH_SALT);
+}
+
+function svb_orders_table_has_column($table, $column) {
+    global $wpdb;
+    $col = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM {$table} LIKE %s", $column));
+    return (bool) $col;
+}
+
 function svb_orders_table_exists() {
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
@@ -82,6 +105,7 @@ function svb_install_orders_v2_table() {
         selected_video_id VARCHAR(191) DEFAULT '' NOT NULL,
         customer_name VARCHAR(191) DEFAULT '' NOT NULL,
         customer_email VARCHAR(191) DEFAULT '' NOT NULL,
+        email_hash CHAR(64) DEFAULT '' NOT NULL,
         session_id VARCHAR(191) DEFAULT '' NOT NULL,
         ip VARCHAR(64) DEFAULT '' NOT NULL,
         user_agent TEXT,
@@ -114,10 +138,25 @@ function svb_maybe_ensure_orders_schema() {
 
     if (!svb_orders_table_exists()) {
         svb_install_orders_table();
+    } else {
+        global $wpdb;
+        $table = $wpdb->prefix . 'svb_orders';
+        if (!svb_orders_table_has_column($table, 'public_token')) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN public_token VARCHAR(191) DEFAULT '' NOT NULL AFTER token_hash");
+        }
+        if (!svb_orders_table_has_column($table, 'email_hash')) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN email_hash CHAR(64) DEFAULT '' NOT NULL AFTER customer_email");
+        }
     }
 
     if (svb_orders_v2_enabled() && !svb_orders_v2_table_exists()) {
         svb_install_orders_v2_table();
+    } elseif (svb_orders_v2_enabled()) {
+        global $wpdb;
+        $table_v2 = svb_get_orders_v2_table();
+        if (!svb_orders_table_has_column($table_v2, 'email_hash')) {
+            $wpdb->query("ALTER TABLE {$table_v2} ADD COLUMN email_hash CHAR(64) DEFAULT '' NOT NULL AFTER customer_email");
+        }
     }
 }
 
@@ -157,10 +196,12 @@ function svb_install_orders_table() {
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         order_id BIGINT UNSIGNED NOT NULL,
         token_hash CHAR(64) NOT NULL,
+        public_token VARCHAR(191) DEFAULT '' NOT NULL,
         created_at DATETIME NOT NULL,
         ip VARCHAR(64) DEFAULT '' NOT NULL,
         user_agent TEXT,
         session_id VARCHAR(128) DEFAULT '' NOT NULL,
+        email_hash CHAR(64) DEFAULT '' NOT NULL,
         child_count TINYINT NOT NULL DEFAULT 1,
         selected_video_id VARCHAR(191) DEFAULT '' NOT NULL,
         customer_name VARCHAR(191) DEFAULT '' NOT NULL,
@@ -203,6 +244,19 @@ function svb_get_order_by_id($order_id) {
         $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
         if ($cookie_token && isset($row['token_hash']) && hash_equals($row['token_hash'], hash('sha256', $cookie_token))) {
             $row['public_token'] = $cookie_token;
+            if (svb_orders_table_has_column($table, 'public_token')) {
+                $wpdb->update($table, ['public_token' => $cookie_token], ['id' => $row['id']], ['%s'], ['%d']);
+            }
+        }
+    }
+
+    if (!isset($row['email_hash']) || !$row['email_hash']) {
+        $email_hash = svb_orders_email_hash($row['customer_email'] ?? '');
+        if ($email_hash) {
+            $row['email_hash'] = $email_hash;
+            if (svb_orders_table_has_column($table, 'email_hash')) {
+                $wpdb->update($table, ['email_hash' => $email_hash], ['id' => $row['id']], ['%s'], ['%d']);
+            }
         }
     }
 
@@ -221,6 +275,44 @@ function svb_get_order_by_id_and_token($order_id, $token) {
     }
 
     return $order;
+}
+
+function svb_resolve_order_public_token(array $order_row) {
+    $token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
+    if ($token) {
+        return $token;
+    }
+
+    $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
+    if ($cookie_token && isset($order_row['token_hash']) && hash_equals($order_row['token_hash'], hash('sha256', $cookie_token))) {
+        return $cookie_token;
+    }
+
+    return '';
+}
+
+function svb_find_latest_paid_order_by_email_hash($email_hash) {
+    if (!$email_hash || !svb_orders_table_exists()) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$table} WHERE email_hash = %s ORDER BY id DESC LIMIT 5", $email_hash), ARRAY_A);
+    if (!$rows) {
+        return null;
+    }
+
+    foreach ($rows as $row) {
+        $payment = svb_orders_decode_payment($row['payment'] ?? []);
+        $status = $payment['status'] ?? '';
+        if (in_array($status, ['paid', 'success'], true)) {
+            $row['payment'] = $payment;
+            return $row;
+        }
+    }
+
+    return null;
 }
 
 function svb_order_create_or_load_for_session($uid, $fallback_data = []) {
@@ -251,6 +343,14 @@ function svb_order_create_or_load_for_session($uid, $fallback_data = []) {
         $verified['token_hash'] = $row['token_hash'];
     }
 
+    $session_id = svb_orders_get_session_id();
+    svb_update_order_contact(
+        $verified['order_id'],
+        $fallback_data['customer_name'] ?? '',
+        $fallback_data['customer_email'] ?? '',
+        $session_id
+    );
+
     return $verified;
 }
 
@@ -269,8 +369,12 @@ function svb_create_new_order_for_session($uid, array $base_data = []) {
     $token_data = svb_generate_public_token();
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
     $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $session = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
+    $session = svb_orders_get_session_id();
     $created_at = current_time('mysql');
+
+    $customer_name = isset($base_data['customer_name']) ? sanitize_text_field($base_data['customer_name']) : '';
+    $customer_email = isset($base_data['customer_email']) ? sanitize_email($base_data['customer_email']) : '';
+    $email_hash = $customer_email ? svb_orders_email_hash($customer_email) : '';
 
     $payment = svb_orders_normalize_payment(isset($base_data['payment']) && is_array($base_data['payment']) ? $base_data['payment'] : []);
 
@@ -279,13 +383,17 @@ function svb_create_new_order_for_session($uid, array $base_data = []) {
         [
             'order_id' => $order_id,
             'token_hash' => $token_data['hash'],
+            'public_token' => $token_data['token'],
             'created_at' => $created_at,
             'ip' => $ip,
             'user_agent' => $ua,
-            'session_id' => $uid,
+            'session_id' => $session ? $session : $uid,
+            'customer_name' => $customer_name,
+            'customer_email' => $customer_email,
+            'email_hash' => $email_hash,
             'payment' => wp_json_encode($payment),
         ],
-        ['%d','%s','%s','%s','%s','%s','%s']
+        ['%d','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s']
     );
 
     if (!$inserted) {
@@ -378,6 +486,7 @@ function svb_init_user_order() {
             'ip' => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
             'created_at' => date('Y-m-d H:i:s'),
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+            'session_id' => $session_val,
             'video_generated' => false,
             'video_path' => '',
             'video_url' => '',
@@ -447,6 +556,11 @@ function svb_orders_v2_defaults(array $args = []) {
     $now = current_time('mysql');
     $token_data = svb_generate_public_token();
     $order_id = isset($args['order_id']) ? absint($args['order_id']) : svb_get_next_order_id();
+    $customer_email = isset($args['customer_email']) ? sanitize_email($args['customer_email']) : '';
+    $email_hash = $args['email_hash'] ?? '';
+    if (!$email_hash && $customer_email) {
+        $email_hash = svb_orders_email_hash($customer_email);
+    }
 
     return [
         'order_id' => $order_id,
@@ -456,7 +570,8 @@ function svb_orders_v2_defaults(array $args = []) {
         'fingerprint_paid' => $args['fingerprint_paid'] ?? '',
         'selected_video_id' => $args['selected_video_id'] ?? '',
         'customer_name' => $args['customer_name'] ?? '',
-        'customer_email' => $args['customer_email'] ?? '',
+        'customer_email' => $customer_email,
+        'email_hash' => $email_hash,
         'session_id' => $args['session_id'] ?? '',
         'ip' => $args['ip'] ?? '',
         'user_agent' => $args['user_agent'] ?? '',
@@ -494,6 +609,7 @@ function svb_orders_v2_create(array $args = []) {
         'selected_video_id' => $data['selected_video_id'],
         'customer_name' => $data['customer_name'],
         'customer_email' => $data['customer_email'],
+        'email_hash' => $data['email_hash'],
         'session_id' => $data['session_id'],
         'ip' => $data['ip'],
         'user_agent' => $data['user_agent'],
@@ -511,7 +627,7 @@ function svb_orders_v2_create(array $args = []) {
         'updated_at' => $data['updated_at'],
     ];
 
-    $formats = ['%d','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s'];
+    $formats = ['%d','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s'];
 
     try {
         $wpdb->insert($table, $insert_data, $formats);
@@ -565,14 +681,29 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
     }
     global $wpdb;
     $table = $wpdb->prefix . 'svb_orders';
-    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    $session_id = svb_orders_get_session_id();
+    $session_lookup = $session_id ? $session_id : $uid;
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $session_lookup), ARRAY_A);
+    if (!$row && $session_lookup !== $uid) {
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
+    }
     if ($row) {
         $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
         if ($cookie_token && hash_equals($row['token_hash'], hash('sha256', $cookie_token))) {
             $row['public_token'] = $cookie_token;
+            if (svb_orders_table_has_column($table, 'public_token') && empty($row['public_token'])) {
+                $wpdb->update($table, ['public_token' => $cookie_token], ['id' => $row['id']], ['%s'], ['%d']);
+            }
         } else {
-            $row['public_token'] = '';
+            $row['public_token'] = $row['public_token'] ?? '';
         }
+
+        $fallback_email_hash = svb_orders_email_hash($fallback_data['customer_email'] ?? '');
+        if (empty($row['email_hash']) && $fallback_email_hash && svb_orders_table_has_column($table, 'email_hash')) {
+            $wpdb->update($table, ['email_hash' => $fallback_email_hash], ['id' => $row['id']], ['%s'], ['%d']);
+            $row['email_hash'] = $fallback_email_hash;
+        }
+
         return $row;
     }
 
@@ -580,7 +711,9 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
     $token_data = svb_generate_public_token();
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
     $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $session = isset($_COOKIE['svb_session']) ? sanitize_text_field($_COOKIE['svb_session']) : '';
+    $customer_name = isset($fallback_data['customer_name']) ? sanitize_text_field($fallback_data['customer_name']) : '';
+    $customer_email = isset($fallback_data['customer_email']) ? sanitize_email($fallback_data['customer_email']) : '';
+    $email_hash = $customer_email ? svb_orders_email_hash($customer_email) : '';
 
     $payment = svb_get_payment_defaults();
     $created_at = current_time('mysql');
@@ -589,13 +722,17 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
         [
             'order_id' => $order_id,
             'token_hash' => $token_data['hash'],
+            'public_token' => $token_data['token'],
             'created_at' => $created_at,
             'ip' => $ip,
             'user_agent' => $ua,
-            'session_id' => $uid,
+            'session_id' => $session_lookup,
+            'customer_name' => $customer_name,
+            'customer_email' => $customer_email,
+            'email_hash' => $email_hash,
             'payment' => wp_json_encode($payment),
         ],
-        ['%d','%s','%s','%s','%s','%s','%s']
+        ['%d','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s']
     );
 
     if (!$inserted) {
@@ -640,8 +777,75 @@ function svb_update_user_order($uid, $updates = []) {
         global $wpdb;
         $table = $wpdb->prefix . 'svb_orders';
         $order_id = (int) $updates['order_id'];
-        $wpdb->update($table, ['customer_email' => $updates['customer_email'] ?? '', 'customer_name' => $updates['customer_name'] ?? ''], ['order_id' => $order_id]);
+        $session_id = svb_orders_get_session_id();
+        $fields = [];
+
+        if (array_key_exists('customer_email', $updates)) {
+            $customer_email = sanitize_email($updates['customer_email']);
+            $fields['customer_email'] = $customer_email;
+            $email_hash = $customer_email ? svb_orders_email_hash($customer_email) : '';
+            if ($email_hash) {
+                $fields['email_hash'] = $email_hash;
+            }
+        }
+
+        if (array_key_exists('customer_name', $updates)) {
+            $fields['customer_name'] = sanitize_text_field($updates['customer_name']);
+        }
+
+        if ($session_id) {
+            $fields['session_id'] = $session_id;
+        }
+
+        if (!empty($fields)) {
+            $formats = [];
+            foreach ($fields as $v) { $formats[] = '%s'; }
+            $wpdb->update(
+                $table,
+                $fields,
+                ['order_id' => $order_id],
+                $formats,
+                ['%d']
+            );
+        }
     }
+}
+
+function svb_update_order_contact($order_id, $customer_name = '', $customer_email = '', $session_id = '') {
+    if (!$order_id || !svb_orders_table_exists()) {
+        return;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+
+    $fields = [];
+    if ($customer_name !== '') {
+        $fields['customer_name'] = sanitize_text_field($customer_name);
+    }
+    if ($customer_email !== '') {
+        $clean_email = sanitize_email($customer_email);
+        $fields['customer_email'] = $clean_email;
+        $hash = svb_orders_email_hash($clean_email);
+        if ($hash) {
+            $fields['email_hash'] = $hash;
+        }
+    }
+
+    if ($session_id !== '') {
+        $fields['session_id'] = sanitize_text_field($session_id);
+    }
+
+    if (empty($fields)) {
+        return;
+    }
+
+    $formats = [];
+    foreach ($fields as $value) {
+        $formats[] = '%s';
+    }
+
+    $wpdb->update($table, $fields, ['order_id' => (int) $order_id], $formats, ['%d']);
 }
 
 function svb_get_user_payment_state($uid = '') {

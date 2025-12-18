@@ -576,6 +576,13 @@ function svbLog() {
     console.log.apply(console, args);
 }
 
+function svbLogRecover() {
+    if (!svbIsDebugMode()) return;
+    const args = Array.from(arguments);
+    args.unshift('[SVB RECOVER]');
+    console.log.apply(console, args);
+}
+
 function svbError() {
     if (!svbIsDebugMode()) return;
     const args = Array.from(arguments);
@@ -1801,7 +1808,113 @@ function buildSoundMap(){
   }
 }
 
-$('#svb-next-1').addEventListener('click', ()=> svbSetStep(2));
+async function svbOrderRecoverRequest(email, name) {
+  const fd = new FormData();
+  fd.append('action', 'svb_order_recover');
+  fd.append('_svb_nonce', SVB_AJAX.nonce);
+  fd.append('email', email);
+  if (name) {
+    fd.append('name', name);
+  }
+
+  svbLogRecover('request', { email_masked: email ? email.replace(/(.{2}).+(@.+)/, '$1***$2') : '', name });
+
+  const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (!res.ok) {
+    throw new Error('Recover request failed');
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.data || 'Recover denied');
+  }
+
+  const payload = data.data || {};
+  svbLogRecover('response', payload);
+  return payload;
+}
+
+function svbCloseRecoverModal(e, force = false) {
+  const modal = document.getElementById('svb-recover-modal');
+  if (!modal) return;
+  if (force || e.target === modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+}
+
+function svbShowRecoverModal(order) {
+  const modal = document.getElementById('svb-recover-modal');
+  if (!modal || !order) {
+    svbSetStep(2);
+    return;
+  }
+
+  const orderIdNode = modal.querySelector('[data-recover-order-id]');
+  const videoStateNode = modal.querySelector('[data-recover-video-state]');
+  const regenNode = modal.querySelector('[data-recover-regen]');
+  const openBtn = modal.querySelector('#svb-recover-open');
+
+  if (orderIdNode) orderIdNode.textContent = order.order_id || '';
+  if (videoStateNode) videoStateNode.textContent = order.has_video ? 'готове' : 'видалено';
+  if (regenNode) regenNode.textContent = order.can_regen ? 'Можна перегенерувати без нової оплати.' : 'Потрібна нова оплата для змінених параметрів.';
+  if (openBtn) openBtn.dataset.resumeUrl = order.resume_url || '';
+
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+}
+
+async function svbHandleStep1Next(e) {
+  e.preventDefault();
+  const saved = svbLoadState();
+  if (saved && saved.order_id && saved.public_token) {
+    svbSetStep(2);
+    return;
+  }
+
+  const emailInput = document.querySelector('input[name="customer_email_step1"]');
+  const nameInput = document.querySelector('input[name="customer_name"]');
+  const email = emailInput && emailInput.value ? emailInput.value.trim() : '';
+  const name = nameInput && nameInput.value ? nameInput.value.trim() : '';
+
+  if (!email) {
+    svbSetStep(2);
+    return;
+  }
+
+  try {
+    const resp = await svbOrderRecoverRequest(email, name);
+    if (resp.action === 'popup' && resp.order) {
+      svbShowRecoverModal(resp.order);
+      return;
+    }
+
+    if (resp.action === 'email_sent') {
+      alert('Якщо замовлення існує — ми надіслали посилання на email.');
+    }
+  } catch (err) {
+    svbLogRecover('recover failed', err);
+  }
+
+  svbSetStep(2);
+}
+
+function svbApplyResumeFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('svb_resume_order')) return;
+  const orderId = parseInt(params.get('order_id') || '0', 10);
+  const token = params.get('token') || '';
+  if (!orderId || !token) return;
+
+  svbUpdateState({ order_id: orderId, public_token: token });
+  try {
+    document.cookie = `svb_public_token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch (e) {}
+
+  svbLogRecover('applied resume from URL', { order_id: orderId, token: svbMaskToken(token) });
+}
+
+$('#svb-next-1').addEventListener('click', svbHandleStep1Next);
 $('#svb-back-2').addEventListener('click', ()=> svbSetStep(1));
 
 const SVB_PAYMENT_STORAGE = {
@@ -3089,9 +3202,42 @@ function svbCloseNamePopup(e, force = false) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 SVB Init started (Final Fix)');
 
+    svbApplyResumeFromQuery();
+
     // 1. Сначала отрисовываем выбор видео
     if (typeof svbRenderUI === 'function') {
         svbRenderUI();
+    }
+
+    const recoverModal = document.getElementById('svb-recover-modal');
+    if (recoverModal) {
+        recoverModal.addEventListener('click', (ev) => svbCloseRecoverModal(ev));
+        const openBtn = document.getElementById('svb-recover-open');
+        const newBtn = document.getElementById('svb-recover-new');
+        if (openBtn) {
+            openBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const resumeUrl = openBtn.dataset.resumeUrl || '';
+                if (resumeUrl) {
+                    try {
+                        const u = new URL(resumeUrl, window.location.origin);
+                        const orderId = parseInt(u.searchParams.get('order_id') || '0', 10);
+                        const token = u.searchParams.get('token') || '';
+                        if (orderId && token) {
+                            svbUpdateState({ order_id: orderId, public_token: token });
+                        }
+                    } catch (e) {}
+                    window.location = resumeUrl;
+                }
+            });
+        }
+        if (newBtn) {
+            newBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                svbCloseRecoverModal(ev, true);
+                svbSetStep(2);
+            });
+        }
     }
 
     // 2. ВАЖНО: Сначала биндим переключатель детей, но НЕ вызываем обновление списков внутри него сразу
