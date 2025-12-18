@@ -1929,10 +1929,24 @@ $video_poster = !empty($video_poster)
   </div>
 </div>
 
-  <div class="svb-modal" id="svb-video-modal" onclick="svbCloseModal(event)">
+<div class="svb-modal" id="svb-video-modal" onclick="svbCloseModal(event)">
   <div class="svb-modal-content">
     <div class="svb-modal-close" onclick="svbCloseModal(event, true)">&times;</div>
     <video id="svb-modal-video" controls controlsList="nodownload" oncontextmenu="return false;"></video>
+  </div>
+</div>
+
+<div class="svb-modal" id="svb-recover-modal" style="display:none;" onclick="svbCloseRecoverModal(event)">
+  <div class="svb-modal-content svb-req-popup-content">
+    <div class="svb-modal-close svb-close-black" onclick="svbCloseRecoverModal(event, true)">&times;</div>
+    <h3>Раді бачити вас знову!</h3>
+    <p>Ваше замовлення №<span data-recover-order-id></span>.</p>
+    <p>🎥 Ваше відео: <span data-recover-video-state></span></p>
+    <p><small data-recover-regen></small></p>
+    <div class="svb-actions" style="display:flex; gap:10px;">
+      <button type="button" class="svb-btn primary" id="svb-recover-open">Відкрити / Завантажити</button>
+      <button type="button" class="svb-btn" id="svb-recover-new">Створити нове</button>
+    </div>
   </div>
 </div>
 
