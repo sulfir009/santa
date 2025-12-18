@@ -2687,18 +2687,35 @@ async function svbOrderResumeInfoRequest(orderId, token) {
   fd.append('token', token || '');
 
   const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
-  if (!res.ok) {
-    throw new Error('HTTP ' + res.status);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+
+  const json = await res.json();
+  if (!json.success) throw new Error(json.data || 'Resume error');
+
+  const data = json.data || {};
+
+  if (data.found && data.can_regen && data.form_data) {
+    console.log('[SVB RESUME] Injecting form data into state for paid order:', orderId);
+    
+    this.state.childCount = data.form_data.child_count || 1;
+    this.state.selectedVideoId = data.form_data.selected_video_id || 'video1';
+    
+    const childSelect = document.getElementById('svb-child-count');
+    if (childSelect) childSelect.value = this.state.childCount;
+
+    this.paymentStatus = 'success';
   }
 
-  const data = await res.json();
-  if (!data.success) {
-    throw new Error(data.data || 'Resume error');
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has('svb_payment_return') || urlParams.get('order_id') === String(orderId)) {
+    if (data.resume_url) {
+      console.log('[SVB RESUME] Redirection suppressed to prevent loop');
+      data.resume_url = ''; 
+    }
   }
 
-  return data.data || {};
+  return data;
 }
-
 function svbShowPaymentProcessing(message) {
   const box = document.getElementById('svb-payment-error');
   const text = box ? box.querySelector('.svb-payment-error__text') : null;
