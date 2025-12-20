@@ -104,6 +104,10 @@ const SVB_RETURN_ORDER = 'svb_return_order';
 const SVB_REDIRECT_GUARD = 'svb_redirect_once';
 const SVB_AFTER_PAYMENT = 'svb_after_payment';
 const SVB_DEBUG_FLAG_KEY = 'svb_debug';
+const SVB_NAV_ENTRY = (typeof performance !== 'undefined' && performance.getEntriesByType)
+  ? performance.getEntriesByType('navigation')[0]
+  : null;
+const SVB_IS_RELOAD = !!(SVB_NAV_ENTRY && SVB_NAV_ENTRY.type === 'reload');
 const SVB_PAGE_BOOT = (window.SVB_DATA && window.SVB_DATA.debug) ? window.SVB_DATA.debug : {};
 let svbAjaxDebugPatched = false;
 let svbStep3SnapshotEmitted = false;
@@ -289,7 +293,7 @@ function svbClearState() {
 
 function svbCaptureReturnParams() {
   const urlParams = new URLSearchParams(window.location.search);
-  const hasReturn = urlParams.has('svb_return') || urlParams.has('svb_payment_return');
+  const hasReturn = urlParams.has('svb_return') || urlParams.has('svb_payment_return') || urlParams.has('svb_payment_success') || urlParams.has('svb_payment_fail') || urlParams.has('invoiceId') || urlParams.has('svb_token') || urlParams.has('token') || urlParams.has('order_id');
   const tokenFromUrl = urlParams.get('svb_token') || urlParams.get('svb_order') || urlParams.get('token') || '';
   const orderFromUrl = urlParams.get('svb_order') || urlParams.get('order_id') || '';
   const hadStep = urlParams.has('svb_step');
@@ -309,7 +313,7 @@ function svbCaptureReturnParams() {
 
   const cleanUrl = (() => {
     const cleaned = new URL(window.location.href);
-    ['svb_token', 'svb_order', 'svb_step', 'svb_return', 'svb_payment_return', 'token', 'order_id'].forEach(key => cleaned.searchParams.delete(key));
+    ['svb_token', 'svb_order', 'svb_step', 'svb_return', 'svb_payment_return', 'svb_payment_success', 'svb_payment_fail', 'invoiceId', 'token', 'order_id'].forEach(key => cleaned.searchParams.delete(key));
     return cleaned.toString();
   })();
 
@@ -333,6 +337,13 @@ function svbShouldResumeAfterReturn() {
   }
 }
 
+function svbIsPaymentReturnNavigation(params) {
+  const hasParams = !!(params && (params.has('svb_payment_return') || params.has('svb_payment_success') || params.has('svb_payment_fail') || params.has('svb_return') || params.has('invoiceId') || params.has('svb_token') || params.has('token') || params.has('order_id')));
+  const afterPaymentFlag = svbHasAfterPaymentFlag();
+  const allowed = hasParams && (!SVB_IS_RELOAD || afterPaymentFlag);
+  return { hasParams, afterPaymentFlag, allowed };
+}
+
 function svbConsumeReturnFlag() {
   try { sessionStorage.removeItem(SVB_RETURN_FLAG); } catch (e) {}
 }
@@ -351,6 +362,14 @@ function svbConsumeAfterPaymentFlag(hasReturnParam = false) {
     sessionStorage.removeItem(SVB_AFTER_PAYMENT);
   } catch (e) {}
   return shouldResume;
+}
+
+function svbHasAfterPaymentFlag() {
+  try {
+    return sessionStorage.getItem(SVB_AFTER_PAYMENT) === '1';
+  } catch (e) {
+    return false;
+  }
 }
 
 function svbSafeRedirect(url) {
@@ -777,7 +796,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     svbRestoreStep2State();
-    svbCheckInvoiceOnReturn();
+    if (SVB_IS_RELOAD) {
+      svbSetStep(1, 'reload_reset');
+      svbDebugLog('[RETURN CHECK][SKIP]', { reason: 'navigation_reload' });
+    } else {
+      svbCheckInvoiceOnReturn();
+    }
 
     const formEl = document.getElementById('svb-form');
     if (formEl) {
@@ -3675,6 +3699,22 @@ async function svbHandleStep2Next() {
 
 async function svbCheckInvoiceOnReturn() {
   const params = new URLSearchParams(window.location.search);
+  const returnContext = svbIsPaymentReturnNavigation(params);
+
+  svbDebugLog('[RETURN CHECK][CONTEXT]', {
+    hasParams: returnContext.hasParams,
+    afterPaymentFlag: returnContext.afterPaymentFlag,
+    isReload: SVB_IS_RELOAD,
+    paymentStatus: svbPaymentStatus,
+  });
+
+  if (!returnContext.allowed) {
+    return;
+  }
+
+  // One-time flag
+  svbConsumeAfterPaymentFlag(returnContext.hasParams);
+
   const isReturn = params.has('svb_payment_return') || params.has('svb_payment_success') || params.has('svb_payment_fail');
   if (svbPaymentReturnHandled && isReturn) {
     return;
@@ -5103,8 +5143,9 @@ document.addEventListener('DOMContentLoaded', () => {
   svbInitActiveOrder('dom_boot');
   const captured = svbCaptureReturnParams();
   const urlParams = new URLSearchParams(window.location.search);
-  const isPaymentReturn = captured.hasReturn || urlParams.has('svb_payment_return');
-  const allowPaymentResume = svbConsumeAfterPaymentFlag(captured.hasReturn);
+  const returnContext = svbIsPaymentReturnNavigation(urlParams);
+  const isPaymentReturn = returnContext.allowed;
+  const allowPaymentResume = isPaymentReturn && !SVB_IS_RELOAD && svbConsumeAfterPaymentFlag(returnContext.hasParams);
 
   svbSetStep(1, 'init_reset');
 
