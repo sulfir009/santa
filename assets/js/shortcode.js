@@ -4496,15 +4496,13 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
     svbGenerationStartRequested = true;
     svbGenerationStartToken = tokenToUse;
 
-    const returnFlow = svbHadReturnParams || svbShouldResumeAfterReturn();
-
-    const returnFlow = svbHadReturnParams || svbShouldResumeAfterReturn();
+    const returnFlowFlag = svbHadReturnParams || svbShouldResumeAfterReturn();
 
     const fd = new FormData();
     fd.append('action', 'svb_start_generation');
     fd.append('_svb_nonce', SVB_AJAX.nonce);
     fd.append('public_token', tokenToUse);
-    fd.append('return_flow', returnFlow ? '1' : '');
+    fd.append('return_flow', returnFlowFlag ? '1' : '');
 
     try {
         const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
