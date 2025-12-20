@@ -17,6 +17,25 @@
             <?php echo wp_kses_post( $welcome_msg ); ?>
             <?php echo wp_kses_post( $video_ready_html ); ?>
         </div>
+
+        <div class="svb-lookup">
+          <div class="svb-lookup__title">Вже створювали відео?</div>
+          <p class="svb-lookup__text">Введіть Email або номер замовлення, щоб відкрити готове відео</p>
+          <div class="svb-lookup__fields">
+            <label class="svb-field">
+              <span class="svb-label">Email</span>
+              <input class="svb-input" type="email" id="svb-lookup-email" placeholder="you@example.com" autocomplete="email">
+            </label>
+            <label class="svb-field">
+              <span class="svb-label">Номер замовлення</span>
+              <input class="svb-input" type="text" id="svb-lookup-order" placeholder="12345" inputmode="numeric">
+            </label>
+          </div>
+          <div class="svb-lookup__actions">
+            <button class="svb-btn primary svb-btn--lookup" type="button" id="svb-lookup-submit">Знайти відео</button>
+            <div class="svb-lookup__status" id="svb-lookup-status" role="status" aria-live="polite"></div>
+          </div>
+        </div>
         <div id="svb-dynamic-container"></div>
 
         <div class="svb-header">
@@ -167,7 +186,7 @@
           
 
         <div class="svb-actions">
-          <button class="svb-btn primary" type="button" id="svb-next-1">Далі &nbsp; &rarr;</button>
+          <button class="svb-btn primary svb-btn--next" type="button" id="svb-next-1">Далі &nbsp; &rarr;</button>
         </div>
       </section>
 
@@ -1813,7 +1832,7 @@
 
         <div class="svb-actions">
           <button class="svb-btn ghost" type="button" id="svb-back-2">Назад</button>
-          <button class="svb-btn primary" type="button" id="svb-next-2">Далі &nbsp; &rarr;</button>
+          <button class="svb-btn primary svb-btn--next" type="button" id="svb-next-2">Далі &nbsp; &rarr;</button>
         </div>
 
           <div id="svb-payment-error" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#fff3cd; border:1px solid #ffeeba; border-radius:8px;">

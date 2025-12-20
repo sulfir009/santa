@@ -381,8 +381,67 @@ function svb_order_resume_info() {
 
     wp_send_json_success($response);
 }
+
+function svb_find_video() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+
+    if (!$email && !$order_id) {
+        wp_send_json_error('Введіть email або номер замовлення');
+    }
+
+    $order_row = null;
+    if ($order_id) {
+        $order_row = svb_get_order_by_id($order_id);
+    }
+
+    if (!$order_row && $email) {
+        $email_hash = svb_orders_email_hash($email);
+        if ($email_hash) {
+            $order_row = svb_find_latest_paid_order_by_email_hash($email_hash);
+        }
+    }
+
+    if (!$order_row) {
+        wp_send_json_error('Не знайдено замовлення за введеними даними');
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    if ($payment_status !== 'success') {
+        wp_send_json_error('Замовлення ще не оплачене або в обробці');
+    }
+
+    $result = json_decode($order_row['result'] ?? '', true);
+    $video_path = is_array($result) ? ($result['video_path'] ?? '') : '';
+    $generated_at = is_array($result) && isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
+    $has_video = ($video_path && file_exists($video_path) && is_readable($video_path) && (!$generated_at || (time() - $generated_at) <= HOUR_IN_SECONDS));
+
+    $public_token = svb_resolve_order_public_token($order_row);
+    $download_url = ($public_token && !empty($order_row['order_id'])) ? svb_build_download_url($order_row['order_id'], $public_token) : '';
+
+    if (!$has_video || !$download_url) {
+        wp_send_json_error('Готове відео не знайдено. Спробуйте згенерувати заново.');
+    }
+
+    $response = [
+        'order_id' => (int) $order_row['order_id'],
+        'public_token' => $public_token,
+        'video_url' => $download_url,
+        'download_url' => $download_url,
+        'customer_email' => $order_row['customer_email'] ?? '',
+        'child_count' => isset($order_row['child_count']) ? (int) $order_row['child_count'] : 1,
+        'selected_video_id' => $order_row['selected_video_id'] ?? '',
+    ];
+
+    wp_send_json_success($response);
+}
 function svb_generate() {
-    @ini_set('memory_limit', '512M'); 
+    @ini_set('memory_limit', '512M');
     @ini_set('max_execution_time', 300);
     @ini_set('post_max_size', '64M');
     @ini_set('upload_max_filesize', '64M');

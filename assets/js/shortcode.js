@@ -90,6 +90,9 @@ function svbArrToCssMatrix(m) {
 let svbCurrentChildCount = 1;
 const SVB_STATE_KEY = 'svb_state_v1';
 let svbState = null;
+let svbRecoveredFromLookup = false;
+let svbLookupDownloadUrl = '';
+let svbLookupInFlight = false;
 
 function svbGetVideoSelectionMap() {
     const state = svbLoadState();
@@ -432,29 +435,13 @@ function svbReinitAfterRender(savedValues = {}) {
     svbBindRealtimeControls();
 
     // 4. Поиск имен (самое важное для имен)
-    svbBindNameSuggestUniversal('name_text', 'svb-name-suggest', 'name_audio', 'svb-name-display-1', 'svb-name-play-1');
-    svbBindNameSuggestUniversal('name_text_2', 'svb-name-suggest-2', 'name_audio_2', 'svb-name-display-2', 'svb-name-play-2');
-    svbBindNameSuggestUniversal('name_text_3', 'svb-name-suggest-3', 'name_audio_3', 'svb-name-display-3', 'svb-name-play-3');
+      svbBindNameSuggestUniversal('name_text', 'svb-name-suggest', 'name_audio', 'svb-name-display-1', 'svb-name-play-1');
+      svbBindNameSuggestUniversal('name_text_2', 'svb-name-suggest-2', 'name_audio_2', 'svb-name-display-2', 'svb-name-play-2');
+      svbBindNameSuggestUniversal('name_text_3', 'svb-name-suggest-3', 'name_audio_3', 'svb-name-display-3', 'svb-name-play-3');
 
-    // 5. Кнопки прослушивания имен
-    document.querySelectorAll('.svb-name-play').forEach(btn => {
-        // Удаляем старые, чтобы не двоились (на всякий случай)
-        const newBtn = btn.cloneNode(true); 
-        btn.parentNode.replaceChild(newBtn, btn);
-        
-        newBtn.addEventListener('click', () => {
-            const url = newBtn.dataset.audioUrl;
-            if(!url) return;
-            if(svbCurrentSampleAudio) {
-                svbCurrentSampleAudio.pause();
-                svbCurrentSampleAudio = null;
-            }
-            const a = new Audio(url);
-            a.play();
-            svbCurrentSampleAudio = a;
-        });
-    });
-}
+      // 5. Кнопки прослушивания имен
+      svbBindNamePlayButtons();
+  }
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 SVB Init started (Final Fix Rebind)');
@@ -516,13 +503,18 @@ document.addEventListener('DOMContentLoaded', () => {
         svbRenderUI();
     }));
 
-    // 3. Первинний рендер інтерфейсу при завантаженні сторінки
-    // Ця функція тепер сама викличе svbReinitAfterRender() і все підключить
-    svbRenderUI();
+      // 3. Первинний рендер інтерфейсу при завантаженні сторінки
+      // Ця функція тепер сама викличе svbReinitAfterRender() і все підключить
+      svbRenderUI();
 
-    // 4. Логіка попапу запиту імені (статичний елемент, тому залишається тут)
-    const reqSubmit = document.getElementById('popup_req_submit');
-    if (reqSubmit) {
+      const lookupBtn = document.getElementById('svb-lookup-submit');
+      if (lookupBtn) {
+          lookupBtn.addEventListener('click', svbLookupExistingVideo);
+      }
+
+      // 4. Логіка попапу запиту імені (статичний елемент, тому залишається тут)
+      const reqSubmit = document.getElementById('popup_req_submit');
+      if (reqSubmit) {
         reqSubmit.addEventListener('click', () => {
             const nameVal = document.getElementById('popup_req_name').value.trim();
             const emailVal = document.getElementById('popup_req_email').value.trim();
@@ -1922,7 +1914,111 @@ function buildSoundMap(){
       .filter(([k,v]) => !!v)
       .map(([k,v]) => `<div><b>${k}</b>: ${v.label} <small>(${v.file})</small></div>`)
       .join('');
-    if (rows) { box.style.display='block'; box.innerHTML = `<div><b>Обрані озвучки:</b></div>${rows}`; }
+  if (rows) { box.style.display='block'; box.innerHTML = `<div><b>Обрані озвучки:</b></div>${rows}`; }
+  }
+}
+
+function svbSetLookupStatus(message, type = '') {
+  const box = document.getElementById('svb-lookup-status');
+  if (!box) return;
+  box.textContent = message || '';
+  box.classList.toggle('is-error', type === 'error');
+  box.classList.toggle('is-success', type === 'success');
+}
+
+function svbHandleLookupSuccess(payload) {
+  const url = payload.video_url || payload.download_url;
+  if (!url) {
+    svbSetLookupStatus('Готове відео не знайдено', 'error');
+    return;
+  }
+
+  svbRecoveredFromLookup = true;
+  svbLookupDownloadUrl = url;
+  svbJobToken = null;
+  svbGenerating = false;
+  svbVideoURL = url;
+
+  svbResetPreviewState();
+  svbToggleVideoOverlay(false);
+  svbRenderResultVideo(url);
+  svbSetStep(3);
+
+  const statusEl = document.getElementById('svb-status');
+  if (statusEl) {
+    statusEl.textContent = '✅ Відео знайдено';
+  }
+  const finishBtn = document.getElementById('svb-finish');
+  if (finishBtn) {
+    finishBtn.disabled = false;
+  }
+  const emailField = document.getElementById('svb-email');
+  if (emailField && payload.customer_email) {
+    emailField.value = payload.customer_email;
+  }
+  const hiddenVideo = document.getElementById('selected_video_id');
+  if (hiddenVideo && payload.selected_video_id) {
+    hiddenVideo.value = payload.selected_video_id;
+  }
+
+  svbUpdateState({
+    step: 3,
+    child_count: payload.child_count || svbCurrentChildCount,
+    selected_video_id: payload.selected_video_id || SVB_SELECTED_VIDEO_ID,
+    lookup_order_id: payload.order_id || null,
+  });
+}
+
+async function svbLookupExistingVideo() {
+  if (svbLookupInFlight) return;
+
+  const emailInput = document.getElementById('svb-lookup-email');
+  const orderInput = document.getElementById('svb-lookup-order');
+  const submitBtn = document.getElementById('svb-lookup-submit');
+
+  const email = emailInput ? emailInput.value.trim() : '';
+  const orderRaw = orderInput ? orderInput.value.trim() : '';
+  const orderId = orderRaw ? parseInt(orderRaw, 10) : 0;
+
+  if (!email && !orderId) {
+    svbSetLookupStatus('Вкажіть email або номер замовлення', 'error');
+    return;
+  }
+
+  svbLookupInFlight = true;
+  svbSetLookupStatus('Шукаємо відео…');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('is-loading');
+  }
+
+  try {
+    const fd = new FormData();
+    fd.append('action', 'svb_find_video');
+    fd.append('_svb_nonce', SVB_AJAX.nonce);
+    if (email) fd.append('email', email);
+    if (orderId) fd.append('order_id', orderId);
+
+    const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status);
+    }
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.data || 'Не знайдено');
+    }
+
+    svbHandleLookupSuccess(json.data || {});
+    svbSetLookupStatus('✅ Знайшли готове відео', 'success');
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Не знайдено';
+    svbSetLookupStatus(msg, 'error');
+  } finally {
+    svbLookupInFlight = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('is-loading');
+    }
   }
 }
 
@@ -3257,23 +3353,27 @@ if (paymentBackBtn) {
     svbRestoreStep2State();
   });
 }
-$('#svb-back-3').addEventListener('click', ()=> {
-  svbSetStep(2);
-  if (svbPollInterval) clearInterval(svbPollInterval);
-  svbRestoreStep2State();
-});
-  $('#svb-finish').addEventListener('click', async ()=>{
-    const email = $('#svb-email').value.trim();
-    if(!email){ alert('Вкажіть email'); return; }
-  if(!svbVideoURL){
-    alert('Відео ще готується. Будь ласка, дочекайтесь повідомлення «Готово».');
-    return;
-  }
-  const fd = new FormData();
-  fd.append('action','svb_confirm');
-  fd.append('_svb_nonce', SVB_AJAX.nonce);
-  fd.append('email', email);
-  fd.append('token', svbJobToken||'');
+  $('#svb-back-3').addEventListener('click', ()=> {
+    svbSetStep(2);
+    if (svbPollInterval) clearInterval(svbPollInterval);
+    svbRestoreStep2State();
+  });
+    $('#svb-finish').addEventListener('click', async ()=>{
+      const email = $('#svb-email').value.trim();
+      if(!email){ alert('Вкажіть email'); return; }
+    if(!svbVideoURL){
+      alert('Відео ще готується. Будь ласка, дочекайтесь повідомлення «Готово».');
+      return;
+    }
+    if (svbRecoveredFromLookup && svbVideoURL) {
+      await svbNavigateToDownload(svbVideoURL);
+      return;
+    }
+    const fd = new FormData();
+    fd.append('action','svb_confirm');
+    fd.append('_svb_nonce', SVB_AJAX.nonce);
+    fd.append('email', email);
+    fd.append('token', svbJobToken||'');
   fetch(SVB_AJAX.url, { method:'POST', body:fd })
     .then(r=>r.json()).then(data=>{
       if (data.success) {
@@ -3382,6 +3482,8 @@ function svbRenderResultVideo(url) {
   async function svbStartGenerate() {
       if (svbGenerating) return;
       svbGenerating = true;
+      svbRecoveredFromLookup = false;
+      svbLookupDownloadUrl = '';
       svbResetPreviewState();
       $('#svb-status').textContent = 'Збирання даних...';
 
@@ -3709,6 +3811,75 @@ function getAllNames() {
     return all;
 }
 
+function svbFindNameAudioUrl(file) {
+    if (!file) return '';
+    const match = getAllNames().find(i => i.file === file);
+    return match && match.url ? match.url : '';
+}
+
+function svbUpdateNamePlayButton(playBtn, file) {
+    if (!playBtn) return;
+    const audioUrl = svbFindNameAudioUrl(file);
+    if (audioUrl) {
+        playBtn.dataset.audioUrl = audioUrl;
+        playBtn.disabled = false;
+        playBtn.style.display = 'inline-flex';
+    } else {
+        playBtn.dataset.audioUrl = '';
+        playBtn.disabled = true;
+    }
+}
+
+function svbBindNamePlayButtons() {
+    const pairs = [
+        { select: 'name_audio', btn: 'svb-name-play-1' },
+        { select: 'name_audio_2', btn: 'svb-name-play-2' },
+        { select: 'name_audio_3', btn: 'svb-name-play-3' },
+    ];
+
+    pairs.forEach(({ select, btn }) => {
+        const buttonEl = document.getElementById(btn);
+        if (!buttonEl) return;
+
+        const newBtn = buttonEl.cloneNode(true);
+        buttonEl.parentNode.replaceChild(newBtn, buttonEl);
+
+        const selectEl = document.querySelector(`select[name="${select}"]`);
+        const applyFromSelect = () => {
+            const file = selectEl ? selectEl.value : '';
+            svbUpdateNamePlayButton(newBtn, file);
+        };
+
+        applyFromSelect();
+        if (selectEl) {
+            selectEl.addEventListener('change', applyFromSelect);
+        }
+
+        newBtn.addEventListener('click', async () => {
+            const url = newBtn.dataset.audioUrl;
+            if (!url) return;
+
+            newBtn.classList.add('is-loading');
+            newBtn.disabled = true;
+
+            try {
+                if (svbCurrentSampleAudio) {
+                    svbCurrentSampleAudio.pause();
+                    svbCurrentSampleAudio = null;
+                }
+                const audio = new Audio(url);
+                svbCurrentSampleAudio = audio;
+                await audio.play();
+            } catch (err) {
+                console.warn('[SVB] Failed to play name sample', err);
+            } finally {
+                newBtn.classList.remove('is-loading');
+                newBtn.disabled = false;
+            }
+        });
+    });
+}
+
 // Замените существующую функцию svbBindNameSuggestUniversal на эту:
 function svbBindNameSuggestUniversal(inputId, resultBoxId, selectName, displayId, playBtnId) {
     const input = document.querySelector(`input[name="${inputId}"]`);
@@ -3771,19 +3942,7 @@ function svbBindNameSuggestUniversal(inputId, resultBoxId, selectName, displayId
 
         // === ЛОГИКА КНОПКИ PLAY ===
         if (playBtn) {
-            console.log('Попытка включить кнопку для:', file);
-            const fullItem = getAllNames().find(i => i.file === file);
-            
-            if (fullItem && fullItem.url) {
-                console.log('Аудио найдено:', fullItem.url);
-                playBtn.dataset.audioUrl = fullItem.url;
-                playBtn.style.display = 'flex'; // Показываем кнопку
-            } else {
-                console.warn('Аудио НЕ найдено для файла:', file);
-                // Попробуем собрать URL вручную, если в JSON его нет (fallback)
-                // Это поможет, если структура каталога простая
-                // Но лучше полагаться на данные из PHP
-            }
+            svbUpdateNamePlayButton(playBtn, file);
         }
 
         box.style.display = 'none';
