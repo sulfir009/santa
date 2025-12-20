@@ -29,6 +29,8 @@ function svb_save_config() {
         'video_id'  => isset($_POST['video_id']) ? sanitize_text_field(wp_unslash($_POST['video_id'])) : '',
     ];
 
+    $restore_handler = null;
+
     try {
         if ($log_enabled) {
             error_log('[SVB_SAVE_CONFIG] Request received ' . wp_json_encode($log_ctx));
@@ -62,6 +64,26 @@ function svb_save_config() {
             }
             wp_send_json_error(['message' => 'Некоректні дані конфігурації'], 400);
         }
+
+        $restore_handler = set_error_handler(function ($severity, $message, $file, $line) use ($log_enabled) {
+            if (!(error_reporting() & $severity)) {
+                return false;
+            }
+
+            $formatted = sprintf('[SVB_SAVE_CONFIG][PHP WARNING] %s @ %s:%d', $message, $file, $line);
+            if ($log_enabled) {
+                error_log($formatted);
+            }
+
+            throw new ErrorException($message, 0, $severity, $file, $line);
+        });
+
+        $restore_handler_safe = function () use (&$restore_handler) {
+            if ($restore_handler !== null) {
+                set_error_handler($restore_handler);
+                $restore_handler = null;
+            }
+        };
 
         for ($i = 1; $i <= 3; $i++) {
             $price_key = 'price_child_' . $i;
@@ -107,10 +129,29 @@ function svb_save_config() {
         $configFile = SVB_PLUGIN_DIR . 'svb_config.json';
         $configDir  = dirname($configFile);
 
-        if (!wp_is_writable($configDir)) {
+        $isWritable = function ($path) {
+            if (function_exists('wp_is_writable')) {
+                return wp_is_writable($path);
+            }
+
+            return is_writable($path);
+        };
+
+        if (!is_dir($configDir)) {
+            if (!wp_mkdir_p($configDir)) {
+                if ($log_enabled) {
+                    error_log('[SVB_SAVE_CONFIG] Failed to create config dir ' . $configDir);
+                }
+                $restore_handler_safe();
+                wp_send_json_error(['message' => 'Не вдалося створити папку конфігурації.'], 500);
+            }
+        }
+
+        if (!$isWritable($configDir)) {
             if ($log_enabled) {
                 error_log('[SVB_SAVE_CONFIG] Directory not writable ' . $configDir);
             }
+            $restore_handler_safe();
             wp_send_json_error(['message' => 'Не вдалося записати файл конфігурації (немає прав на папку).'], 500);
         }
 
@@ -119,6 +160,7 @@ function svb_save_config() {
             if ($log_enabled) {
                 error_log('[SVB_SAVE_CONFIG] JSON encode failed: ' . (function_exists('json_last_error_msg') ? json_last_error_msg() : 'unknown'));
             }
+            $restore_handler_safe();
             wp_send_json_error(['message' => 'Помилка підготовки даних для збереження'], 500);
         }
 
@@ -128,6 +170,7 @@ function svb_save_config() {
             if ($log_enabled) {
                 error_log('[SVB_SAVE_CONFIG] File write failed for ' . $configFile);
             }
+            $restore_handler_safe();
             wp_send_json_error(['message' => 'Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).'], 500);
         }
 
@@ -135,8 +178,13 @@ function svb_save_config() {
             error_log('[SVB_SAVE_CONFIG] Saved OK for video ' . $videoId . ' | scenes: ' . count($scenesData));
         }
 
+        $restore_handler_safe();
         wp_send_json_success(['message' => 'Налаштування збережено для ВСІХ шаблонів (у svb_config.json)']);
     } catch (Throwable $e) {
+        if ($restore_handler) {
+            set_error_handler($restore_handler);
+        }
+
         if ($log_enabled) {
             error_log('[SVB_SAVE_CONFIG][FATAL] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
         }
@@ -146,10 +194,9 @@ function svb_save_config() {
         ], 500);
     }
 
-    if ($log_enabled) {
-        error_log('[SVB_SAVE_CONFIG] File write failed for ' . $configFile);
+    if ($restore_handler) {
+        set_error_handler($restore_handler);
     }
-    wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).', 500);
 }
 
 function svb_build_download_url($order_id, $token) {

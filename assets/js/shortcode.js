@@ -4291,7 +4291,9 @@ if (saveBtn) {
             }
 
             if (!json) {
-                const fallback = status ? `Сталася помилка на сервері (${status})` : 'Некоректна відповідь сервера';
+                const fallback = status >= 500
+                    ? 'Сталася помилка на сервері (500). Перевірте debug.log.'
+                    : (status ? `Сталася помилка на сервері (${status})` : 'Некоректна відповідь сервера');
                 throw new Error(payloadMessage || fallback);
             }
 
