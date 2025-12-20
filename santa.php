@@ -233,8 +233,17 @@ function svb_handle_payment_return_redirect() {
         if (defined('SVB_DEBUG') && SVB_DEBUG) {
             error_log('[SVB PAY RETURN] order not found for order_id=' . $order_id . ' token_prefix=' . ($token ? substr($token, 0, 8) : ''));
         }
-        status_header(200);
-        wp_die('Order not found', '', ['response' => 200]);
+
+        $fallback_target = home_url('/');
+        if ($is_token_valid) {
+            $fallback_target = add_query_arg([
+                'svb_step'  => 2,
+                'svb_token' => $token,
+            ], $fallback_target);
+        }
+
+        wp_safe_redirect($fallback_target);
+        exit;
     }
 
     $public_token = svb_resolve_order_public_token($order_row);
