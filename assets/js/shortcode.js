@@ -102,10 +102,25 @@ const SVB_RETURN_FLAG = 'svb_resume_after_return';
 const SVB_RETURN_TOKEN = 'svb_return_token';
 const SVB_RETURN_ORDER = 'svb_return_order';
 const SVB_REDIRECT_GUARD = 'svb_redirect_once';
-const SVB_DEBUG = !!(window.SVB_DATA && window.SVB_DATA.debug && window.SVB_DATA.debug.enabled);
+const SVB_DEBUG_FLAG_KEY = 'svb_debug';
+const SVB_PAGE_BOOT = (window.SVB_DATA && window.SVB_DATA.debug) ? window.SVB_DATA.debug : {};
+let svbAjaxDebugPatched = false;
+let svbStep3SnapshotEmitted = false;
+let svbResumeChoice = { source: null, order_id: null, public_token: null };
+
+function svbRawDebugFlag() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('svb_debug') === '1') return true;
+  } catch (e) {}
+  try {
+    if (localStorage.getItem(SVB_DEBUG_FLAG_KEY) === '1') return true;
+  } catch (e) {}
+  return false;
+}
 
 function svbDebugLog(tag, payload) {
-  if (!SVB_DEBUG) return;
+  if (!svbIsDebugMode()) return;
   try {
     console.log(`[SVB DEBUG] ${tag}`,(payload ?? {}));
   } catch (e) {}
@@ -528,6 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (svbInitRebindRan) return;
     svbInitRebindRan = true;
     console.log('🚀 SVB Init started (Final Fix Rebind)');
+    svbInstallAjaxDebugging();
     svbLoadState();
 
     svbDebugLog('page_boot', {
@@ -706,6 +722,7 @@ let svbPaymentStatus = SVB_PAYMENT.status || 'unpaid';
 function svbIsDebugMode() {
     try {
         return !!(
+            svbRawDebugFlag() ||
             (typeof SVB_DEBUG !== 'undefined' && SVB_DEBUG) ||
             (typeof window !== 'undefined' && window.SVB_DEBUG === true) ||
             (SVB_PAYMENT && SVB_PAYMENT.is_admin)
@@ -749,6 +766,36 @@ function svbMaskInvoiceId(invoiceId) {
     return `${id.slice(0, 6)}***${id.slice(-4)}`;
 }
 
+function svbSafeStorageGet(key, type = 'local') {
+  try {
+    const store = type === 'session' ? sessionStorage : localStorage;
+    return store.getItem(key);
+  } catch (e) {
+    return null;
+  }
+}
+
+function svbRecordResumeChoice(source, orderId, publicToken) {
+  svbResumeChoice = {
+    source: source || 'unknown',
+    order_id: orderId || null,
+    public_token: publicToken || null,
+  };
+  if (svbIsDebugMode()) {
+    console.log('[SVB DEBUG][RESUME] choice', Object.assign({ source }, { order_id: orderId || null, public_token: publicToken || '' }));
+  }
+}
+
+function svbWarnResumeMismatch(reason) {
+  if (!svbIsDebugMode()) return;
+  const pageBootOrder = SVB_PAGE_BOOT && SVB_PAGE_BOOT.order_id ? SVB_PAGE_BOOT.order_id : null;
+  const resumeOrder = svbResumeChoice && svbResumeChoice.order_id ? svbResumeChoice.order_id : null;
+  if (!pageBootOrder && !resumeOrder) return;
+  if (!resumeOrder || resumeOrder === '0' || resumeOrder === 0 || (pageBootOrder && String(pageBootOrder) !== String(resumeOrder))) {
+    console.warn('[SVB DEBUG][RESUME MISMATCH]', { page_boot_order: pageBootOrder || null, resume_order: resumeOrder || null, reason });
+  }
+}
+
 async function svbFetchSessionDebug(label = 'init') {
     if (!SVB_AJAX || !SVB_AJAX.nonce) return;
     const fd = new FormData();
@@ -766,6 +813,132 @@ async function svbFetchSessionDebug(label = 'init') {
         console.error('[SVB SESSION][DEBUG] failed', e);
         return null;
     }
+}
+
+function svbInstallAjaxDebugging() {
+  if (!svbIsDebugMode() || svbAjaxDebugPatched) return;
+  svbAjaxDebugPatched = true;
+  try {
+    const origFetch = window.fetch ? window.fetch.bind(window) : null;
+    if (origFetch) {
+      window.fetch = async function svbDebugFetch() {
+        const args = Array.from(arguments);
+        const input = args[0];
+        const init = args[1] || {};
+        const url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+        const isAdminAjax = url && url.indexOf('admin-ajax.php') !== -1;
+        let paramsObj = null;
+        let action = '';
+        if (isAdminAjax && init && init.body && typeof FormData !== 'undefined' && init.body instanceof FormData) {
+          paramsObj = {};
+          init.body.forEach((v, k) => { paramsObj[k] = v; });
+          action = init.body.get('action') || '';
+        }
+        try {
+          const res = await origFetch.apply(window, args);
+          if (isAdminAjax) {
+            let json = null;
+            try {
+              json = await res.clone().json();
+            } catch (e) {}
+            console.log('[SVB DEBUG][AJAX] POST', { action, url, params: paramsObj, status: res.status, response: json });
+          }
+          return res;
+        } catch (err) {
+          if (isAdminAjax) {
+            console.warn('[SVB DEBUG][AJAX] fetch failed', { action, url, params: paramsObj, error: err && err.message ? err.message : err });
+          }
+          throw err;
+        }
+      };
+    }
+
+    const OrigXHR = window.XMLHttpRequest;
+    if (OrigXHR && OrigXHR.prototype && OrigXHR.prototype.open) {
+      const origOpen = OrigXHR.prototype.open;
+      const origSend = OrigXHR.prototype.send;
+      OrigXHR.prototype.open = function(method, url) {
+        this.__svb_url = url;
+        return origOpen.apply(this, arguments);
+      };
+      OrigXHR.prototype.send = function(body) {
+        const url = this.__svb_url || '';
+        const isAdminAjax = url && url.indexOf('admin-ajax.php') !== -1;
+        let paramsObj = null;
+        let action = '';
+        if (isAdminAjax && body && typeof FormData !== 'undefined' && body instanceof FormData) {
+          paramsObj = {};
+          body.forEach((v, k) => { paramsObj[k] = v; });
+          action = body.get('action') || '';
+        }
+        if (isAdminAjax) {
+          this.addEventListener('load', function() {
+            let json = null;
+            try { json = JSON.parse(this.responseText); } catch (e) {}
+            console.log('[SVB DEBUG][AJAX] XHR', { action, url, params: paramsObj, status: this.status, response: json });
+          });
+          this.addEventListener('error', function() {
+            console.warn('[SVB DEBUG][AJAX] XHR failed', { action, url, params: paramsObj, status: this.status });
+          });
+        }
+        return origSend.apply(this, arguments);
+      };
+    }
+  } catch (e) {
+    console.warn('[SVB DEBUG] Failed to install AJAX logger', e);
+  }
+}
+
+function svbBuildStep3Snapshot(reason) {
+  if (!svbIsDebugMode()) return null;
+  const state = svbLoadState() || {};
+  const step2 = svbSafeStorageGet('svb_step2_state');
+  const snap = {
+    reason: reason || 'unknown',
+    location: { href: window.location.href, search: window.location.search },
+    localStorage: {
+      svb_state_v1: svbSafeStorageGet('svb_state_v1'),
+      svb_step2_state: step2,
+      svb_last_paid_order: svbSafeStorageGet('svb_last_paid_order'),
+      svb_last_payment_attempt: svbSafeStorageGet('svb_last_payment_attempt'),
+      svb_last_order_token: svbSafeStorageGet('svb_last_order_token'),
+      svb_return_token: svbSafeStorageGet(SVB_RETURN_TOKEN, 'session'),
+      svb_return_order: svbSafeStorageGet(SVB_RETURN_ORDER, 'session'),
+      svb_resume_redirect_done: svbSafeStorageGet('svb_resume_redirect_done', 'session'),
+    },
+    sessionStorage: {
+      svb_state_v1: svbSafeStorageGet('svb_state_v1', 'session'),
+    },
+    page_boot: {
+      order_id: SVB_PAGE_BOOT && SVB_PAGE_BOOT.order_id ? SVB_PAGE_BOOT.order_id : null,
+      payment_status: SVB_PAGE_BOOT && SVB_PAGE_BOOT.payment_status ? SVB_PAGE_BOOT.payment_status : null,
+      token: SVB_PAGE_BOOT && SVB_PAGE_BOOT.public_token_masked ? SVB_PAGE_BOOT.public_token_masked : null,
+    },
+    resume_choice: Object.assign({}, svbResumeChoice),
+    ui_state: {
+      current_step: state.step || null,
+      selected_video_id: state.selected_video_id || null,
+      child_count: state.child_count || null,
+    },
+    tokens: {
+      public_token: state.public_token || null,
+      token_hash: state.token_hash || null,
+      _svb_nonce: (SVB_AJAX && SVB_AJAX.nonce) ? SVB_AJAX.nonce : null,
+    },
+    payment_status: svbPaymentStatus,
+  };
+  window.__svb_debug_snapshot = snap;
+  console.group('[SVB DEBUG][STEP3] snapshot');
+  console.log(snap);
+  console.groupEnd();
+  svbWarnResumeMismatch('step3_snapshot');
+  return snap;
+}
+
+function svbMaybeEmitStep3Snapshot(reason) {
+  if (!svbIsDebugMode() || svbStep3SnapshotEmitted) return;
+  svbStep3SnapshotEmitted = true;
+  svbBuildStep3Snapshot(reason || 'step3');
 }
 
 function svbMaskToken(tkn) {
@@ -1290,7 +1463,7 @@ function svbFormatTime(seconds) {
 
 
 
-function svbSetStep(n){
+function svbSetStep(n, reason = 'user_flow'){
   const prevState = svbLoadState();
   const prevStep = prevState && prevState.step ? prevState.step : null;
   $$('.svb-step').forEach(s=>s.classList.remove('active'));
@@ -1303,7 +1476,13 @@ function svbSetStep(n){
   const titles = {1:'Крок 1 — Дані дитини', 2:'Крок 2 — Фото', 3:'Крок 3 — Підтвердження та отримання'};
   $('#svb-title').textContent = titles[n] || '';
   svbUpdateState({ step: n });
-  console.log('[SVB UI][STEP]', { from: prevStep, to: n, reason: 'user_flow' });
+  console.log('[SVB UI][STEP]', { from: prevStep, to: n, reason });
+  if (n === 3) {
+    if (svbIsDebugMode() && svbPaymentStatus !== 'paid' && svbPaymentStatus !== 'success') {
+      console.warn('[SVB DEBUG][RESUME MISMATCH]', { page_boot_order: SVB_PAGE_BOOT.order_id || null, resume_order: svbResumeChoice.order_id || null, reason: 'payment_not_paid_at_step3', payment_status: svbPaymentStatus });
+    }
+    svbMaybeEmitStep3Snapshot(reason);
+  }
   svbScrollToTop();
 }
 // === ФУНКЦИЯ ФИЛЬТРАЦИИ АУДИО (ФИНАЛЬНАЯ) ===
@@ -2041,7 +2220,7 @@ function svbHandleLookupSuccess(payload) {
   svbResetPreviewState();
   svbToggleVideoOverlay(false);
   svbRenderResultVideo(url);
-  svbSetStep(3);
+  svbSetStep(3, 'lookup_success');
 
   const statusEl = document.getElementById('svb-status');
   if (statusEl) {
@@ -2344,8 +2523,11 @@ async function svbPollPaymentConfirmation(orderId, token) {
   const maxAttempts = 20;
   for (let i = 0; i < maxAttempts; i++) {
     const result = await svbCheckPaymentStatus(orderId, token);
+    if (svbIsDebugMode()) {
+      console.log('[SVB DEBUG][PAYMENT][POLL]', { attempt: i + 1, order_id: orderId, token, result });
+    }
     if (result && (result.payment_status === 'paid' || result.payment_status === 'success')) {
-      svbSetStep(3);
+      svbSetStep(3, 'payment_confirmed');
       if (result.download_url) {
         svbHandleSuccessInternal(result.download_url);
       } else {
@@ -2359,6 +2541,9 @@ async function svbPollPaymentConfirmation(orderId, token) {
   }
 
   svbShowPaymentError('Оплата ще не підтверджена. Спробуйте оновити сторінку або зачекайте хвилину.');
+  if (svbIsDebugMode()) {
+    console.warn('[SVB DEBUG][PAYMENT][POLL] timed out', { order_id: orderId, token });
+  }
   return false;
 }
 
@@ -2388,6 +2573,7 @@ async function svbHandleResumeFromUrl(params) {
     svbUpdateState({ order_id: orderToUse, public_token: tokenToUse });
     svbStoreLastOrderToken(orderToUse, tokenToUse);
   }
+  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
   try {
     document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
   } catch (e) {}
@@ -2428,6 +2614,7 @@ async function svbAutoResumeFromLocal(opts = {}) {
       saved_at: lastAttempt.saved_at || Date.now(),
     };
     console.log('[SVB RESUME][CHOOSE]', { chosen: 'lastPaymentAttempt', order_id: stored.order_id });
+    svbRecordResumeChoice('lastPaymentAttempt', stored.order_id, stored.token);
   }
 
   if ((!stored || !stored.order_id || !stored.token) && storedOrderToken && storedOrderToken.order_id) {
@@ -2437,6 +2624,7 @@ async function svbAutoResumeFromLocal(opts = {}) {
       saved_at: storedOrderToken.saved_at || Date.now(),
     };
     console.log('[SVB RESUME][CHOOSE]', { chosen: 'lastOrderToken', order_id: stored.order_id });
+    svbRecordResumeChoice('lastOrderToken', stored.order_id, stored.token);
   }
 
   if (!stored || !stored.order_id || !stored.token) {
@@ -2445,6 +2633,7 @@ async function svbAutoResumeFromLocal(opts = {}) {
   }
 
   console.log('[SVB RESUME][CHOOSE]', { chosen: 'lastPaidOrder', order_id: stored.order_id });
+  svbRecordResumeChoice('lastPaidOrder', stored.order_id, stored.token);
 
   try {
     const resp = await svbOrderResumeInfoRequest(stored.order_id, stored.token);
@@ -3580,7 +3769,7 @@ if (restoreBtn) {
       if (statusBox) {
         statusBox.textContent = 'Замовлення знайдено. Переходимо до генерації...';
       }
-      svbSetStep(3);
+      svbSetStep(3, 'lookup_resume_form');
       svbStartGenerate();
     } catch (resumeErr) {
       if (statusBox) {
@@ -3727,7 +3916,7 @@ function svbRenderResultVideo(url) {
 
   function svbMarkGenerationStarted() {
     svbUpdateState({ step: 3 });
-    svbSetStep(3);
+    svbSetStep(3, 'generation_mark_started');
     svbShowPoster(true);
     svbToggleVideoOverlay(true);
     svbUpdateVideoPercent(0);
@@ -4028,8 +4217,12 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
         return;
     }
 
-    svbSetStep(3);
+    svbSetStep(3, 'start_generation_by_token');
     svbShowGenerationProcessing();
+
+    if (svbIsDebugMode()) {
+        console.log('[SVB DEBUG][GENERATION][START]', { order_id: orderId || null, public_token: publicToken });
+    }
 
     if (svbGenerationPollLock) return;
     svbGenerationPollLock = true;
@@ -4044,10 +4237,16 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
         const data = await res.json();
         if (!data.success) {
             svbShowPaymentError(data.data || 'Не вдалося розпочати генерацію.');
+            if (svbIsDebugMode()) {
+                console.warn('[SVB DEBUG][GENERATION][START][FAIL]', { response: data });
+            }
             return;
         }
 
         const payload = data.data || {};
+        if (svbIsDebugMode()) {
+            console.log('[SVB DEBUG][GENERATION][START][OK]', payload);
+        }
         if (payload.status === 'done' && payload.download_url) {
             svbHandleSuccessInternal(payload.download_url);
             svbStopGenerationPoll();
@@ -4080,6 +4279,12 @@ async function svbPollGeneration(publicToken) {
         }
 
         const payload = data.data || {};
+        if (svbIsDebugMode()) {
+            console.log('[SVB DEBUG][GENERATION][POLL]', payload);
+            if (!('progress' in payload)) {
+                console.warn('[SVB DEBUG] progress missing in status response');
+            }
+        }
         if (payload.status === 'done' && payload.download_url) {
             svbHandleSuccessInternal(payload.download_url);
             svbStopGenerationPoll();
@@ -4935,7 +5140,7 @@ async function svbHandlePaidResume(orderId, token, resumeInfo = {}) {
     svbUpdateState({ order_id: orderId, public_token: token, payment_status: 'success' });
   }
 
-  svbSetStep(3);
+  svbSetStep(3, 'payment_return');
 
   svbShowGenerationProcessing('Оплата підтверджена. Генеруємо відео…');
 
