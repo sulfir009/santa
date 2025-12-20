@@ -20,6 +20,10 @@ if (!defined('SVB_DEBUG')) {
 if (!defined('SVB_ORDERS_V2')) {
     define('SVB_ORDERS_V2', false);
 }
+if (!defined('SVB_ALLOW_PENDING_GENERATION')) {
+    // Allow toggling pending-generation start flows without code edits.
+    define('SVB_ALLOW_PENDING_GENERATION', true);
+}
 
 function svb_debug_enabled() {
     if (defined('SVB_DEBUG') && SVB_DEBUG) {

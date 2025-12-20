@@ -114,6 +114,9 @@ let svbStep3SnapshotEmitted = false;
 let svbResumeChoice = { source: null, order_id: null, public_token: null };
 let svbActiveOrder = { order_id: null, public_token: '', payment_status: null };
 let svbActiveOrderInitialized = false;
+let svbHadReturnParams = false;
+let svbPaymentStatusPollTimer = null;
+let svbPaymentStatusPollAttempts = 0;
 
 function svbRawDebugFlag() {
   try {
@@ -299,6 +302,7 @@ function svbCaptureReturnParams() {
   const hadStep = urlParams.has('svb_step');
 
   if (hasReturn) {
+    svbHadReturnParams = true;
     try { sessionStorage.setItem(SVB_RETURN_FLAG, '1'); } catch (e) {}
     svbMarkAfterPayment();
   }
@@ -2652,7 +2656,7 @@ function svbShowGenerationStatus(payload) {
     done: 'Відео готове! Готуємо посилання…',
     failed: 'Генерація не вдалася. Спробуйте ще раз.'
   };
-  const text = map[status] || map.processing;
+  const text = (payload && payload.ui_message) ? payload.ui_message : (map[status] || map.processing);
   if (statusEl) {
     statusEl.textContent = text;
   }
@@ -2694,6 +2698,14 @@ async function svbHandleResumeFromUrl(params) {
   if (!hasExplicitReturn && !svbShouldResumeAfterReturn()) {
     return false;
   }
+  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
+  try {
+    document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch (e) {}
+
+  svbShowPaymentChecking();
+  const paid = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
+  svbConsumeReturnFlag();
 
   const tokenToUse = token || (() => {
     try { return sessionStorage.getItem(SVB_RETURN_TOKEN) || ''; } catch (e) { return ''; }
@@ -4381,6 +4393,46 @@ function svbStopGenerationPoll() {
     svbGenerationPollLock = false;
 }
 
+function svbStopPaymentStatusPoll() {
+    if (svbPaymentStatusPollTimer) {
+        clearInterval(svbPaymentStatusPollTimer);
+        svbPaymentStatusPollTimer = null;
+    }
+    svbPaymentStatusPollAttempts = 0;
+}
+
+function svbEnsurePendingPaymentPolling(invoiceId, publicToken) {
+    const invoice = invoiceId || svbGetStoredInvoiceId() || (SVB_PAYMENT && SVB_PAYMENT.invoice_id ? SVB_PAYMENT.invoice_id : '');
+    const token = publicToken || (svbGetActiveOrder('payment_poll').public_token || '');
+    if (!invoice || svbPaymentStatusPollTimer) return;
+
+    svbPaymentStatusPollAttempts = 0;
+    svbPaymentStatusPollTimer = setInterval(async () => {
+        svbPaymentStatusPollAttempts += 1;
+        try {
+            const status = await svbRequestInvoiceStatus(invoice);
+            if (svbIsDebugMode()) {
+                console.log('[SVB DEBUG][PAYMENT][PENDING POLL]', { invoice, attempt: svbPaymentStatusPollAttempts, status });
+            }
+            if (status && status.status === 'paid') {
+                svbStopPaymentStatusPoll();
+                svbPaymentStatus = 'paid';
+                if (SVB_PAYMENT) SVB_PAYMENT.status = 'paid';
+                svbStartGenerationByToken(token || publicToken || '');
+                return;
+            }
+        } catch (err) {
+            if (svbIsDebugMode()) {
+                console.warn('[SVB DEBUG][PAYMENT][PENDING POLL][ERROR]', err);
+            }
+        }
+
+        if (svbPaymentStatusPollAttempts >= 20) {
+            svbStopPaymentStatusPoll();
+        }
+    }, 5000);
+}
+
 function svbScheduleGenerationPoll(publicToken) {
     svbStopGenerationPoll();
     if (!publicToken) return;
@@ -4419,16 +4471,22 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
     if (svbGenerationPollLock) return;
     svbGenerationPollLock = true;
 
+    const returnFlow = svbHadReturnParams || svbShouldResumeAfterReturn();
+
     const fd = new FormData();
     fd.append('action', 'svb_start_generation');
     fd.append('_svb_nonce', SVB_AJAX.nonce);
     fd.append('public_token', tokenToUse);
+    fd.append('return_flow', returnFlow ? '1' : '');
 
     try {
         const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
         const data = await res.json();
         if (!data.success) {
-            svbShowPaymentError(data.data || 'Не вдалося розпочати генерацію.');
+            const errMsg = (data && typeof data.data === 'string')
+              ? data.data
+              : (data && data.data && data.data.code ? data.data.code : 'Не вдалося розпочати генерацію.');
+            svbShowPaymentError(errMsg);
             if (svbIsDebugMode()) {
                 console.warn('[SVB DEBUG][GENERATION][START][FAIL]', { response: data });
             }
@@ -4445,7 +4503,18 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
             return;
         }
 
-        svbShowGenerationStatus({ generation_status: payload.status });
+        if (payload.status === 'done' && !payload.download_url) {
+            svbShowGenerationStatus(payload);
+            svbEnsurePendingPaymentPolling(payload.invoice_id, tokenToUse);
+            svbScheduleGenerationPoll(tokenToUse);
+            return;
+        }
+
+        if (payload.payment_status && payload.payment_status !== 'paid') {
+            svbEnsurePendingPaymentPolling(payload.invoice_id, tokenToUse);
+        }
+
+        svbShowGenerationStatus(payload);
         svbScheduleGenerationPoll(tokenToUse);
     } catch (err) {
         svbShowPaymentError(err && err.message ? err.message : 'Помилка запуску генерації');
@@ -4477,9 +4546,16 @@ async function svbPollGeneration(publicToken) {
                 console.warn('[SVB DEBUG] progress missing in status response');
             }
         }
-        if (payload.status === 'done' && payload.download_url) {
+        if (payload.status === 'done' && payload.download_url && payload.can_download !== false) {
             svbHandleSuccessInternal(payload.download_url);
             svbStopGenerationPoll();
+            return;
+        }
+
+        if (payload.status === 'done' && (!payload.download_url || payload.can_download === false)) {
+            svbShowGenerationStatus(payload);
+            svbEnsurePendingPaymentPolling(payload.invoice_id, publicToken);
+            svbScheduleGenerationPoll(publicToken);
             return;
         }
 
@@ -4487,6 +4563,12 @@ async function svbPollGeneration(publicToken) {
             svbShowPaymentError('Генерація не вдалася. Спробуйте ще раз.');
             svbStopGenerationPoll();
             return;
+        }
+
+        if (payload.payment_status && payload.payment_status !== 'paid') {
+            svbEnsurePendingPaymentPolling(payload.invoice_id, publicToken);
+        } else {
+            svbStopPaymentStatusPoll();
         }
 
         svbShowGenerationStatus(payload);
