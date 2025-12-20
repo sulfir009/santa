@@ -1911,7 +1911,6 @@ function buildSoundMap(){
   SVB_SELECTED = {
     name:    pull('name'),
     age:     pull('age'),
-    facts:   pull('facts'),
     hobby:   pull('hobby'),
     praise:  pull('praise'),
     request: pull('request')
