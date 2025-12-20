@@ -2958,7 +2958,7 @@ async function svbInvalidateInvoice(orderId, token) {
 
 async function svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes, fingerprint) {
   const fd = new FormData();
-  fd.append('action', 'svb_payment_gate');
+  fd.append('action', 'svb_gate');
   fd.append('_svb_nonce', SVB_AJAX.nonce);
   fd.append('child_count', childCount);
   fd.append('selected_video_id', SVB_SELECTED_VIDEO_ID);
@@ -3154,17 +3154,6 @@ async function svbHandleStep2Next() {
   svbPersistStep2State();
   svbSerializeSegmentsToField();
   const childCount = svbGetSelectedChildCount();
-  const paymentEnabled = !!SVB_PAYMENT.enabled;
-  const isAdmin = !!SVB_PAYMENT.is_admin;
-  const paymentToggle = document.querySelector('#svb_payment_toggle');
-  const toggleFound = !!paymentToggle;
-  const toggleChecked = paymentToggle ? !!paymentToggle.checked : true;
-  if (isAdmin && !toggleFound) {
-    svbError('[SVB PAY] admin payment toggle not found, defaulting payRequired=true');
-  }
-
-  const requirePayment = isAdmin ? toggleChecked : true;
-
   const savedState = svbLoadState();
   let overlayData = {};
   let segmentsValue = '';
@@ -3181,11 +3170,11 @@ async function svbHandleStep2Next() {
   }
 
   svbLog('[SVB STEP2] Next click', {
-    payRequired: requirePayment,
-    paymentEnabled,
-    isAdmin,
-    adminToggleFound: toggleFound,
-    adminToggleChecked: toggleChecked,
+    payRequired: true,
+    paymentEnabled: true,
+    isAdmin: !!SVB_PAYMENT.is_admin,
+    adminToggleFound: false,
+    adminToggleChecked: true,
     child_count: childCount,
     selected_video_id: SVB_SELECTED_VIDEO_ID,
     formData: savedState.formData || {},
@@ -3195,15 +3184,6 @@ async function svbHandleStep2Next() {
   console.groupCollapsed('[SVB PAY][STEP2] input');
   console.log({ child_count: childCount, selected_video_id: SVB_SELECTED_VIDEO_ID });
   console.groupEnd();
-
-  if (!requirePayment) {
-    svbLog('[SVB STEP2] payRequired=false, skipping payment and going to step3');
-    svbProceedToGenerateFlow();
-    svbStep2InFlight = false;
-    if (nextBtn) nextBtn.disabled = false;
-    return;
-  }
-
   try {
     const photoHashes = await svbCollectPhotoHashes();
     let segmentsParsed = [];
@@ -3246,7 +3226,8 @@ async function svbHandleStep2Next() {
       reason: gate.reason,
     });
 
-    if ((gateDecision && gateDecision.toLowerCase() === 'paid') || gate.payment_status === 'success' || gate.is_paid) {
+    const normalizedDecision = gateDecision ? gateDecision.toLowerCase() : '';
+    if (normalizedDecision === 'paid' || gate.payment_status === 'success' || gate.is_paid) {
       svbLog('[SVB STEP2] gate says paid, proceeding to generate');
       svbSaveLastPaidOrder(gate.order_id, gateToken, gate.fingerprint_current);
       svbProceedToGenerateFlow();

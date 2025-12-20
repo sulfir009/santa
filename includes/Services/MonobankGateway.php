@@ -62,6 +62,24 @@ function svb_monobank_prefix($value, $len = 8) {
     return substr((string) $value, 0, $len);
 }
 
+function svb_monobank_build_redirect_url($public_token) {
+    $token = $public_token ? sanitize_text_field($public_token) : '';
+    if (!$token) {
+        return home_url('/');
+    }
+
+    return add_query_arg('svb_token', $token, home_url('/'));
+}
+
+function svb_monobank_build_webhook_url($public_token) {
+    $base = rest_url('svb/v1/monobank-webhook');
+    if (!$public_token) {
+        return $base;
+    }
+
+    return add_query_arg('svb_token', rawurlencode($public_token), $base);
+}
+
 function svb_monobank_extract_modified($payload) {
     if (is_array($payload)) {
         if (isset($payload['modifiedDate'])) {
@@ -365,7 +383,7 @@ function svb_monobank_invalidate_invoice_request($invoice_id) {
 }
 
 function svb_handle_monobank_return() {
-    if (empty($_GET['svb_payment_return'])) {
+    if (empty($_GET['svb_payment_return']) && empty($_GET['svb_token'])) {
         return;
     }
 
@@ -373,6 +391,9 @@ function svb_handle_monobank_return() {
     $token_from_url = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
     if (!$token_from_url && isset($_GET['svb_order'])) {
         $token_from_url = sanitize_text_field(wp_unslash($_GET['svb_order']));
+    }
+    if (!$token_from_url && isset($_GET['svb_token'])) {
+        $token_from_url = sanitize_text_field(wp_unslash($_GET['svb_token']));
     }
 
     $order_row = null;
@@ -485,7 +506,7 @@ function svb_handle_monobank_webhook(WP_REST_Request $request) {
 }
 
 add_action('rest_api_init', function() {
-    register_rest_route('svb/v1', '/monobank/webhook', [
+    register_rest_route('svb/v1', '/monobank-webhook', [
         'methods' => 'POST',
         'callback' => 'svb_handle_monobank_webhook',
         'permission_callback' => '__return_true',

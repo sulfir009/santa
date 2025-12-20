@@ -14,39 +14,6 @@ define('SVB_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SVB_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('SVB_STATE_VERSION', 1);
 
-if (!function_exists('svb_error_log')) {
-    function svb_error_log($message, array $context = []) {
-        $encoded_message = is_string($message)
-            ? $message
-            : (function_exists('wp_json_encode') ? wp_json_encode($message) : json_encode($message));
-
-        $encoded_context = $context
-            ? (function_exists('wp_json_encode') ? wp_json_encode($context) : json_encode($context))
-            : '';
-
-        $line = '[SVB] ' . $encoded_message . ($encoded_context ? ' ' . $encoded_context : '');
-        error_log($line);
-
-        if (defined('WP_CONTENT_DIR')) {
-            $debug_file = trailingslashit(WP_CONTENT_DIR) . 'debug.log';
-            $dir = dirname($debug_file);
-            if (is_dir($dir) && is_writable($dir)) {
-                error_log($line . PHP_EOL, 3, $debug_file);
-            }
-        }
-    }
-}
-
-register_shutdown_function(function() {
-    $last_error = error_get_last();
-    if (!$last_error) {
-        return;
-    }
-
-    // Log all shutdown errors to simplify diagnosing “critical error” reports.
-    svb_error_log('[SVB_FATAL] shutdown', $last_error);
-});
-
 if (!defined('SVB_DEBUG')) {
     define('SVB_DEBUG', true);
 }
@@ -229,7 +196,7 @@ register_activation_hook(__FILE__, function() {
 add_action('svb_cleanup_order_results', 'svb_cleanup_order_results_cb');
 
 add_filter('redirect_canonical', function($redirect_url, $requested_url) {
-    if (isset($_GET['svb_download']) || isset($_GET['svb_payment_return'])) {
+    if (isset($_GET['svb_download']) || isset($_GET['svb_payment_return']) || isset($_GET['svb_token'])) {
         return false;
     }
 
@@ -406,16 +373,21 @@ function svb_handle_download_endpoint() {
 }
 
 function svb_handle_payment_return_redirect() {
-    if (empty($_GET['svb_payment_return'])) {
-        return;
-    }
-
-    $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
+    $has_return_flag = !empty($_GET['svb_payment_return']);
     $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
 
     if (!$token && isset($_GET['svb_order'])) {
         $token = sanitize_text_field(wp_unslash($_GET['svb_order']));
     }
+    if (!$token && isset($_GET['svb_token'])) {
+        $token = sanitize_text_field(wp_unslash($_GET['svb_token']));
+    }
+
+    if (!$has_return_flag && !$token) {
+        return;
+    }
+
+    $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
 
     $is_token_valid = $token && preg_match('/^[a-f0-9]{8,}$/i', $token);
     $order_row = null;
@@ -436,18 +408,20 @@ function svb_handle_payment_return_redirect() {
 
         svb_clear_user_state('payment_return_not_found');
 
-        svb_clear_user_state('payment_return_not_found');
+        if ($has_return_flag) {
+            $fallback_target = home_url('/');
+            if ($is_token_valid) {
+                $fallback_target = add_query_arg([
+                    'svb_step'  => 2,
+                    'svb_token' => $token,
+                ], $fallback_target);
+            }
 
-        $fallback_target = home_url('/');
-        if ($is_token_valid) {
-            $fallback_target = add_query_arg([
-                'svb_step'  => 2,
-                'svb_token' => $token,
-            ], $fallback_target);
+            wp_safe_redirect($fallback_target);
+            exit;
         }
 
-        wp_safe_redirect($fallback_target);
-        exit;
+        return;
     }
 
     $public_token = svb_resolve_order_public_token($order_row);
@@ -467,16 +441,18 @@ function svb_handle_payment_return_redirect() {
         'session' => !empty($order_row['session_id']) ? svb_mask_value($order_row['session_id']) : '',
     ]);
 
-    $resume_url = add_query_arg(
-        [
-            'svb_token' => $public_token,
-            'svb_step' => 3,
-        ],
-        home_url('/')
-    );
+    if ($has_return_flag) {
+        $resume_url = add_query_arg(
+            [
+                'svb_token' => $public_token,
+                'svb_step' => 3,
+            ],
+            home_url('/')
+        );
 
-    wp_safe_redirect($resume_url);
-    exit;
+        wp_safe_redirect($resume_url);
+        exit;
+    }
 }
 
 // Allow HEIC/HEIF uploads when supported by WordPress core.
@@ -531,6 +507,7 @@ svb_register_ajax_handler('svb_request_name', 'svb_request_name', true);
 svb_register_ajax_handler('svb_find_video', 'svb_find_video', true);
 svb_register_ajax_handler('svb_order_recover', 'svb_order_recover', true);
 svb_register_ajax_handler('svb_order_resume_info', 'svb_order_resume_info', true);
+svb_register_ajax_handler('svb_gate', 'svb_gate', true);
 svb_register_ajax_handler('svb_payment_gate', 'svb_payment_gate', true);
 svb_register_ajax_handler('svb_pay_debug_state', 'svb_pay_debug_state', true);
 svb_register_ajax_handler('svb_debug_session', 'svb_debug_session', true);

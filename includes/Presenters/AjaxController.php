@@ -2133,6 +2133,10 @@ function svb_monobank_sync_status() {
     wp_send_json_success($response);
 }
 
+function svb_gate() {
+    return svb_payment_gate();
+}
+
 function svb_payment_gate() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');
@@ -2264,64 +2268,78 @@ function svb_payment_gate() {
     $created_ts = isset($payment['invoice_created_at']) ? (int) $payment['invoice_created_at'] : 0;
     $recent_invoice = $created_ts ? ((time() - $created_ts) < 1800) : false;
 
-    if (!$is_paid_for_current) {
-        if (!svb_monobank_get_token()) {
-            wp_send_json_error('Payment is not configured.');
-        }
-        if (!$payment_url || !in_array($payment_status, ['pending', 'processing'], true) || !$recent_invoice) {
-            $amount = svb_monobank_amount_for_children($child_count);
-            if ($amount <= 0) {
-                wp_send_json_error('Invalid amount for selected children');
-            }
-
-            $return_url = add_query_arg(
-                [
-                    'svb_payment_return' => '1',
-                    'svb_token' => $public_token,
-                    'token' => $public_token,
-                    'svb_order' => $public_token,
-                    'order_id' => $order_row['order_id'] ?? 0,
-                ],
-                home_url('/')
-            );
-
-            $reference = 'SVB-' . ($order_row['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
-            $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_row['order_id'] ?? 'unknown');
-
-            $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment);
-            if (is_wp_error($invoice)) {
-                $err_data = $invoice->get_error_data();
-                $status = is_array($err_data) ? ($err_data['status'] ?? '') : '';
-                $body_snippet = (is_array($err_data) && isset($err_data['body'])) ? svb_pay_trim($err_data['body']) : '';
-                $message_parts = [];
-                if ($status) $message_parts[] = 'http=' . $status;
-                if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-                $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
-                wp_send_json_error($public_message);
-            }
-
-            $invoice_id = isset($invoice['invoiceId']) ? sanitize_text_field($invoice['invoiceId']) : '';
-            $payment_url = $invoice['pageUrl'] ?? '';
-
-            $payment_updates = [
-                'status' => 'pending',
-                'invoice_id' => $invoice_id,
-                'invoice_page_url' => $payment_url,
-                'invoice_fingerprint' => $fingerprint_current,
-                'reference' => $reference,
-                'amount' => $amount,
-                'child_count' => $child_count,
-                'modifiedDate' => 0,
-                'invoice_created_at' => time(),
-            ];
-
-            svb_update_order_payment_by_order_id($order_row['order_id'], $payment_updates);
-            $payment_status = 'pending';
+    if ($invoice_id && !$is_paid_for_current && in_array($payment_status, ['pending', 'processing'], true)) {
+        $status = svb_monobank_get_invoice_status($invoice_id);
+        if (!is_wp_error($status)) {
+            $payment = svb_monobank_apply_payment_status($order_row, $status);
+            $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
+            $paid_fingerprint = $payment['paid_fingerprint'] ?? $paid_fingerprint;
+            $payment_url = $payment['invoice_page_url'] ?? $payment_url;
+            $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
+            $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
         }
     }
 
+    $invoice_matches_fp = empty($payment['invoice_fingerprint'])
+        ? true
+        : svb_safe_hash_equals((string) $payment['invoice_fingerprint'], (string) $fingerprint_current);
+    $should_create_invoice = !$is_paid_for_current && (
+        empty($payment_url)
+        || !in_array($payment_status, ['pending', 'processing'], true)
+        || !$recent_invoice
+        || !$invoice_matches_fp
+    );
+
+    if ($should_create_invoice) {
+        if (!svb_monobank_get_token()) {
+            wp_send_json_error('Payment is not configured.');
+        }
+
+        $amount = svb_monobank_amount_for_children($child_count);
+        if ($amount <= 0) {
+            wp_send_json_error('Invalid amount for selected children');
+        }
+
+        $return_url = svb_monobank_build_redirect_url($public_token);
+        $webhook_url = svb_monobank_build_webhook_url($public_token);
+
+        $reference = 'SVB-' . ($order_row['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
+        $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_row['order_id'] ?? 'unknown');
+
+        $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment, $webhook_url);
+        if (is_wp_error($invoice)) {
+            $err_data = $invoice->get_error_data();
+            $status = is_array($err_data) ? ($err_data['status'] ?? '') : '';
+            $body_snippet = (is_array($err_data) && isset($err_data['body'])) ? svb_pay_trim($err_data['body']) : '';
+            $message_parts = [];
+            if ($status) $message_parts[] = 'http=' . $status;
+            if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
+            $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+            wp_send_json_error($public_message);
+        }
+
+        $invoice_id = isset($invoice['invoiceId']) ? sanitize_text_field($invoice['invoiceId']) : '';
+        $payment_url = $invoice['pageUrl'] ?? '';
+
+        $payment_updates = [
+            'status' => 'pending',
+            'invoice_id' => $invoice_id,
+            'invoice_page_url' => $payment_url,
+            'invoice_fingerprint' => $fingerprint_current,
+            'reference' => $reference,
+            'amount' => $amount,
+            'child_count' => $child_count,
+            'modifiedDate' => 0,
+            'invoice_created_at' => time(),
+            'payment_updated_at' => time(),
+        ];
+
+        svb_update_order_payment_by_order_id($order_row['order_id'], $payment_updates);
+        $payment_status = 'pending';
+    }
+
     $invoice_masked = svb_monobank_mask_invoice($invoice_id);
-    $decision = $is_paid_for_current ? 'paid' : 'pay';
+    $decision = $is_paid_for_current ? 'PAID' : 'PAY';
     $response = [
         'order_id' => (int) $order_row['order_id'],
         'public_token' => $public_token,
@@ -2464,18 +2482,8 @@ function svb_monobank_create_invoice() {
     // Monobank: amount must be sent in minimal units (kopecks for UAH).
     $amount = (int) ($uah * 100);
 
-    $return_raw = isset($_POST['return_url']) ? esc_url_raw(wp_unslash($_POST['return_url'])) : '';
-    $return_path = $return_raw ? wp_parse_url($return_raw, PHP_URL_PATH) : '/';
-    $return_url = add_query_arg(
-        [
-            'svb_payment_return' => '1',
-            'order_id' => $order_data['order_id'] ?? 0,
-            'token' => $order_data['public_token'] ?? '',
-            'svb_order' => $order_data['public_token'] ?? '',
-            'svb_token' => $order_data['public_token'] ?? '',
-        ],
-        home_url($return_path ?: '/')
-    );
+    $return_url = svb_monobank_build_redirect_url($order_data['public_token'] ?? '');
+    $webhook_url = svb_monobank_build_webhook_url($order_data['public_token'] ?? '');
 
     $reference = 'SVB-' . ($order_data['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
     $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_data['order_id'] ?? 'unknown');
@@ -2486,10 +2494,10 @@ function svb_monobank_create_invoice() {
         'ccy' => 980,
         'reference' => $reference,
         'endpoint' => 'https://api.monobank.ua/api/merchant/invoice/create',
-        'return_path' => $return_path,
+        'return_url' => svb_mask_page_url($return_url),
     ], $order_data);
 
-    $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment);
+    $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment, $webhook_url);
     if (is_wp_error($invoice)) {
         $err_data = $invoice->get_error_data();
         $status = is_array($err_data) ? ($err_data['status'] ?? '') : '';
@@ -2533,6 +2541,7 @@ function svb_monobank_create_invoice() {
         'child_count' => $child_count,
         'modifiedDate' => 0,
         'invoice_created_at' => time(),
+        'payment_updated_at' => time(),
     ];
 
     svb_update_user_payment_state($uid, $payment_updates);
