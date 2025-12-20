@@ -317,11 +317,15 @@ function svb_stream_order_video($order_id, $token) {
 }
 
 function svb_handle_public_order() {
-    if (isset($_GET['svb_payment_return'])) {
-        return;
+    if (!empty($_GET['svb_payment_return'])) {
+        return; // Payment return flow should never trigger downloads.
     }
 
-    if (empty($_GET['svb_download']) || empty($_GET['svb_order']) || empty($_GET['token'])) {
+    if (!isset($_GET['svb_download'])) {
+        return; // Only respond when explicit download flag is present.
+    }
+
+    if (empty($_GET['svb_order']) || empty($_GET['token'])) {
         return;
     }
 
