@@ -4252,25 +4252,79 @@ if (saveBtn) {
         if (price3) fd.append('price_child_3', price3.value || '');
 
         const oldText = saveBtn.textContent;
+        const isDebugAdmin = !!(window.SVB_DATA && (window.SVB_DATA.is_admin || (window.SVB_DATA.payment && window.SVB_DATA.payment.is_admin)));
+        const saveUrl = SVB_AJAX.url || '';
+
         saveBtn.disabled = true;
         saveBtn.textContent = 'Збереження...';
 
-        fetch(SVB_AJAX.url, { method:'POST', body:fd })
-        .then(r => r.json())
-        .then(res => {
-            saveBtn.disabled = false;
-            saveBtn.textContent = oldText;
-            if(res.success) {
-                alert('✅ ' + res.data);
-            } else {
-                alert('❌ Помилка: ' + (res.data || 'Unknown error'));
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // FIX: Fail fast on stalled network
+
+        fetch(saveUrl, { method:'POST', body:fd, credentials: 'same-origin', signal: controller.signal })
+        .then(async (response) => {
+            clearTimeout(timeoutId);
+            const respUrl = response.url || saveUrl;
+            const status = response.status;
+            const text = await response.text();
+            let json = null;
+            try {
+                json = JSON.parse(text);
+            } catch (_) {
+                // FIX: Fall back to raw text
             }
+
+            if (isDebugAdmin) {
+                console.group('[SVB][SAVE_CONFIG] Response');
+                console.log('URL:', respUrl);
+                console.log('Status:', status);
+                console.log('Body (first 800 chars):', text ? text.slice(0, 800) : '');
+                console.log('Parsed JSON:', json);
+                console.groupEnd();
+            }
+
+            const payloadMessage = (json && json.data) ? (json.data.message || json.data) : '';
+
+            if (!response.ok) {
+                const fallback = status ? `Сталася помилка на сервері (${status})` : 'Сталася помилка на сервері';
+                throw new Error(payloadMessage || fallback);
+            }
+
+            if (!json) {
+                const fallback = status ? `Сталася помилка на сервері (${status})` : 'Некоректна відповідь сервера';
+                throw new Error(payloadMessage || fallback);
+            }
+
+            if(json.success) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = oldText;
+                const okText = payloadMessage || json.data || 'Налаштування збережено';
+                alert('✅ ' + okText);
+                return;
+            }
+
+            const errText = payloadMessage || json.data || 'Помилка збереження';
+            throw new Error(errText);
         })
         .catch(err => {
+            clearTimeout(timeoutId);
             saveBtn.disabled = false;
             saveBtn.textContent = oldText;
-            alert('Мережева помилка');
-            console.error(err);
+            const isAbort = err && err.name === 'AbortError';
+            const msg = isAbort
+                ? 'Час очікування вичерпано. Спробуйте ще раз.'
+                : (err && err.message ? err.message : 'Мережева помилка');
+
+            if (isDebugAdmin) {
+                console.error('[SVB][SAVE_CONFIG][ERROR]', {
+                    message: err && err.message,
+                    name: err && err.name,
+                    stack: err && err.stack,
+                    url: saveUrl
+                });
+            }
+
+            alert(msg);
         });
     });
 }

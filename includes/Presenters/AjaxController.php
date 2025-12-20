@@ -21,68 +21,129 @@ function svb_request_name() {
     wp_send_json_success('Запит відправлено! Ми сповістимо вас.');
 }
 function svb_save_config() {
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('Permission denied');
-    }
-    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
-        wp_send_json_error('Bad nonce');
-    }
+    // FIX: Log only in debug/admin to trace network errors
+    $log_enabled = defined('WP_DEBUG') && WP_DEBUG;
+    $log_ctx = [
+        'user_id'   => get_current_user_id(),
+        'ip'        => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
+        'video_id'  => isset($_POST['video_id']) ? sanitize_text_field(wp_unslash($_POST['video_id'])) : '',
+    ];
 
-    $videoId = sanitize_text_field($_POST['video_id']);
-    $scenesRaw = wp_unslash($_POST['scenes']);
-    $scenesData = json_decode($scenesRaw, true);
-
-    if (!$videoId || !is_array($scenesData)) {
-        wp_send_json_error('Invalid data');
-    }
-
-    for ($i = 1; $i <= 3; $i++) {
-        $price_key = 'price_child_' . $i;
-        if (isset($_POST[$price_key])) {
-            $val = (int) sanitize_text_field(wp_unslash($_POST[$price_key]));
-            if ($val < 0) {
-                $val = 0;
-            }
-            if ($val > 100000) {
-                $val = 100000;
-            }
-            update_option('svb_price_child_' . $i, $val);
+    try {
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG] Request received ' . wp_json_encode($log_ctx));
         }
-    }
 
-    // 1. Получаем ПОЛНУЮ конфигурацию (Дефолтные настройки + то, что уже было в файле)
-    // Функция svb_get_definitions() уже делает слияние за нас.
-    $allVideos = svb_get_definitions();
+        if (!current_user_can('manage_options')) {
+            if ($log_enabled) {
+                error_log('[SVB_SAVE_CONFIG] Permission denied');
+            }
+            wp_send_json_error(['message' => 'Недостатньо прав'], 403);
+        }
 
-    // 2. Обновляем в этом полном массиве данные ТОЛЬКО для текущего видео
-    if (isset($allVideos[$videoId])) {
-        $allVideos[$videoId]['scenes'] = $scenesData;
-    } else {
-        // Если вдруг видео с таким ID нет в дефолтах (маловероятно), создаем его
-        $allVideos[$videoId] = [
-            'label'  => $videoId,
-            'scenes' => $scenesData
-        ];
-    }
+        if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+            if ($log_enabled) {
+                error_log('[SVB_SAVE_CONFIG] Bad nonce');
+            }
+            wp_send_json_error(['message' => 'Сесія застаріла, оновіть сторінку'], 403);
+        }
 
-    // 3. Подготавливаем чистый массив для сохранения в JSON.
-    // Нам не нужно сохранять пути к файлам и URL (они хардкодом в PHP), сохраняем только 'scenes'.
-    $configToSave = [];
-    foreach ($allVideos as $vidKey => $vidData) {
-        if (isset($vidData['scenes'])) {
-            $configToSave[$vidKey] = [
-                'scenes' => $vidData['scenes']
+        $videoId = isset($_POST['video_id']) ? sanitize_text_field(wp_unslash($_POST['video_id'])) : '';
+        $scenesRaw = isset($_POST['scenes']) ? wp_unslash($_POST['scenes']) : '';
+        $scenesData = is_string($scenesRaw) || is_numeric($scenesRaw) || is_bool($scenesRaw) ? json_decode($scenesRaw, true) : null;
+
+        if (!$videoId || !is_array($scenesData)) {
+            if ($log_enabled) {
+                error_log('[SVB_SAVE_CONFIG] Invalid data ' . wp_json_encode([
+                    'has_video'   => (bool) $videoId,
+                    'scenes_type' => gettype($scenesData),
+                    'json_error'  => function_exists('json_last_error_msg') ? json_last_error_msg() : 'unknown',
+                ]));
+            }
+            wp_send_json_error(['message' => 'Некоректні дані конфігурації'], 400);
+        }
+
+        for ($i = 1; $i <= 3; $i++) {
+            $price_key = 'price_child_' . $i;
+            if (isset($_POST[$price_key])) {
+                $val = (int) sanitize_text_field(wp_unslash($_POST[$price_key]));
+                if ($val < 0) {
+                    $val = 0;
+                }
+                if ($val > 100000) {
+                    $val = 100000;
+                }
+                update_option('svb_price_child_' . $i, $val);
+            }
+        }
+
+        // 1. Получаем ПОЛНУЮ конфигурацию (Дефолтные настройки + то, что уже было в файле)
+        // Функция svb_get_definitions() уже делает слияние за нас.
+        $allVideos = svb_get_definitions();
+
+        // 2. Обновляем в этом полном массиве данные ТОЛЬКО для текущего видео
+        if (isset($allVideos[$videoId])) {
+            $allVideos[$videoId]['scenes'] = $scenesData;
+        } else {
+            // Если вдруг видео с таким ID нет в дефолтах (маловероятно), создаем его
+            $allVideos[$videoId] = [
+                'label'  => $videoId,
+                'scenes' => $scenesData
             ];
         }
-    }
 
-    // 4. Сохраняем полный список сцен всех видео
-    $configFile = SVB_PLUGIN_DIR . 'svb_config.json';
-    
-    if (file_put_contents($configFile, json_encode($configToSave, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))) {
-        wp_send_json_success('Налаштування збережено для ВСІХ шаблонів (у svb_config.json)');
-    } else {
-        wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).');
+        // 3. Подготавливаем чистый массив для сохранения в JSON.
+        // Нам не нужно сохранять пути к файлам и URL (они хардкодом в PHP), сохраняем только 'scenes'.
+        $configToSave = [];
+        foreach ($allVideos as $vidKey => $vidData) {
+            if (isset($vidData['scenes'])) {
+                $configToSave[$vidKey] = [
+                    'scenes' => $vidData['scenes']
+                ];
+            }
+        }
+
+        // 4. Сохраняем полный список сцен всех видео
+        $configFile = SVB_PLUGIN_DIR . 'svb_config.json';
+        $configDir  = dirname($configFile);
+
+        if (!wp_is_writable($configDir)) {
+            if ($log_enabled) {
+                error_log('[SVB_SAVE_CONFIG] Directory not writable ' . $configDir);
+            }
+            wp_send_json_error(['message' => 'Не вдалося записати файл конфігурації (немає прав на папку).'], 500);
+        }
+
+        $encoded = wp_json_encode($configToSave, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            if ($log_enabled) {
+                error_log('[SVB_SAVE_CONFIG] JSON encode failed: ' . (function_exists('json_last_error_msg') ? json_last_error_msg() : 'unknown'));
+            }
+            wp_send_json_error(['message' => 'Помилка підготовки даних для збереження'], 500);
+        }
+
+        $written = file_put_contents($configFile, $encoded);
+
+        if ($written === false) {
+            if ($log_enabled) {
+                error_log('[SVB_SAVE_CONFIG] File write failed for ' . $configFile);
+            }
+            wp_send_json_error(['message' => 'Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).'], 500);
+        }
+
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG] Saved OK for video ' . $videoId . ' | scenes: ' . count($scenesData));
+        }
+
+        wp_send_json_success(['message' => 'Налаштування збережено для ВСІХ шаблонів (у svb_config.json)']);
+    } catch (Throwable $e) {
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG][FATAL] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        }
+        wp_send_json_error([
+            'message' => 'Server error',
+            'code'    => 'SVB_SAVE_CONFIG_FATAL',
+        ], 500);
     }
 }
 
