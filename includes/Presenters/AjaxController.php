@@ -512,6 +512,76 @@ function svb_order_resume_info() {
     wp_send_json_success($response);
 }
 
+function svb_check_payment() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+    $token = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+
+    $response = [
+        'found' => false,
+        'payment_status' => 'unpaid',
+    ];
+
+    if (!$order_id || !$token) {
+        wp_send_json_success($response);
+    }
+
+    $order_row = svb_get_order_by_id_and_token($order_id, $token);
+    if (!$order_row) {
+        svb_log('payment_debug_check', [
+            'reason' => 'not_found',
+            'order_id' => $order_id,
+            'public_token' => svb_mask_value($token),
+        ]);
+        wp_send_json_success($response);
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+
+    if (!in_array($status, ['paid', 'success'], true)) {
+        $invoice_id = $payment['invoice_id'] ?? '';
+        if ($invoice_id) {
+            $invoice_status = svb_monobank_get_invoice_status($invoice_id);
+            if (!is_wp_error($invoice_status) && isset($invoice_status['status']) && $invoice_status['status'] === 'success') {
+                $payment_updates = [
+                    'status' => 'paid',
+                    'transaction_id' => $invoice_status['invoiceId'] ?? $invoice_id,
+                    'paid_at' => time(),
+                ];
+                $updated = svb_update_order_payment_by_order_id($order_id, $payment_updates);
+                if (is_array($updated)) {
+                    $payment = $updated;
+                    $status = svb_payment_normalize_status($updated['status'] ?? 'unpaid');
+                }
+            }
+        }
+    }
+
+    $generation = svb_generation_state_payload($order_row);
+
+    $response = [
+        'found' => true,
+        'order_id' => (int) $order_row['order_id'],
+        'payment_status' => $status,
+        'generation_status' => $generation['status'],
+        'download_url' => $generation['download_url'],
+    ];
+
+    svb_log('payment_debug_check', [
+        'order_id' => (int) $order_row['order_id'],
+        'payment_status' => $status,
+        'invoice_id' => svb_monobank_mask_invoice($payment['invoice_id'] ?? ''),
+        'public_token' => svb_mask_value($token),
+        'generation_status' => $generation['status'],
+    ]);
+
+    wp_send_json_success($response);
+}
+
 function svb_find_video() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');
@@ -1853,8 +1923,9 @@ function svb_mask_page_url($url) {
 }
 
 function svb_payment_normalize_status($status) {
-    if ($status === 'paid') {
-        return 'success';
+    $normalized = strtolower((string) $status);
+    if (in_array($normalized, ['paid', 'success'], true)) {
+        return 'paid';
     }
 
     return svb_monobank_normalize_status($status);
@@ -1862,30 +1933,20 @@ function svb_payment_normalize_status($status) {
 
 function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_current, $meta = []) {
     $normalized = svb_payment_normalize_status($payment_status);
-    $has_transaction = !empty($meta['transaction_id']);
-    $has_paid_at = !empty($meta['paid_at']);
 
-    if ($normalized === 'success' || $has_transaction || $has_paid_at) {
+    if ($normalized === 'paid') {
         if ($paid_fingerprint && $fingerprint_current && svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
-            return ['paid', 'success', 'paid_match'];
+            return ['paid', 'paid', 'paid_match'];
         }
 
-        if ($paid_fingerprint && $fingerprint_current && !svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
-            return ['paid', 'success', 'fingerprint_mismatch'];
-        }
-
-        return ['paid', 'success', 'status_success'];
+        return ['pay', 'paid', $paid_fingerprint ? 'fingerprint_mismatch' : 'missing_paid_fingerprint'];
     }
 
     if ($normalized === 'failure') {
-        return ['failed', $normalized, 'status_failure'];
+        return ['pay', $normalized, 'status_failure'];
     }
 
-    if ($normalized === 'processing' || $normalized === 'pending') {
-        return ['pending', $normalized, 'status_pending'];
-    }
-
-    return ['not_paid', $normalized, 'unpaid'];
+    return ['pay', $normalized, 'unpaid'];
 }
 
 function svb_pay_debug_state() {
@@ -2246,7 +2307,7 @@ function svb_create_invoice() {
         $message_parts = [];
         if ($status) $message_parts[] = 'http=' . $status;
         if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
         wp_send_json_error($public_message);
     }
 
@@ -2350,7 +2411,7 @@ function svb_generation_state_payload($order_row) {
     $result = svb_read_order_result($order_row);
     $video_path = isset($result['video_path']) ? $result['video_path'] : '';
     $file_exists = $video_path && file_exists($video_path);
-    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'processing');
+    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'queued');
     $download_url = '';
 
     if ($file_exists && $public_token && $order_id) {
@@ -2362,9 +2423,11 @@ function svb_generation_state_payload($order_row) {
             svb_update_order_result_status($order_id, $result);
         }
     } elseif (!isset($result['status'])) {
-        $result['status'] = 'processing';
+        $result['status'] = 'queued';
         $result['started_at'] = $result['started_at'] ?? time();
         svb_update_order_result_status($order_id, $result);
+    } elseif ($status === 'queued' && !empty($result['started_at'])) {
+        $status = 'running';
     }
 
     return [
@@ -2393,12 +2456,13 @@ function svb_start_generation() {
     }
 
     $payload = svb_generation_state_payload($order);
-    if ($payload['status'] !== 'done' && empty($payload['started_at'])) {
+    if ($payload['status'] === 'queued' || $payload['status'] === 'processing') {
         $result = svb_read_order_result($order);
-        if (!isset($result['status'])) {
-            $result['status'] = 'processing';
-            $result['started_at'] = time();
+        if (!isset($result['status']) || in_array($result['status'], ['queued', 'processing'], true)) {
+            $result['status'] = 'running';
+            $result['started_at'] = $result['started_at'] ?? time();
             svb_update_order_result_status($payload['order_id'], $result);
+            $payload['status'] = 'running';
         }
     }
 
@@ -2544,11 +2608,14 @@ function svb_payment_gate() {
         'fingerprint_current' => $fingerprint_current,
     ]);
 
+    $payment_disabled = isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1';
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $paid_fingerprint = isset($payment['paid_fingerprint']) ? $payment['paid_fingerprint'] : '';
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
-    $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
-    $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
+    $is_paid_for_current = ($payment_status === 'paid')
+        && $paid_fingerprint
+        && $fingerprint_current
+        && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
 
     $payment_url = $payment['invoice_page_url'] ?? '';
     $invoice_id = $payment['invoice_id'] ?? '';
@@ -2562,15 +2629,29 @@ function svb_payment_gate() {
             $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
             $paid_fingerprint = $payment['paid_fingerprint'] ?? $paid_fingerprint;
             $payment_url = $payment['invoice_page_url'] ?? $payment_url;
-            $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
-            $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
+            $is_paid_for_current = ($payment_status === 'paid')
+                && $paid_fingerprint
+                && $fingerprint_current
+                && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
         }
+    }
+
+    if ($payment_disabled && !$is_paid_for_current) {
+        svb_update_order_payment_by_order_id($order_row['order_id'], [
+            'status' => 'paid',
+            'paid_fingerprint' => $fingerprint_current,
+            'payment_updated_at' => time(),
+            'invoice_fingerprint' => $fingerprint_current,
+        ]);
+        $payment_status = 'paid';
+        $paid_fingerprint = $fingerprint_current;
+        $is_paid_for_current = true;
     }
 
     $invoice_matches_fp = empty($payment['invoice_fingerprint'])
         ? true
         : svb_safe_hash_equals((string) $payment['invoice_fingerprint'], (string) $fingerprint_current);
-    $should_create_invoice = !$is_paid_for_current && (
+    $should_create_invoice = !$payment_disabled && !$is_paid_for_current && (
         empty($payment_url)
         || !in_array($payment_status, ['pending', 'processing'], true)
         || !$recent_invoice
@@ -2601,7 +2682,7 @@ function svb_payment_gate() {
             $message_parts = [];
             if ($status) $message_parts[] = 'http=' . $status;
             if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-            $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+            $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
             wp_send_json_error($public_message);
         }
 
@@ -2626,27 +2707,34 @@ function svb_payment_gate() {
     }
 
     $invoice_masked = svb_monobank_mask_invoice($invoice_id);
-    $decision = $is_paid_for_current ? 'PAID' : 'PAY';
+
+    list($decision, $normalized_payment_status, $reason) = svb_payment_decision(
+        $payment_status,
+        $paid_fingerprint,
+        $fingerprint_current,
+        ['transaction_id' => $payment['transaction_id'] ?? '', 'paid_at' => $payment['paid_at'] ?? 0]
+    );
+
     $response = [
         'order_id' => (int) $order_row['order_id'],
         'public_token' => $public_token,
         'fingerprint_current' => $fingerprint_current,
         'paid_fingerprint' => $paid_fingerprint,
-        'payment_status' => $payment_status,
+        'payment_status' => $normalized_payment_status,
         'payment_status_raw' => $payment['status'] ?? 'unpaid',
         'invoice_id' => $invoice_id,
         'invoice_page_url' => $payment_url,
         'payment_url' => $payment_url,
         'invoice_masked' => $invoice_masked,
         'invoice_page_url_masked' => svb_mask_page_url($payment_url),
-        'is_paid_for_current' => $is_paid_for_current,
-        'decision' => $decision,
-        'reason' => $is_paid_for_current ? 'paid' : 'pay_required',
+        'is_paid_for_current' => ($decision === 'paid'),
+        'decision' => ($decision === 'paid') ? 'PAID' : 'PAY',
+        'reason' => $reason,
         'storage' => $storage,
         'resume_url' => svb_build_resume_url($order_row['order_id'], $public_token),
         'transaction_id' => $payment['transaction_id'] ?? '',
         'paid_at' => isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0,
-        'is_paid' => $is_paid_for_current,
+        'is_paid' => ($decision === 'paid'),
     ];
 
     if (function_exists('svb_debug_enabled') && svb_debug_enabled()) {
@@ -2799,7 +2887,7 @@ function svb_monobank_create_invoice() {
         $message_parts = [];
         if ($status) $message_parts[] = 'http=' . $status;
         if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
         wp_send_json_error($public_message);
     }
 
