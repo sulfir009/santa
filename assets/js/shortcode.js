@@ -102,6 +102,7 @@ const SVB_RETURN_FLAG = 'svb_resume_after_return';
 const SVB_RETURN_TOKEN = 'svb_return_token';
 const SVB_RETURN_ORDER = 'svb_return_order';
 const SVB_REDIRECT_GUARD = 'svb_redirect_once';
+const SVB_AFTER_PAYMENT = 'svb_after_payment';
 const SVB_DEBUG_FLAG_KEY = 'svb_debug';
 const SVB_PAGE_BOOT = (window.SVB_DATA && window.SVB_DATA.debug) ? window.SVB_DATA.debug : {};
 let svbAjaxDebugPatched = false;
@@ -295,6 +296,7 @@ function svbCaptureReturnParams() {
 
   if (hasReturn) {
     try { sessionStorage.setItem(SVB_RETURN_FLAG, '1'); } catch (e) {}
+    svbMarkAfterPayment();
   }
 
   if (tokenFromUrl) {
@@ -333,6 +335,22 @@ function svbShouldResumeAfterReturn() {
 
 function svbConsumeReturnFlag() {
   try { sessionStorage.removeItem(SVB_RETURN_FLAG); } catch (e) {}
+}
+
+function svbMarkAfterPayment() {
+  try { sessionStorage.setItem(SVB_AFTER_PAYMENT, '1'); } catch (e) {}
+}
+
+function svbConsumeAfterPaymentFlag(hasReturnParam = false) {
+  let shouldResume = false;
+  try {
+    const stored = sessionStorage.getItem(SVB_AFTER_PAYMENT);
+    if (hasReturnParam || stored === '1') {
+      shouldResume = hasReturnParam || stored === '1';
+    }
+    sessionStorage.removeItem(SVB_AFTER_PAYMENT);
+  } catch (e) {}
+  return shouldResume;
 }
 
 function svbSafeRedirect(url) {
@@ -5086,15 +5104,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const captured = svbCaptureReturnParams();
   const urlParams = new URLSearchParams(window.location.search);
   const isPaymentReturn = captured.hasReturn || urlParams.has('svb_payment_return');
+  const allowPaymentResume = svbConsumeAfterPaymentFlag(captured.hasReturn);
+
+  svbSetStep(1, 'init_reset');
 
   (async () => {
     let resumeHandled = false;
-    if (isPaymentReturn) {
+    if (isPaymentReturn && allowPaymentResume) {
       resumeHandled = await svbHandleResumeFromUrl(urlParams);
-    }
-
-    if (!resumeHandled && !isPaymentReturn) {
-      svbAutoResumeFromLocal({ isPaymentReturn: false });
     }
   })();
 
