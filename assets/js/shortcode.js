@@ -4251,6 +4251,36 @@ if (saveBtn) {
         if (price2) fd.append('price_child_2', price2.value || '');
         if (price3) fd.append('price_child_3', price3.value || '');
 
+        const payloadSummary = {
+            video_id: SVB_SELECTED_VIDEO_ID,
+            scene_counts: Object.keys(scenesConfig).reduce((acc, key) => {
+                acc[key] = Array.isArray(scenesConfig[key]) ? scenesConfig[key].length : 0;
+                return acc;
+            }, {}),
+            prices: {
+                price_child_1: price1 ? price1.value || '' : undefined,
+                price_child_2: price2 ? price2.value || '' : undefined,
+                price_child_3: price3 ? price3.value || '' : undefined,
+            }
+        };
+
+        const logSaveConfigError = (status, url, data) => {
+            try {
+                console.groupCollapsed('[SVB][SAVE_CONFIG] ERROR');
+                console.log('Status:', status);
+                console.log('URL:', url);
+                console.log('Payload summary:', payloadSummary);
+                if (data) {
+                    if (data.code) console.log('Response code:', data.code);
+                    if (data.error_id) console.log('Error ID:', data.error_id);
+                    if (data.debug) console.error('Debug:', data.debug);
+                }
+                console.groupEnd();
+            } catch (_) {
+                // no-op
+            }
+        };
+
         const oldText = saveBtn.textContent;
         const isDebugAdmin = !!(window.SVB_DATA && (window.SVB_DATA.is_admin || (window.SVB_DATA.payment && window.SVB_DATA.payment.is_admin)));
         const saveUrl = SVB_AJAX.url || '';
@@ -4283,10 +4313,16 @@ if (saveBtn) {
                 console.groupEnd();
             }
 
-            const payloadMessage = (json && json.data) ? (json.data.message || json.data) : '';
+            const payloadData = (json && json.data && typeof json.data === 'object') ? json.data : {};
+            const payloadMessage = (payloadData && typeof payloadData.message !== 'undefined') ? payloadData.message : '';
 
             if (!response.ok) {
                 const fallback = status ? `Сталася помилка на сервері (${status})` : 'Сталася помилка на сервері';
+                if (json && json.success === false) {
+                    logSaveConfigError(status, respUrl, payloadData);
+                } else if (!json) {
+                    logSaveConfigError(status, respUrl, null);
+                }
                 throw new Error(payloadMessage || fallback);
             }
 
@@ -4294,6 +4330,7 @@ if (saveBtn) {
                 const fallback = status >= 500
                     ? 'Сталася помилка на сервері (500). Перевірте debug.log.'
                     : (status ? `Сталася помилка на сервері (${status})` : 'Некоректна відповідь сервера');
+                logSaveConfigError(status, respUrl, null);
                 throw new Error(payloadMessage || fallback);
             }
 
@@ -4306,6 +4343,7 @@ if (saveBtn) {
             }
 
             const errText = payloadMessage || json.data || 'Помилка збереження';
+            logSaveConfigError(status, respUrl, payloadData);
             throw new Error(errText);
         })
         .catch(err => {

@@ -54,6 +54,37 @@ function svb_ts_to_seconds($ts) {
     return (float)$ts_clean;
 }
 
+function svb_get_upload_config_paths() {
+    $uploads = wp_upload_dir();
+
+    if (!empty($uploads['error']) || empty($uploads['basedir'])) {
+        return [
+            'error' => !empty($uploads['error']) ? $uploads['error'] : 'Upload directory unavailable',
+        ];
+    }
+
+    $dir = trailingslashit($uploads['basedir']) . 'svb/';
+
+    return [
+        'dir'  => $dir,
+        'file' => $dir . 'svb_config.json',
+    ];
+}
+
+function svb_get_config_file_for_read() {
+    $uploadPaths = svb_get_upload_config_paths();
+    if (!isset($uploadPaths['error']) && isset($uploadPaths['file']) && file_exists($uploadPaths['file'])) {
+        return $uploadPaths['file'];
+    }
+
+    $pluginFallback = SVB_PLUGIN_DIR . 'svb_config.json';
+    if (file_exists($pluginFallback)) {
+        return $pluginFallback;
+    }
+
+    return null;
+}
+
 function svb_get_definitions() {
     $defaults = [
         // ==============================================
@@ -255,8 +286,8 @@ function svb_get_definitions() {
     ];
 
     // Если существует файл svb_config.json, накладываем изменения на default
-    $config_path = SVB_PLUGIN_DIR . 'svb_config.json';
-    if (file_exists($config_path)) {
+    $config_path = svb_get_config_file_for_read();
+    if ($config_path && file_exists($config_path)) {
         $json = file_get_contents($config_path);
         $saved = json_decode($json, true);
         if (is_array($saved)) {

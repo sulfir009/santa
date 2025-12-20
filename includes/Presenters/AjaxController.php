@@ -21,58 +21,47 @@ function svb_request_name() {
     wp_send_json_success('Запит відправлено! Ми сповістимо вас.');
 }
 function svb_save_config() {
-    // FIX: Log only in debug/admin to trace network errors
-    $log_enabled = defined('WP_DEBUG') && WP_DEBUG;
-    $log_ctx = [
-        'user_id'   => get_current_user_id(),
-        'ip'        => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
-        'video_id'  => isset($_POST['video_id']) ? sanitize_text_field(wp_unslash($_POST['video_id'])) : '',
-    ];
+    $restore_handler = null;
 
     $restore_handler = null;
 
     try {
-        if ($log_enabled) {
-            error_log('[SVB_SAVE_CONFIG] Request received ' . wp_json_encode($log_ctx));
-        }
-
         if (!current_user_can('manage_options')) {
-            if ($log_enabled) {
-                error_log('[SVB_SAVE_CONFIG] Permission denied');
-            }
-            wp_send_json_error(['message' => 'Недостатньо прав'], 403);
+            wp_send_json_error([
+                'message' => 'Недостатньо прав',
+                'code'    => 'SVB_SAVE_CONFIG_FORBIDDEN',
+            ], 403);
         }
 
         if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
-            if ($log_enabled) {
-                error_log('[SVB_SAVE_CONFIG] Bad nonce');
-            }
-            wp_send_json_error(['message' => 'Сесія застаріла, оновіть сторінку'], 403);
+            wp_send_json_error([
+                'message' => 'Сесія застаріла, оновіть сторінку',
+                'code'    => 'SVB_SAVE_CONFIG_BAD_NONCE',
+            ], 403);
         }
 
         $videoId = isset($_POST['video_id']) ? sanitize_text_field(wp_unslash($_POST['video_id'])) : '';
-        $scenesRaw = isset($_POST['scenes']) ? wp_unslash($_POST['scenes']) : '';
-        $scenesData = is_string($scenesRaw) || is_numeric($scenesRaw) || is_bool($scenesRaw) ? json_decode($scenesRaw, true) : null;
+        $scenesRaw = array_key_exists('scenes', $_POST) ? wp_unslash($_POST['scenes']) : null;
 
-        if (!$videoId || !is_array($scenesData)) {
-            if ($log_enabled) {
-                error_log('[SVB_SAVE_CONFIG] Invalid data ' . wp_json_encode([
-                    'has_video'   => (bool) $videoId,
-                    'scenes_type' => gettype($scenesData),
-                    'json_error'  => function_exists('json_last_error_msg') ? json_last_error_msg() : 'unknown',
-                ]));
-            }
-            wp_send_json_error(['message' => 'Некоректні дані конфігурації'], 400);
+        if ($videoId === '' || $scenesRaw === null) {
+            wp_send_json_error([
+                'message' => 'Некоректні дані конфігурації',
+                'code'    => 'SVB_SAVE_CONFIG_BAD_JSON',
+            ], 400);
         }
 
-        $restore_handler = set_error_handler(function ($severity, $message, $file, $line) use ($log_enabled) {
+        $scenesData = is_string($scenesRaw) ? json_decode($scenesRaw, true) : null;
+        if (!is_array($scenesData)) {
+            wp_send_json_error([
+                'message' => 'Некоректні дані конфігурації',
+                'code'    => 'SVB_SAVE_CONFIG_BAD_JSON',
+                'json_error' => function_exists('json_last_error_msg') ? json_last_error_msg() : 'json_decode failed',
+            ], 400);
+        }
+
+        $restore_handler = set_error_handler(function ($severity, $message, $file, $line) {
             if (!(error_reporting() & $severity)) {
                 return false;
-            }
-
-            $formatted = sprintf('[SVB_SAVE_CONFIG][PHP WARNING] %s @ %s:%d', $message, $file, $line);
-            if ($log_enabled) {
-                error_log($formatted);
             }
 
             throw new ErrorException($message, 0, $severity, $file, $line);
@@ -125,9 +114,25 @@ function svb_save_config() {
             }
         }
 
-        // 4. Сохраняем полный список сцен всех видео
-        $configFile = SVB_PLUGIN_DIR . 'svb_config.json';
-        $configDir  = dirname($configFile);
+        $paths = svb_get_upload_config_paths();
+        if (isset($paths['error'])) {
+            $restore_handler_safe();
+            wp_send_json_error([
+                'message' => 'Каталог uploads недоступний: ' . $paths['error'],
+                'code'    => 'SVB_SAVE_CONFIG_UPLOADS_UNAVAILABLE',
+            ], 500);
+        }
+
+        $configDir  = $paths['dir'];
+        $configFile = $paths['file'];
+
+        if (!wp_mkdir_p($configDir)) {
+            $restore_handler_safe();
+            wp_send_json_error([
+                'message' => 'Не вдалося створити папку конфігурації.',
+                'code'    => 'SVB_SAVE_CONFIG_WRITE_FAILED',
+            ], 500);
+        }
 
         $isWritable = function ($path) {
             if (function_exists('wp_is_writable')) {
@@ -137,60 +142,70 @@ function svb_save_config() {
             return is_writable($path);
         };
 
-        if (!is_dir($configDir)) {
-            if (!wp_mkdir_p($configDir)) {
-                if ($log_enabled) {
-                    error_log('[SVB_SAVE_CONFIG] Failed to create config dir ' . $configDir);
-                }
-                $restore_handler_safe();
-                wp_send_json_error(['message' => 'Не вдалося створити папку конфігурації.'], 500);
-            }
-        }
-
         if (!$isWritable($configDir)) {
-            if ($log_enabled) {
-                error_log('[SVB_SAVE_CONFIG] Directory not writable ' . $configDir);
-            }
             $restore_handler_safe();
-            wp_send_json_error(['message' => 'Не вдалося записати файл конфігурації (немає прав на папку).'], 500);
+            wp_send_json_error([
+                'message' => 'Не вдалося записати файл конфігурації (немає прав на папку uploads).',
+                'code'    => 'SVB_SAVE_CONFIG_WRITE_FAILED',
+            ], 500);
         }
 
         $encoded = wp_json_encode($configToSave, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         if ($encoded === false) {
-            if ($log_enabled) {
-                error_log('[SVB_SAVE_CONFIG] JSON encode failed: ' . (function_exists('json_last_error_msg') ? json_last_error_msg() : 'unknown'));
-            }
             $restore_handler_safe();
-            wp_send_json_error(['message' => 'Помилка підготовки даних для збереження'], 500);
+            wp_send_json_error([
+                'message' => 'Помилка підготовки даних для збереження',
+                'code'    => 'SVB_SAVE_CONFIG_ENCODE_FAILED',
+            ], 500);
         }
 
-        $written = file_put_contents($configFile, $encoded);
+        $tempFile = $configFile . '.tmp-' . uniqid('', true);
+        $written = file_put_contents($tempFile, $encoded, LOCK_EX);
 
         if ($written === false) {
-            if ($log_enabled) {
-                error_log('[SVB_SAVE_CONFIG] File write failed for ' . $configFile);
-            }
             $restore_handler_safe();
-            wp_send_json_error(['message' => 'Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).'], 500);
+            wp_send_json_error([
+                'message' => 'Не вдалося записати файл конфігурації (тимчасовий файл).',
+                'code'    => 'SVB_SAVE_CONFIG_WRITE_FAILED',
+            ], 500);
         }
 
-        if ($log_enabled) {
-            error_log('[SVB_SAVE_CONFIG] Saved OK for video ' . $videoId . ' | scenes: ' . count($scenesData));
+        if (!rename($tempFile, $configFile)) {
+            @unlink($tempFile);
+            $restore_handler_safe();
+            wp_send_json_error([
+                'message' => 'Не вдалося оновити файл конфігурації.',
+                'code'    => 'SVB_SAVE_CONFIG_WRITE_FAILED',
+            ], 500);
         }
 
         $restore_handler_safe();
-        wp_send_json_success(['message' => 'Налаштування збережено для ВСІХ шаблонів (у svb_config.json)']);
+        wp_send_json_success(['message' => 'Saved']);
     } catch (Throwable $e) {
         if ($restore_handler) {
             set_error_handler($restore_handler);
         }
 
-        if ($log_enabled) {
-            error_log('[SVB_SAVE_CONFIG][FATAL] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        $debug = null;
+        if (defined('WP_DEBUG') && WP_DEBUG && current_user_can('manage_options')) {
+            $trace = $e->getTraceAsString();
+            if (strlen($trace) > 1500) {
+                $trace = substr($trace, 0, 1500);
+            }
+
+            $debug = [
+                'exception_message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $trace,
+            ];
         }
+
         wp_send_json_error([
-            'message' => 'Server error',
-            'code'    => 'SVB_SAVE_CONFIG_FATAL',
+            'message'  => 'Server error',
+            'code'     => 'SVB_SAVE_CONFIG_FATAL',
+            'error_id' => uniqid('svb_', true),
+            'debug'    => $debug,
         ], 500);
     }
 
