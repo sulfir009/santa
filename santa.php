@@ -20,6 +20,46 @@ if (!defined('SVB_ORDERS_V2')) {
     define('SVB_ORDERS_V2', false);
 }
 
+function svb_register_missing_dependency_notice($missing_files) {
+    if (empty($missing_files) || !is_array($missing_files)) {
+        return;
+    }
+
+    add_action('admin_notices', function() use ($missing_files) {
+        foreach ($missing_files as $missing) {
+            echo '<div class="notice notice-error"><p>SVB: missing file ' . esc_html($missing) . '</p></div>';
+        }
+    });
+}
+
+$svb_dependencies = [
+    'includes/Models/Order.php',
+    'includes/Models/Config.php',
+    'includes/Services/MediaPipeline.php',
+    'includes/Services/MonobankGateway.php',
+    'includes/Presenters/ShortcodeController.php',
+    'includes/Presenters/AjaxController.php',
+];
+
+$svb_missing_files = [];
+
+foreach ($svb_dependencies as $svb_dependency) {
+    $svb_full_path = SVB_PLUGIN_DIR . $svb_dependency;
+    if (!file_exists($svb_full_path)) {
+        $svb_missing_files[] = $svb_dependency;
+    }
+}
+
+if (!empty($svb_missing_files)) {
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        error_log('SVB: missing dependencies - ' . implode(', ', $svb_missing_files));
+    }
+
+    svb_register_missing_dependency_notice($svb_missing_files);
+
+    return;
+}
+
 require_once SVB_PLUGIN_DIR . 'includes/Models/Order.php';
 require_once SVB_PLUGIN_DIR . 'includes/Models/Config.php';
 require_once SVB_PLUGIN_DIR . 'includes/Services/MediaPipeline.php';
