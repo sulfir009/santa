@@ -123,8 +123,8 @@ input.svb-input {
     border-radius: 50px;
     cursor: pointer;
     font: 700 18px 'Roboto', sans-serif;
-    color: #fff;
-    background: #C0392B;
+    color: #C0392B;
+    background: #fff;
     transition: all 0.2s ease;
     width: auto;
     max-width: 100%;
@@ -143,7 +143,20 @@ input.svb-input {
     white-space: nowrap;
     margin-left: auto;
 }
-.svb-child-radio:checked + .svb-child-label { background: #C0392B; color: #fff; border-color: #C0392B; }
+.svb-child-label:hover,
+.svb-child-label:focus-visible {
+    border-color: #a12e22;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    outline: none;
+}
+
+.svb-child-radio:checked + .svb-child-label,
+.svb-child-label.is-active {
+    background: #C0392B;
+    color: #fff;
+    border-color: #C0392B;
+    box-shadow: 0 4px 10px rgba(192, 57, 43, 0.28);
+}
 @media (max-width: 1023.98px) {
     .svb-child-label {
         flex-direction: row;
@@ -659,8 +672,8 @@ word-wrap: break-word
     border-radius: 50px;
     cursor: pointer;
     font: 700 18px 'Roboto', sans-serif;
-    color: #fff;
-    background: #C0392B;
+    color: #C0392B;
+    background: #fff;
     transition: all 0.2s ease;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     width: auto;
@@ -670,13 +683,21 @@ word-wrap: break-word
     flex-wrap: nowrap;
 }
 
+.svb-child-label:hover,
+.svb-child-label:focus-visible {
+    border-color: #a12e22;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    outline: none;
+}
+
 .svb-child-label .svb-c-text {
     flex: 1 1 auto;
     min-width: 0;
 }
 
 /* Активное состояние (выбранная кнопка) */
-.svb-child-radio:checked + .svb-child-label {
+.svb-child-radio:checked + .svb-child-label,
+.svb-child-label.is-active {
     background: #C0392B; /* Красный цвет */
     color: #fff;
     border-color: #C0392B;
@@ -728,29 +749,6 @@ word-wrap: break-word
     }
     .svb-child-count-wrap {
         flex-direction: row;
-    }
-    .svb-c-price {
-        margin-left: 0;
-        align-self: flex-start;
-    }
-}
-
-@media (min-width: 1024px) {
-    .svb-child-count-wrap {
-        justify-content: flex-start;
-        gap: 12px;
-    }
-    .svb-child-label {
-        flex-direction: row;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 12px;
-        width: auto;
-        min-width: 0;
-    }
-    .svb-c-price {
-        margin-left: auto;
-        align-self: center;
     }
 }
 
