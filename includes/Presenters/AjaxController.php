@@ -3224,7 +3224,9 @@ function svb_monobank_create_invoice() {
 
 function svb_monobank_check_status() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
-        wp_send_json_error('Bad nonce');
+        wp_send_json_error([
+            'message' => 'Bad nonce',
+        ]);
     }
 
     $invoice_id = isset($_POST['invoice_id']) ? sanitize_text_field(wp_unslash($_POST['invoice_id'])) : '';
@@ -3237,13 +3239,20 @@ function svb_monobank_check_status() {
     }
 
     if (!$invoice_id) {
-        wp_send_json_error('Invoice not found');
+        error_log('[svb_monobank_check_status] Missing invoice_id');
+        wp_send_json_error([
+            'message' => 'Invoice not found',
+        ]);
     }
 
     $order_row = null;
     $status = svb_monobank_get_invoice_status($invoice_id);
     if (is_wp_error($status)) {
-        wp_send_json_error($status->get_error_message());
+        $err_msg = $status->get_error_message();
+        error_log('[svb_monobank_check_status] API error: invoice=' . svb_monobank_mask_invoice($invoice_id) . ' msg=' . $err_msg);
+        wp_send_json_error([
+            'message' => $err_msg,
+        ]);
     }
 
     $remote_status = $status['status'] ?? '';
@@ -3253,7 +3262,10 @@ function svb_monobank_check_status() {
     }
 
     if (!$is_reference_valid) {
-        wp_send_json_error('Invoice does not match this session');
+        error_log('[svb_monobank_check_status] Reference mismatch for invoice=' . svb_monobank_mask_invoice($invoice_id));
+        wp_send_json_error([
+            'message' => 'Invoice does not match this session',
+        ]);
     }
 
     $normalized_status = 'pending';
@@ -3290,6 +3302,8 @@ function svb_monobank_check_status() {
                 'new_status' => $normalized_status,
             ], $order_data);
         }
+
+        error_log('[svb_monobank_check_status] invoice=' . svb_monobank_mask_invoice($invoice_id) . ' order_id=' . $order_row['order_id'] . ' status ' . $old_status . ' -> ' . $normalized_status);
 
         // Refresh row to reflect persisted payment_state if it was updated.
         $order_row = svb_get_order_by_id((int) $order_row['order_id']);

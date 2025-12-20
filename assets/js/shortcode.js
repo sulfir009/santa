@@ -3471,7 +3471,15 @@ async function svbRequestInvoiceStatus(invoiceId) {
 
   const data = await res.json();
   if (!data.success) {
-    throw new Error(data.data || 'Не вдалося перевірити оплату');
+    const payload = data && data.data ? data.data : {};
+    const msg = (payload && typeof payload.message === 'string')
+      ? payload.message
+      : (payload && typeof payload.error === 'string'
+        ? payload.error
+        : (payload && typeof payload === 'string'
+          ? payload
+          : JSON.stringify(payload || {})));
+    throw new Error('svb_monobank_check_status failed: ' + (msg || 'empty response'));
   }
 
   return data.data;
@@ -3762,7 +3770,7 @@ async function svbCheckInvoiceOnReturn() {
       svbProceedToGenerateFlow();
     }
   } catch (err) {
-    console.error(err);
+    console.warn('[SVB RETURN][INVOICE CHECK][ERROR]', err && err.message ? err.message : err);
   }
 }
 
