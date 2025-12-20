@@ -131,6 +131,8 @@ function svb_render_form() {
             'return_url'  => esc_url($payment_return_url),
             'is_admin'    => $is_admin,
         ],
+        // FIX: allow JS-side admin diagnostics without exposing to visitors
+        'is_admin'            => $is_admin,
     ];
 
     $price_map_uah = $payment_prices;

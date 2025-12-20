@@ -21,11 +21,30 @@ function svb_request_name() {
     wp_send_json_success('Запит відправлено! Ми сповістимо вас.');
 }
 function svb_save_config() {
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('Permission denied');
+    // FIX: Log only in debug/admin to trace network errors
+    $log_enabled = defined('WP_DEBUG') && WP_DEBUG;
+    $log_ctx = [
+        'user_id'   => get_current_user_id(),
+        'ip'        => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
+        'video_id'  => isset($_POST['video_id']) ? sanitize_text_field(wp_unslash($_POST['video_id'])) : '',
+    ];
+
+    if ($log_enabled) {
+        error_log('[SVB_SAVE_CONFIG] Request received ' . wp_json_encode($log_ctx));
     }
+
+    if (!current_user_can('manage_options')) {
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG] Permission denied');
+        }
+        wp_send_json_error('Недостатньо прав', 403);
+    }
+
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
-        wp_send_json_error('Bad nonce');
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG] Bad nonce');
+        }
+        wp_send_json_error('Сесія застаріла, оновіть сторінку', 403);
     }
 
     $videoId = sanitize_text_field($_POST['video_id']);
@@ -33,7 +52,10 @@ function svb_save_config() {
     $scenesData = json_decode($scenesRaw, true);
 
     if (!$videoId || !is_array($scenesData)) {
-        wp_send_json_error('Invalid data');
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG] Invalid data ' . wp_json_encode(['has_video' => (bool) $videoId, 'scenes_type' => gettype($scenesData)]));
+        }
+        wp_send_json_error('Некоректні дані', 400);
     }
 
     for ($i = 1; $i <= 3; $i++) {
@@ -78,12 +100,18 @@ function svb_save_config() {
 
     // 4. Сохраняем полный список сцен всех видео
     $configFile = SVB_PLUGIN_DIR . 'svb_config.json';
-    
+
     if (file_put_contents($configFile, json_encode($configToSave, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))) {
+        if ($log_enabled) {
+            error_log('[SVB_SAVE_CONFIG] Saved OK for video ' . $videoId . ' | scenes: ' . count($scenesData));
+        }
         wp_send_json_success('Налаштування збережено для ВСІХ шаблонів (у svb_config.json)');
-    } else {
-        wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).');
     }
+
+    if ($log_enabled) {
+        error_log('[SVB_SAVE_CONFIG] File write failed for ' . $configFile);
+    }
+    wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).', 500);
 }
 
 function svb_build_download_url($order_id, $token) {
