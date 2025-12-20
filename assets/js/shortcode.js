@@ -2698,6 +2698,14 @@ async function svbHandleResumeFromUrl(params) {
   if (!hasExplicitReturn && !svbShouldResumeAfterReturn()) {
     return false;
   }
+  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
+  try {
+    document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch (e) {}
+
+  svbShowPaymentChecking();
+  const paid = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
+  svbConsumeReturnFlag();
 
   const tokenToUse = token || (() => {
     try { return sessionStorage.getItem(SVB_RETURN_TOKEN) || ''; } catch (e) { return ''; }

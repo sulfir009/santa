@@ -2658,6 +2658,43 @@ function svb_generation_state_payload($order_row) {
         $result['log_path'] = $log_path;
         $result['delivery_locked'] = $delivery_locked;
         svb_update_order_result_status($order_id, $result);
+    } elseif ($status === 'queued' && !empty($result['started_at'])) {
+        $status = 'running';
+    }
+
+    if ($log_path && file_exists($log_path)) {
+        $log_tail = svb_tail_log_file($log_path, 40000);
+        $parsed = svb_parse_generation_progress($log_tail, $duration);
+        if ($parsed !== null) {
+            $progress = max($progress, $parsed);
+        }
+        $mtime = @filemtime($log_path);
+        if ($mtime) {
+            $updated_at = date('Y-m-d H:i:s', $mtime);
+        }
+    }
+
+    $stale_seconds = 5 * MINUTE_IN_SECONDS;
+    $updated_ts = $updated_at ? strtotime($updated_at) : 0;
+    if (in_array($status, ['running', 'processing', 'queued'], true) && $updated_ts && (time() - $updated_ts) > $stale_seconds) {
+        $status = 'failed';
+        if (!$last_error) {
+            $last_error = 'Generation stalled (timeout).';
+        }
+    }
+
+    if ($order_id && (!isset($result['status'])
+        || $result['status'] !== $status
+        || ($progress && (!isset($result['progress']) || (int) $result['progress'] !== (int) $progress))
+        || ($last_error && $last_error !== ($result['last_error'] ?? ''))
+        || ($updated_at && $updated_at !== ($result['updated_at'] ?? ''))
+        || ($log_path && $log_path !== ($result['log_path'] ?? '')))) {
+        $result['status'] = $status;
+        $result['progress'] = $progress;
+        $result['last_error'] = $last_error;
+        $result['updated_at'] = $updated_at ?: current_time('mysql');
+        $result['log_path'] = $log_path;
+        svb_update_order_result_status($order_id, $result);
     }
 
     return [
