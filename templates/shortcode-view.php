@@ -1,6 +1,3 @@
-
-
-
 <?php if ( ! defined( 'ABSPATH' ) ) { exit; } ?>
 <style>
 <?php if ( ! $is_admin ) : ?>
