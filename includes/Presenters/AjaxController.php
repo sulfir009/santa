@@ -655,7 +655,7 @@ function svb_generate() {
     if (isset($audio_sel['name2'])) $child_count = 2;
     if (isset($audio_sel['name3'])) $child_count = 3;
 
-    $cats = ['facts', 'hobby', 'praise', 'request'];
+    $cats = ['hobby', 'praise', 'request'];
     if ($child_count === 1) array_unshift($cats, 'age');
 
     foreach ($cats as $cat) {
@@ -671,7 +671,6 @@ function svb_generate() {
     $audT = $current_def['audio_timings'];
     $A_NAME    = $audT['name'];
     $A_AGE     = $audT['age'] ?? [];
-    $A_FACTS   = $audT['facts'] ?? [];
     $A_HOBBY   = $audT['hobby'] ?? [];
     $A_PRAISE  = $audT['praise'] ?? [];
     $A_REQUEST = $audT['request'] ?? [];
@@ -1075,9 +1074,8 @@ $makeAudioBlocks('name',   $A_NAME);
         $makeAudioBlocks('name3', $A_NAME_3);
     }
    $makeAudioBlocks('age',    $A_AGE); 
-    $makeAudioBlocks('facts',  $A_FACTS);
-    $makeAudioBlocks('hobby',  $A_HOBBY); 
-    $makeAudioBlocks('praise', $A_PRAISE); 
+    $makeAudioBlocks('hobby',  $A_HOBBY);
+    $makeAudioBlocks('praise', $A_PRAISE);
     $makeAudioBlocks('request',$A_REQUEST);
 
     if (count($amix_inputs) <= 1) {
