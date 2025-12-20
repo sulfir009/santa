@@ -145,6 +145,11 @@ function svb_save_config() {
             'code'    => 'SVB_SAVE_CONFIG_FATAL',
         ], 500);
     }
+
+    if ($log_enabled) {
+        error_log('[SVB_SAVE_CONFIG] File write failed for ' . $configFile);
+    }
+    wp_send_json_error('Помилка запису файлу. Перевірте права на папку плагіна (потрібні 755 або 775).', 500);
 }
 
 function svb_build_download_url($order_id, $token) {
