@@ -124,14 +124,6 @@
           </div>
 
           <div class="svb-field">
-            <label class="svb-label">Факти з життя</label>
-            <div class="svb-audio-row">
-              <select class="svb-select" name="facts_audio" data-cat="facts"></select>
-              <button class="svb-play" type="button" data-play="facts" title="Прослухати">▶</button>
-            </div>
-          </div>
-
-          <div class="svb-field">
             <label class="svb-label">Захоплення</label>
             <div class="svb-audio-row">
               <select class="svb-select" name="hobby_audio" data-cat="hobby"></select>
