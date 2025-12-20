@@ -40,6 +40,41 @@ function svb_set_lax_cookie($name, $value, $expires, $http_only = true) {
     return setcookie($name, $value, $options);
 }
 
+function svb_expire_cookie($name) {
+    if (headers_sent()) {
+        return;
+    }
+
+    setcookie($name, '', [
+        'expires' => time() - HOUR_IN_SECONDS,
+        'path' => '/',
+        'domain' => COOKIE_DOMAIN,
+        'secure' => svb_detect_ssl(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
+    unset($_COOKIE[$name]);
+}
+
+function svb_clear_user_state($reason = '') {
+    foreach (['svb_public_token', 'svb_session', 'svb_user_uid'] as $cookie_name) {
+        svb_expire_cookie($cookie_name);
+    }
+
+    if ($reason && defined('SVB_DEBUG') && SVB_DEBUG) {
+        error_log('[SVB RESET] cleared user state: ' . $reason);
+    }
+}
+
+function svb_safe_hash_equals($known_string, $user_string) {
+    if (!is_string($known_string) || $known_string === '' || !is_string($user_string) || $user_string === '') {
+        return false;
+    }
+
+    return hash_equals($known_string, $user_string);
+}
+
 function svb_get_orders_upload_dir($order_id) {
     $base = trailingslashit(svb_get_orders_dir()) . 'orders/' . absint($order_id);
     $photos = $base . '/photos';
@@ -269,11 +304,14 @@ function svb_get_order_by_id($order_id) {
 
     if (!isset($row['public_token']) || !$row['public_token']) {
         $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
-        if ($cookie_token && isset($row['token_hash']) && hash_equals($row['token_hash'], hash('sha256', $cookie_token))) {
+        $token_hash = isset($row['token_hash']) ? $row['token_hash'] : '';
+        if ($cookie_token && svb_safe_hash_equals($token_hash, hash('sha256', $cookie_token))) {
             $row['public_token'] = $cookie_token;
             if (svb_orders_table_has_column($table, 'public_token')) {
                 $wpdb->update($table, ['public_token' => $cookie_token], ['id' => $row['id']], ['%s'], ['%d']);
             }
+        } elseif ($cookie_token && $token_hash && !svb_safe_hash_equals($token_hash, hash('sha256', $cookie_token))) {
+            svb_clear_user_state('token_mismatch_id_lookup');
         }
     }
 
@@ -297,7 +335,7 @@ function svb_get_order_by_id_and_token($order_id, $token) {
     }
 
     $token_hash = isset($order['token_hash']) ? $order['token_hash'] : '';
-    if (!$token_hash || !$token || !hash_equals($token_hash, hash('sha256', $token))) {
+    if (!$token_hash || !$token || !svb_safe_hash_equals($token_hash, hash('sha256', $token))) {
         return null;
     }
 
@@ -340,8 +378,13 @@ function svb_resolve_order_public_token(array $order_row) {
     }
 
     $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
-    if ($cookie_token && isset($order_row['token_hash']) && hash_equals($order_row['token_hash'], hash('sha256', $cookie_token))) {
+    $token_hash = isset($order_row['token_hash']) ? $order_row['token_hash'] : '';
+    if ($cookie_token && svb_safe_hash_equals($token_hash, hash('sha256', $cookie_token))) {
         return $cookie_token;
+    }
+
+    if ($cookie_token && $token_hash && !svb_safe_hash_equals($token_hash, hash('sha256', $cookie_token))) {
+        svb_clear_user_state('token_mismatch_public_resolve');
     }
 
     return '';
@@ -478,6 +521,16 @@ function svb_init_user_order() {
     $session_cookie = 'svb_session';
     $dir = svb_get_orders_dir();
 
+    $reset_state = function($reason) use ($dir) {
+        if ($reason && function_exists('svb_log')) {
+            svb_log('state_reset', ['reason' => $reason]);
+        }
+
+        foreach (glob($dir . '/order_*.json') ?: [] as $stale) {
+            @unlink($stale);
+        }
+    };
+
     if (empty($_COOKIE[$session_cookie])) {
         try {
             $session_val = bin2hex(random_bytes(16));
@@ -545,6 +598,8 @@ function svb_init_user_order() {
             'created_at' => date('Y-m-d H:i:s'),
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
             'session_id' => $session_val,
+            'state_version' => SVB_STATE_VERSION,
+            'state_updated_at' => time(),
             'video_generated' => false,
             'video_path' => '',
             'video_url' => '',
@@ -563,10 +618,19 @@ function svb_init_user_order() {
         ];
         file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     } else {
-        $data = json_decode(file_get_contents($file), true);
+        $raw = file_get_contents($file);
+        $data = json_decode($raw, true);
         if (!is_array($data)) {
-             @unlink($file);
-             return svb_init_user_order();
+            @unlink($file);
+            $reset_state('corrupted_json');
+            return svb_init_user_order();
+        }
+
+        $state_version = isset($data['state_version']) ? (int) $data['state_version'] : 0;
+        if ($state_version !== SVB_STATE_VERSION) {
+            @unlink($file);
+            $reset_state('state_version_mismatch');
+            return svb_init_user_order();
         }
         if (!isset($data['payment']) || !is_array($data['payment'])) {
             $data['payment'] = [
@@ -586,6 +650,9 @@ function svb_init_user_order() {
         $data['order_id'] = (int) $order_row['order_id'];
         $data['public_token'] = $order_row['public_token'];
         $data['token_hash'] = $order_row['token_hash'];
+        $data['state_version'] = SVB_STATE_VERSION;
+        $data['state_updated_at'] = time();
+        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
 
     return $data;
@@ -750,22 +817,28 @@ function svb_get_order_row_by_uid($uid, $fallback_data = []) {
     }
     if ($row) {
         $cookie_token = isset($_COOKIE['svb_public_token']) ? sanitize_text_field($_COOKIE['svb_public_token']) : '';
-        if ($cookie_token && hash_equals($row['token_hash'], hash('sha256', $cookie_token))) {
+        $token_hash = isset($row['token_hash']) ? $row['token_hash'] : '';
+        if ($cookie_token && svb_safe_hash_equals($token_hash, hash('sha256', $cookie_token))) {
             $row['public_token'] = $cookie_token;
             if (svb_orders_table_has_column($table, 'public_token') && empty($row['public_token'])) {
                 $wpdb->update($table, ['public_token' => $cookie_token], ['id' => $row['id']], ['%s'], ['%d']);
             }
+        } elseif ($cookie_token && $token_hash && !svb_safe_hash_equals($token_hash, hash('sha256', $cookie_token))) {
+            svb_clear_user_state('token_mismatch_uid_lookup');
+            $row = null;
         } else {
             $row['public_token'] = $row['public_token'] ?? '';
         }
 
-        $fallback_email_hash = svb_orders_email_hash($fallback_data['customer_email'] ?? '');
-        if (empty($row['email_hash']) && $fallback_email_hash && svb_orders_table_has_column($table, 'email_hash')) {
-            $wpdb->update($table, ['email_hash' => $fallback_email_hash], ['id' => $row['id']], ['%s'], ['%d']);
-            $row['email_hash'] = $fallback_email_hash;
-        }
+        if ($row) {
+            $fallback_email_hash = svb_orders_email_hash($fallback_data['customer_email'] ?? '');
+            if (empty($row['email_hash']) && $fallback_email_hash && svb_orders_table_has_column($table, 'email_hash')) {
+                $wpdb->update($table, ['email_hash' => $fallback_email_hash], ['id' => $row['id']], ['%s'], ['%d']);
+                $row['email_hash'] = $fallback_email_hash;
+            }
 
-        return $row;
+            return $row;
+        }
     }
 
     $order_id = svb_get_next_order_id();
