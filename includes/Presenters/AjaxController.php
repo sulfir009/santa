@@ -23,6 +23,8 @@ function svb_request_name() {
 function svb_save_config() {
     $restore_handler = null;
 
+    $restore_handler = null;
+
     try {
         if (!current_user_can('manage_options')) {
             wp_send_json_error([
