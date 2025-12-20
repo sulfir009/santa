@@ -273,7 +273,8 @@ function svb_stream_order_video($order_id, $token) {
     }
 
     if (!$video_path || !file_exists($video_path)) {
-        $send_error('no_file', 404);
+        $status = ($payment_status === 'success' || $payment_status === 'paid') ? 202 : 404;
+        $send_error('no_file', $status);
     }
 
     if (!is_readable($video_path)) {
@@ -507,6 +508,8 @@ svb_register_ajax_handler('svb_create_invoice', 'svb_create_invoice', true);
 svb_register_ajax_handler('svb_resume_by_identity', 'svb_resume_by_identity', true);
 svb_register_ajax_handler('svb_gate', 'svb_gate', true);
 svb_register_ajax_handler('svb_payment_gate', 'svb_payment_gate', true);
+svb_register_ajax_handler('svb_start_generation', 'svb_start_generation', true);
+svb_register_ajax_handler('svb_generation_status', 'svb_generation_status', true);
 svb_register_ajax_handler('svb_pay_debug_state', 'svb_pay_debug_state', true);
 svb_register_ajax_handler('svb_debug_session', 'svb_debug_session', true);
 svb_register_ajax_handler('svb_monobank_sync_status', 'svb_monobank_sync_status', true);

@@ -2322,6 +2322,108 @@ function svb_resume_by_identity() {
     wp_send_json_success($payload);
 }
 
+function svb_read_order_result($order_row) {
+    $raw = $order_row['result'] ?? '';
+    if (is_array($raw)) {
+        return $raw;
+    }
+
+    if (is_string($raw) && $raw !== '') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+    }
+
+    return [];
+}
+
+function svb_update_order_result_status($order_id, array $result) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => (int) $order_id], ['%s'], ['%d']);
+}
+
+function svb_generation_state_payload($order_row) {
+    $order_id = (int) ($order_row['order_id'] ?? 0);
+    $public_token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
+    $result = svb_read_order_result($order_row);
+    $video_path = isset($result['video_path']) ? $result['video_path'] : '';
+    $file_exists = $video_path && file_exists($video_path);
+    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'processing');
+    $download_url = '';
+
+    if ($file_exists && $public_token && $order_id) {
+        $download_url = svb_build_download_url($order_id, $public_token);
+        $status = 'done';
+        if (empty($result['status']) || $result['status'] !== 'done') {
+            $result['status'] = 'done';
+            $result['download_url'] = $download_url;
+            svb_update_order_result_status($order_id, $result);
+        }
+    } elseif (!isset($result['status'])) {
+        $result['status'] = 'processing';
+        $result['started_at'] = $result['started_at'] ?? time();
+        svb_update_order_result_status($order_id, $result);
+    }
+
+    return [
+        'order_id' => $order_id,
+        'public_token' => $public_token,
+        'status' => $status,
+        'download_url' => $download_url,
+        'has_file' => $file_exists,
+        'started_at' => isset($result['started_at']) ? (int) $result['started_at'] : 0,
+    ];
+}
+
+function svb_start_generation() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $public_token = isset($_POST['public_token']) ? sanitize_text_field(wp_unslash($_POST['public_token'])) : '';
+    if (!$public_token) {
+        wp_send_json_error('Missing token');
+    }
+
+    $order = svb_get_order_by_token($public_token);
+    if (!$order) {
+        wp_send_json_error('Order not found');
+    }
+
+    $payload = svb_generation_state_payload($order);
+    if ($payload['status'] !== 'done' && empty($payload['started_at'])) {
+        $result = svb_read_order_result($order);
+        if (!isset($result['status'])) {
+            $result['status'] = 'processing';
+            $result['started_at'] = time();
+            svb_update_order_result_status($payload['order_id'], $result);
+        }
+    }
+
+    wp_send_json_success($payload);
+}
+
+function svb_generation_status() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $public_token = isset($_POST['public_token']) ? sanitize_text_field(wp_unslash($_POST['public_token'])) : '';
+    if (!$public_token) {
+        wp_send_json_error('Missing token');
+    }
+
+    $order = svb_get_order_by_token($public_token);
+    if (!$order) {
+        wp_send_json_error('Order not found');
+    }
+
+    $payload = svb_generation_state_payload($order);
+    wp_send_json_success($payload);
+}
+
 function svb_payment_gate() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');
