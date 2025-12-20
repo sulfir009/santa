@@ -2210,7 +2210,7 @@ async function svbHandleStep1Next(e) {
 }
 
 async function svbHandleResumeFromUrl(params) {
-  if (!params || (!params.has('svb_resume_order') && !params.has('svb_order') && !params.has('svb_token'))) return false;
+  if (!params || (!params.has('svb_resume_order') && !params.has('svb_order') && !params.has('svb_token') && !params.has('svb_payment_return'))) return false;
 
   const orderId = parseInt(params.get('order_id') || '0', 10);
   const token = params.get('token') || params.get('svb_order') || params.get('svb_token') || '';
@@ -4506,7 +4506,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const urlParams = new URLSearchParams(window.location.search);
   const isPaymentReturn = urlParams.has('svb_payment_return');
-  const isResumeFromUrl = urlParams.has('svb_resume_order') || urlParams.has('svb_order') || urlParams.has('svb_token');
+  const hasReturnToken = urlParams.has('token') || urlParams.has('svb_order') || urlParams.has('svb_token');
+  const isResumeFromUrl = urlParams.has('svb_resume_order') || urlParams.has('svb_order') || urlParams.has('svb_token') || (isPaymentReturn && hasReturnToken);
 
   (async () => {
     let resumeHandled = false;

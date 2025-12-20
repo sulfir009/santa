@@ -38,7 +38,7 @@ register_activation_hook(__FILE__, function() {
 add_action('svb_cleanup_order_results', 'svb_cleanup_order_results_cb');
 
 add_filter('redirect_canonical', function($redirect_url, $requested_url) {
-    if (isset($_GET['svb_download'])) {
+    if (isset($_GET['svb_download']) || isset($_GET['svb_payment_return'])) {
         return false;
     }
 
@@ -159,7 +159,11 @@ function svb_stream_order_video($order_id, $token) {
 }
 
 function svb_handle_public_order() {
-    if (empty($_GET['svb_order']) || empty($_GET['token'])) {
+    if (isset($_GET['svb_payment_return'])) {
+        return;
+    }
+
+    if (empty($_GET['svb_download']) || empty($_GET['svb_order']) || empty($_GET['token'])) {
         return;
     }
 
@@ -167,6 +171,10 @@ function svb_handle_public_order() {
 }
 
 function svb_handle_download_endpoint() {
+    if (isset($_GET['svb_payment_return'])) {
+        return;
+    }
+
     if (!isset($_GET['svb_download'])) {
         return;
     }
@@ -196,6 +204,60 @@ function svb_handle_download_endpoint() {
     }
 
     svb_stream_order_video($order_id, $token);
+}
+
+function svb_handle_payment_return_redirect() {
+    if (empty($_GET['svb_payment_return'])) {
+        return;
+    }
+
+    $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
+    $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+
+    if (!$token && isset($_GET['svb_order'])) {
+        $token = sanitize_text_field(wp_unslash($_GET['svb_order']));
+    }
+
+    $is_token_valid = $token && preg_match('/^[a-f0-9]{8,}$/i', $token);
+    $order_row = null;
+
+    if ($order_id && $is_token_valid) {
+        $order_row = svb_get_order_by_id_and_token($order_id, $token);
+    }
+
+    if (!$order_row && $is_token_valid) {
+        $order_row = svb_get_order_by_token($token);
+    }
+
+    if (!$order_row) {
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB PAY RETURN] order not found for order_id=' . $order_id . ' token_prefix=' . ($token ? substr($token, 0, 8) : ''));
+        }
+        status_header(200);
+        wp_die('Order not found', '', ['response' => 200]);
+    }
+
+    $public_token = svb_resolve_order_public_token($order_row);
+    if ($public_token) {
+        svb_set_lax_cookie('svb_public_token', $public_token, time() + MONTH_IN_SECONDS, true);
+        $_COOKIE['svb_public_token'] = $public_token;
+    }
+
+    if (!empty($order_row['session_id'])) {
+        svb_set_lax_cookie('svb_session', $order_row['session_id'], time() + MONTH_IN_SECONDS, true);
+        $_COOKIE['svb_session'] = $order_row['session_id'];
+    }
+
+    $resume_url = add_query_arg(
+        [
+            'svb_token' => $public_token,
+            'svb_step' => 3,
+        ],
+        home_url('/')
+    );
+
+    wp_safe_redirect($resume_url);
+    exit;
 }
 
 // Allow HEIC/HEIF uploads when supported by WordPress core.
@@ -268,3 +330,4 @@ add_action('wp_ajax_nopriv_svb_monobank_check_status', 'svb_monobank_check_statu
 add_action('init', 'svb_handle_monobank_return', 2);
 add_action('init', 'svb_handle_public_order', 3);
 add_action('template_redirect', 'svb_handle_download_endpoint', 0);
+add_action('template_redirect', 'svb_handle_payment_return_redirect', -1);
