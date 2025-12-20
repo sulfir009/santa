@@ -475,7 +475,7 @@ function svb_order_resume_info() {
     $video_path = $result['video_path'] ?? '';
     $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
     $has_video = ($video_path && file_exists($video_path) && is_readable($video_path) && (!$generated_at || (time() - $generated_at) <= HOUR_IN_SECONDS));
-    $can_regen = ($payment_status === 'success' && $paid_fingerprint && $fingerprint_current && hash_equals($paid_fingerprint, $fingerprint_current));
+    $can_regen = ($payment_status === 'success');
 
     $resume_url = svb_build_resume_url($order_row['order_id'], $order_row['public_token'] ?? '');
     $download_url = ($can_regen && !empty($order_row['public_token'])) ? svb_build_download_url($order_row['order_id'], $order_row['public_token']) : '';
@@ -1858,15 +1858,21 @@ function svb_payment_normalize_status($status) {
     return svb_monobank_normalize_status($status);
 }
 
-function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_current) {
+function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_current, $meta = []) {
     $normalized = svb_payment_normalize_status($payment_status);
+    $has_transaction = !empty($meta['transaction_id']);
+    $has_paid_at = !empty($meta['paid_at']);
 
-    if ($normalized === 'success' && $paid_fingerprint && $fingerprint_current && hash_equals($paid_fingerprint, $fingerprint_current)) {
-        return ['paid', $normalized, 'paid_match'];
-    }
+    if ($normalized === 'success' || $has_transaction || $has_paid_at) {
+        if ($paid_fingerprint && $fingerprint_current && hash_equals($paid_fingerprint, $fingerprint_current)) {
+            return ['paid', 'success', 'paid_match'];
+        }
 
-    if ($normalized === 'success' && $paid_fingerprint && $fingerprint_current && !hash_equals($paid_fingerprint, $fingerprint_current)) {
-        return ['not_paid', $normalized, 'fingerprint_mismatch'];
+        if ($paid_fingerprint && $fingerprint_current && !hash_equals($paid_fingerprint, $fingerprint_current)) {
+            return ['paid', 'success', 'fingerprint_mismatch'];
+        }
+
+        return ['paid', 'success', 'status_success'];
     }
 
     if ($normalized === 'failure') {
@@ -1967,7 +1973,15 @@ function svb_pay_debug_state() {
         }
     }
 
-    list($decision, $normalized_status, $decision_reason) = svb_payment_decision($server_status, $payment['paid_fingerprint'] ?? '', $order_row['fingerprint_current'] ?? '');
+    list($decision, $normalized_status, $decision_reason) = svb_payment_decision(
+        $server_status,
+        $payment['paid_fingerprint'] ?? '',
+        $order_row['fingerprint_current'] ?? '',
+        [
+            'transaction_id' => $payment['transaction_id'] ?? '',
+            'paid_at' => $payment['paid_at'] ?? 0,
+        ]
+    );
 
     $response['server']['fingerprint_current'] = $order_row['fingerprint_current'] ?? '';
     $response['server']['payment_status'] = $normalized_status;
@@ -2045,6 +2059,9 @@ function svb_monobank_sync_status() {
     $response['has_page_url'] = !empty($invoice_page_url);
     $response['modifiedDate'] = isset($payment['modifiedDate']) ? (int) $payment['modifiedDate'] : 0;
     $response['public_token'] = $authorized ? ($order_row['public_token'] ?? '') : '';
+    $response['transaction_id'] = $payment['transaction_id'] ?? '';
+    $response['paid_at'] = isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0;
+    $response['resume_url'] = svb_build_resume_url($order_row['order_id'], $order_row['public_token'] ?? '');
 
     if (!$invoice_id) {
         $response['decision'] = 'no_invoice';
@@ -2079,6 +2096,8 @@ function svb_monobank_sync_status() {
                 $response['pageUrl'] = $payment['invoice_page_url'];
             }
             $response['has_page_url'] = $response['has_page_url'] || !empty($payment['invoice_page_url']);
+            $response['transaction_id'] = $payment['transaction_id'] ?? $response['transaction_id'];
+            $response['paid_at'] = isset($payment['paid_at']) ? (int) $payment['paid_at'] : $response['paid_at'];
         }
     }
 
@@ -2089,10 +2108,20 @@ function svb_monobank_sync_status() {
         }
     }
 
-    list($decision, $normalized_status, $reason) = svb_payment_decision($response['payment_status'], $response['paid_fingerprint'], $response['fingerprint_current']);
+    list($decision, $normalized_status, $reason) = svb_payment_decision(
+        $response['payment_status'],
+        $response['paid_fingerprint'],
+        $response['fingerprint_current'],
+        [
+            'transaction_id' => $response['transaction_id'] ?? '',
+            'paid_at' => $response['paid_at'] ?? 0,
+        ]
+    );
     $response['decision'] = $decision;
     $response['payment_status'] = $normalized_status;
     $response['reason'] = $reason;
+    $response['is_paid'] = ($decision === 'paid');
+    $response['payment_url'] = $response['pageUrl'];
 
     wp_send_json_success($response);
 }
@@ -2175,7 +2204,15 @@ function svb_payment_gate() {
 
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $paid_fingerprint = isset($payment['paid_fingerprint']) ? $payment['paid_fingerprint'] : '';
-    list($decision, $normalized_status, $reason) = svb_payment_decision($payment['status'] ?? 'unpaid', $paid_fingerprint, $fingerprint_current);
+    list($decision, $normalized_status, $reason) = svb_payment_decision(
+        $payment['status'] ?? 'unpaid',
+        $paid_fingerprint,
+        $fingerprint_current,
+        [
+            'transaction_id' => $payment['transaction_id'] ?? '',
+            'paid_at' => $payment['paid_at'] ?? 0,
+        ]
+    );
     $was_successful = ($normalized_status === 'success');
     $is_paid_for_current = ($decision === 'paid');
 
@@ -2189,23 +2226,7 @@ function svb_payment_gate() {
     }
 
     if ($is_paid_for_current) {
-        $reason = 'paid_match';
-    } elseif ($was_successful && (!$paid_fingerprint || !hash_equals($paid_fingerprint, $fingerprint_current))) {
-        $reason = 'fingerprint_changed';
-        $new_row = svb_create_new_order_for_session($uid, ['payment' => svb_get_payment_defaults()]);
-        if (is_wp_error($new_row)) {
-            $db_error = $new_row->get_error_data()['db_error'] ?? '';
-            if ($db_error) {
-                svb_pay_log('payment_gate.new_order_error', ['db_error' => $db_error], $order_data);
-            }
-            wp_send_json_error('Order storage error');
-        }
-        $order_row = $new_row;
-        $payment = svb_orders_normalize_payment(svb_get_payment_defaults());
-        $paid_fingerprint = '';
-        $decision = 'not_paid';
-        $normalized_status = 'unpaid';
-        $is_paid_for_current = false;
+        $reason = $reason === 'fingerprint_mismatch' ? 'fingerprint_mismatch' : 'paid_match';
     }
 
     svb_update_order_fingerprint(
@@ -2237,12 +2258,17 @@ function svb_payment_gate() {
         'payment_status_raw' => $payment['status'] ?? 'unpaid',
         'invoice_id' => $payment['invoice_id'] ?? '',
         'invoice_page_url' => $payment['invoice_page_url'] ?? '',
+        'payment_url' => $payment['invoice_page_url'] ?? '',
         'invoice_masked' => svb_monobank_mask_invoice($payment['invoice_id'] ?? ''),
         'invoice_page_url_masked' => svb_mask_page_url($payment['invoice_page_url'] ?? ''),
         'is_paid_for_current' => $is_paid_for_current,
         'decision' => $decision,
         'reason' => $reason,
         'storage' => $storage,
+        'resume_url' => svb_build_resume_url($order_row['order_id'], $order_row['public_token'] ?? ''),
+        'transaction_id' => $payment['transaction_id'] ?? '',
+        'paid_at' => isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0,
+        'is_paid' => $is_paid_for_current,
     ];
 
     if (svb_pay_should_log()) {
@@ -2359,7 +2385,15 @@ function svb_monobank_create_invoice() {
 
     $return_raw = isset($_POST['return_url']) ? esc_url_raw(wp_unslash($_POST['return_url'])) : '';
     $return_path = $return_raw ? wp_parse_url($return_raw, PHP_URL_PATH) : '/';
-    $return_url = add_query_arg('svb_payment_return', '1', home_url($return_path ?: '/'));
+    $return_url = add_query_arg(
+        [
+            'svb_payment_return' => '1',
+            'order_id' => $order_data['order_id'] ?? 0,
+            'token' => $order_data['public_token'] ?? '',
+            'svb_order' => $order_data['public_token'] ?? '',
+        ],
+        home_url($return_path ?: '/')
+    );
 
     $reference = 'SVB-' . ($order_data['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
     $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_data['order_id'] ?? 'unknown');
@@ -2427,6 +2461,8 @@ function svb_monobank_create_invoice() {
         'pageUrl' => $invoice_page_url,
         'invoiceId' => $invoice_id,
         'amount' => $amount,
+        'resume_url' => svb_build_resume_url($order_data['order_id'], $order_data['public_token'] ?? ''),
+        'public_token' => $order_data['public_token'] ?? '',
     ]);
 }
 
