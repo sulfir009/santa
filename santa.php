@@ -245,6 +245,8 @@ add_action('wp_ajax_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_nopriv_svb_dbg_push', 'svb_dbg_push');
 add_action('wp_ajax_svb_request_name', 'svb_request_name');
 add_action('wp_ajax_nopriv_svb_request_name', 'svb_request_name');
+add_action('wp_ajax_svb_find_video', 'svb_find_video');
+add_action('wp_ajax_nopriv_svb_find_video', 'svb_find_video');
 add_action('wp_ajax_svb_order_recover', 'svb_order_recover');
 add_action('wp_ajax_nopriv_svb_order_recover', 'svb_order_recover');
 add_action('wp_ajax_svb_order_resume_info', 'svb_order_resume_info');
