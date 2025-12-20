@@ -2344,6 +2344,14 @@ function svb_payment_gate() {
         'is_paid' => $is_paid_for_current,
     ];
 
+    if (function_exists('svb_debug_enabled') && svb_debug_enabled()) {
+        $response['debug'] = [
+            'storage' => $storage,
+            'has_invoice' => !empty($invoice_id),
+            'token_mask' => svb_mask_value($public_token),
+        ];
+    }
+
     if (svb_pay_should_log()) {
         svb_pay_log('payment_gate.result', [
             'order_id' => $response['order_id'],

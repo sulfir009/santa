@@ -94,6 +94,14 @@ let svbRecoveredFromLookup = false;
 let svbLookupDownloadUrl = '';
 let svbLookupInFlight = false;
 let svbStep2InFlight = false;
+const SVB_DEBUG = !!(window.SVB_DATA && window.SVB_DATA.debug && window.SVB_DATA.debug.enabled);
+
+function svbDebugLog(tag, payload) {
+  if (!SVB_DEBUG) return;
+  try {
+    console.log(`[SVB DEBUG] ${tag}`,(payload ?? {}));
+  } catch (e) {}
+}
 
 function svbGetVideoSelectionMap() {
     const state = svbLoadState();
@@ -447,6 +455,13 @@ function svbReinitAfterRender(savedValues = {}) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 SVB Init started (Final Fix Rebind)');
     svbLoadState();
+
+    svbDebugLog('page_boot', {
+      state_version: (window.SVB_DATA && window.SVB_DATA.debug && window.SVB_DATA.debug.state_version) || null,
+      order_id: (window.SVB_DATA && window.SVB_DATA.debug && window.SVB_DATA.debug.order_id) || null,
+      payment_status: (window.SVB_DATA && window.SVB_DATA.debug && window.SVB_DATA.debug.payment_status) || '',
+      token: (window.SVB_DATA && window.SVB_DATA.debug && window.SVB_DATA.debug.public_token_masked) || '',
+    });
 
     // 1. Ініціалізуємо змінну кількості дітей перед усім іншим
     const checked = document.querySelector('input[name="child_count"]:checked');

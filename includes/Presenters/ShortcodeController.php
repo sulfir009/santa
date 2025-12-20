@@ -135,6 +135,13 @@ function svb_render_form() {
         ],
         // FIX: allow JS-side admin diagnostics without exposing to visitors
         'is_admin'            => $is_admin,
+        'debug'               => [
+            'enabled'              => svb_debug_enabled(),
+            'order_id'             => $order_id,
+            'payment_status'       => $payment_state['status'] ?? 'unpaid',
+            'public_token_masked'  => !empty($order_data['public_token']) ? substr($order_data['public_token'], 0, 4) . '...' : '',
+            'state_version'        => defined('SVB_STATE_VERSION') ? SVB_STATE_VERSION : null,
+        ],
     ];
 
     $price_map_uah = $payment_prices;

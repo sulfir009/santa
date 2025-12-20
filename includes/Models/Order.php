@@ -521,6 +521,16 @@ function svb_init_user_order() {
     $session_cookie = 'svb_session';
     $dir = svb_get_orders_dir();
 
+    $reset_state = function($reason) use ($dir) {
+        if ($reason && function_exists('svb_log')) {
+            svb_log('state_reset', ['reason' => $reason]);
+        }
+
+        foreach (glob($dir . '/order_*.json') ?: [] as $stale) {
+            @unlink($stale);
+        }
+    };
+
     if (empty($_COOKIE[$session_cookie])) {
         try {
             $session_val = bin2hex(random_bytes(16));
@@ -588,6 +598,8 @@ function svb_init_user_order() {
             'created_at' => date('Y-m-d H:i:s'),
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
             'session_id' => $session_val,
+            'state_version' => SVB_STATE_VERSION,
+            'state_updated_at' => time(),
             'video_generated' => false,
             'video_path' => '',
             'video_url' => '',
@@ -606,10 +618,19 @@ function svb_init_user_order() {
         ];
         file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     } else {
-        $data = json_decode(file_get_contents($file), true);
+        $raw = file_get_contents($file);
+        $data = json_decode($raw, true);
         if (!is_array($data)) {
-             @unlink($file);
-             return svb_init_user_order();
+            @unlink($file);
+            $reset_state('corrupted_json');
+            return svb_init_user_order();
+        }
+
+        $state_version = isset($data['state_version']) ? (int) $data['state_version'] : 0;
+        if ($state_version !== SVB_STATE_VERSION) {
+            @unlink($file);
+            $reset_state('state_version_mismatch');
+            return svb_init_user_order();
         }
         if (!isset($data['payment']) || !is_array($data['payment'])) {
             $data['payment'] = [
@@ -629,6 +650,9 @@ function svb_init_user_order() {
         $data['order_id'] = (int) $order_row['order_id'];
         $data['public_token'] = $order_row['public_token'];
         $data['token_hash'] = $order_row['token_hash'];
+        $data['state_version'] = SVB_STATE_VERSION;
+        $data['state_updated_at'] = time();
+        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
 
     return $data;

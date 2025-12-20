@@ -12,12 +12,81 @@ define('SVB_VER', '3.1.4');
 define('SVB_PLUGIN_FILE', __FILE__);
 define('SVB_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SVB_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('SVB_STATE_VERSION', 1);
 
 if (!defined('SVB_DEBUG')) {
     define('SVB_DEBUG', true);
 }
 if (!defined('SVB_ORDERS_V2')) {
     define('SVB_ORDERS_V2', false);
+}
+
+function svb_debug_enabled() {
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        return true;
+    }
+
+    $option_flag = get_option('svb_debug_mode');
+    return (bool) $option_flag;
+}
+
+function svb_mask_value($value, $len = 4) {
+    if (!is_string($value) || $value === '') {
+        return '';
+    }
+
+    if (strlen($value) <= ($len * 2)) {
+        return $value;
+    }
+
+    return substr($value, 0, $len) . '...' . substr($value, -$len);
+}
+
+function svb_log($tag, $data = []) {
+    if (!svb_debug_enabled()) {
+        return;
+    }
+
+    $payload = is_array($data) ? $data : ['message' => (string) $data];
+    $payload_safe = [];
+
+    foreach ($payload as $key => $val) {
+        if (stripos($key, 'token') !== false || stripos($key, 'session') !== false) {
+            $payload_safe[$key] = svb_mask_value(is_scalar($val) ? (string) $val : wp_json_encode($val));
+        } else {
+            $payload_safe[$key] = $val;
+        }
+    }
+
+    error_log('[SVB][' . $tag . '] ' . wp_json_encode($payload_safe));
+}
+
+function svb_register_error_observer() {
+    if (!svb_debug_enabled()) {
+        return;
+    }
+
+    set_error_handler(function ($severity, $message, $file, $line) {
+        if (!(error_reporting() & $severity)) {
+            return false;
+        }
+
+        svb_log('php_error', [
+            'severity' => $severity,
+            'message' => $message,
+            'file' => $file,
+            'line' => $line,
+        ]);
+
+        return false;
+    });
+
+    register_shutdown_function(function () {
+        $last = error_get_last();
+        if ($last && in_array($last['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+            svb_log('shutdown_fatal', $last);
+        }
+    });
 }
 
 function svb_register_missing_dependency_notice($missing_files) {
@@ -67,9 +136,19 @@ require_once SVB_PLUGIN_DIR . 'includes/Services/MonobankGateway.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
 
+svb_register_error_observer();
+
 function svb_log_throwable(Throwable $e, $context) {
-    error_log(sprintf('[SVB ERROR][%s] %s in %s:%d', $context, $e->getMessage(), $e->getFile(), $e->getLine()));
-    error_log($e->getTraceAsString());
+    svb_log('throwable', [
+        'context' => $context,
+        'message' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine(),
+    ]);
+
+    if (svb_debug_enabled()) {
+        error_log($e->getTraceAsString());
+    }
 }
 
 function svb_wrap_hook($callback, $context, $on_error = null) {
@@ -94,6 +173,13 @@ function svb_wrap_ajax($callback, $context) {
             'context' => $context,
             'message' => $e->getMessage(),
         ];
+
+        if (svb_debug_enabled()) {
+            $payload['debug'] = [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ];
+        }
 
         wp_send_json_error($payload);
     });
@@ -302,9 +388,12 @@ function svb_handle_payment_return_redirect() {
     }
 
     if (!$order_row) {
-        if (defined('SVB_DEBUG') && SVB_DEBUG) {
-            error_log('[SVB PAY RETURN] order not found for order_id=' . $order_id . ' token_prefix=' . ($token ? substr($token, 0, 8) : ''));
-        }
+        svb_log('pay_return_missing', [
+            'order_id' => $order_id,
+            'token' => $token ? svb_mask_value($token) : '',
+        ]);
+
+        svb_clear_user_state('payment_return_not_found');
 
         svb_clear_user_state('payment_return_not_found');
 
@@ -330,6 +419,12 @@ function svb_handle_payment_return_redirect() {
         svb_set_lax_cookie('svb_session', $order_row['session_id'], time() + MONTH_IN_SECONDS, true);
         $_COOKIE['svb_session'] = $order_row['session_id'];
     }
+
+    svb_log('pay_return_resume', [
+        'order_id' => $order_row['order_id'] ?? 0,
+        'public_token' => $public_token ? svb_mask_value($public_token) : '',
+        'session' => !empty($order_row['session_id']) ? svb_mask_value($order_row['session_id']) : '',
+    ]);
 
     $resume_url = add_query_arg(
         [
