@@ -317,7 +317,7 @@ function svb_scan_audio_catalog() {
     $out['name']['girl'] = is_dir(SVB_PLUGIN_DIR.'audio/name/girl/') ? $load_list(SVB_PLUGIN_DIR.'audio/name/girl/', SVB_PLUGIN_URL.'audio/name/girl/') : [];
     $out['name']['root'] = [];
 
-    foreach (['age','facts','hobby','praise','request'] as $cat) {
+    foreach (['age','hobby','praise','request'] as $cat) {
         $dir = SVB_PLUGIN_DIR."audio/{$cat}/";
         $url = SVB_PLUGIN_URL."audio/{$cat}/";
         $out[$cat] = is_dir($dir) ? $load_list($dir,$url) : [];
