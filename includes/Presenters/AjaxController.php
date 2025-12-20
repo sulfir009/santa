@@ -1006,7 +1006,7 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
     // --- Аудио ---
     $audio_format_chain = ",aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=1:first_pts=0";
     $amix_inputs = ['[abase]'];
-    $filter[] = '[0:a]aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=1:first_pts=0,volume=0.15[abase]';
+    $filter[] = '[0:a]aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=1:first_pts=0,volume=1.00[abase]';
 
     // Функция сборки аудио
     $makeAudioBlocks = function($cat, $intervals) use (&$filter, &$amix_inputs, $audIndexMap, $HAS_AFIFO, $tplDur, $audio_format_chain){
@@ -1027,7 +1027,7 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
             if ($isName) $chain .= "atrim=0:{$segDur},";
             $chain .= "asetpts=PTS-STARTPTS";
             $chain .= $isName ? $name_format_chain : $audio_format_chain;
-            $chain .= ",volume=0.4,adelay={$ms}:all=1";
+            $chain .= ",volume=1.0,adelay={$ms}:all=1";
             if (!$isName) $chain .= ",atrim=0:{$tplDur}";
 
             if ($HAS_AFIFO) $chain .= ",afifo";
@@ -1083,7 +1083,7 @@ $makeAudioBlocks('name',   $A_NAME);
     if (count($amix_inputs) <= 1) {
         $filter[] = '[abase]asplit[aout]'; 
     } else {
-        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=0';
+        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=1';
         $chain .= ',alimiter=level_in=1:level_out=1:limit=1:attack=5:release=100';
         if ($HAS_AFIFO) $chain .= ',afifo'; 
         $chain .= '[aout]';
