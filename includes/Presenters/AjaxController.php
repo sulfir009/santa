@@ -512,6 +512,76 @@ function svb_order_resume_info() {
     wp_send_json_success($response);
 }
 
+function svb_check_payment() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+    $token = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+
+    $response = [
+        'found' => false,
+        'payment_status' => 'unpaid',
+    ];
+
+    if (!$order_id || !$token) {
+        wp_send_json_success($response);
+    }
+
+    $order_row = svb_get_order_by_id_and_token($order_id, $token);
+    if (!$order_row) {
+        svb_log('payment_debug_check', [
+            'reason' => 'not_found',
+            'order_id' => $order_id,
+            'public_token' => svb_mask_value($token),
+        ]);
+        wp_send_json_success($response);
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+
+    if (!in_array($status, ['paid', 'success'], true)) {
+        $invoice_id = $payment['invoice_id'] ?? '';
+        if ($invoice_id) {
+            $invoice_status = svb_monobank_get_invoice_status($invoice_id);
+            if (!is_wp_error($invoice_status) && isset($invoice_status['status']) && $invoice_status['status'] === 'success') {
+                $payment_updates = [
+                    'status' => 'paid',
+                    'transaction_id' => $invoice_status['invoiceId'] ?? $invoice_id,
+                    'paid_at' => time(),
+                ];
+                $updated = svb_update_order_payment_by_order_id($order_id, $payment_updates);
+                if (is_array($updated)) {
+                    $payment = $updated;
+                    $status = svb_payment_normalize_status($updated['status'] ?? 'unpaid');
+                }
+            }
+        }
+    }
+
+    $generation = svb_generation_state_payload($order_row);
+
+    $response = [
+        'found' => true,
+        'order_id' => (int) $order_row['order_id'],
+        'payment_status' => $status,
+        'generation_status' => $generation['status'],
+        'download_url' => $generation['download_url'],
+    ];
+
+    svb_log('payment_debug_check', [
+        'order_id' => (int) $order_row['order_id'],
+        'payment_status' => $status,
+        'invoice_id' => svb_monobank_mask_invoice($payment['invoice_id'] ?? ''),
+        'public_token' => svb_mask_value($token),
+        'generation_status' => $generation['status'],
+    ]);
+
+    wp_send_json_success($response);
+}
+
 function svb_find_video() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');
