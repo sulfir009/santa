@@ -398,6 +398,47 @@ function svb_get_order_by_token($token) {
     return $order;
 }
 
+function svb_get_order_by_invoice_id($invoice_id) {
+    if (!$invoice_id || !svb_orders_table_exists()) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $invoice_clean = sanitize_text_field($invoice_id);
+
+    // Prefer the dedicated column when available.
+    $row = null;
+    if (svb_orders_table_has_column($table, 'payment_invoice_id')) {
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE payment_invoice_id = %s ORDER BY id DESC LIMIT 1",
+                $invoice_clean
+            ),
+            ARRAY_A
+        );
+    }
+
+    // Fallback: search within the payment JSON for older rows without the column populated.
+    if (!$row) {
+        $like = '%' . $wpdb->esc_like('"invoice_id":"' . $invoice_clean . '"') . '%';
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE payment LIKE %s ORDER BY id DESC LIMIT 1",
+                $like
+            ),
+            ARRAY_A
+        );
+    }
+
+    if (!$row) {
+        return null;
+    }
+
+    $order = svb_prepare_order_row($row);
+    return $order;
+}
+
 function svb_resolve_order_public_token(array $order_row) {
     $token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
     if ($token) {
@@ -1139,7 +1180,20 @@ function svb_update_order_payment_by_order_id($order_id, array $updates) {
         $new_payment['paid_fingerprint'] = $row['fingerprint_current'];
     }
 
-    $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $row['id']], ['%s'], ['%d']);
+    $update_data = ['payment' => wp_json_encode($new_payment)];
+    $update_formats = ['%s'];
+
+    if (isset($updates['status'])) {
+        $update_data['payment_status'] = svb_payment_normalize_status($updates['status']);
+        $update_formats[] = '%s';
+    }
+
+    if (!empty($updates['invoice_id'])) {
+        $update_data['payment_invoice_id'] = sanitize_text_field($updates['invoice_id']);
+        $update_formats[] = '%s';
+    }
+
+    $wpdb->update($table, $update_data, ['id' => $row['id']], $update_formats, ['%d']);
 
     return $new_payment;
 }

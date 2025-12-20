@@ -96,6 +96,8 @@ let svbLookupInFlight = false;
 let svbStep2InFlight = false;
 let svbGenerationPollTimer = null;
 let svbGenerationPollLock = false;
+let svbGenerationStartRequested = false;
+let svbGenerationStartToken = null;
 let svbInitRan = false;
 let svbInitRebindRan = false;
 const SVB_RETURN_FLAG = 'svb_resume_after_return';
@@ -117,6 +119,7 @@ let svbActiveOrderInitialized = false;
 let svbHadReturnParams = false;
 let svbPaymentStatusPollTimer = null;
 let svbPaymentStatusPollAttempts = 0;
+let svbLatestGenerationStatus = null;
 
 function svbRawDebugFlag() {
   try {
@@ -1036,6 +1039,9 @@ function svbBuildStep3Snapshot(reason) {
   const step2 = svbSafeStorageGet('svb_step2_state');
   const snap = {
     reason: reason || 'unknown',
+    isReload: SVB_IS_RELOAD,
+    hasReturnParams: svbHadReturnParams,
+    afterPaymentFlag: svbHasAfterPaymentFlag(),
     location: { href: window.location.href, search: window.location.search },
     localStorage: {
       svb_state_v1: svbSafeStorageGet('svb_state_v1'),
@@ -1069,6 +1075,15 @@ function svbBuildStep3Snapshot(reason) {
     },
     payment_status: svbPaymentStatus,
     active_order: svbGetActiveOrder('snapshot'),
+    generation: svbLatestGenerationStatus
+      ? {
+          status: svbLatestGenerationStatus.generation_status || svbLatestGenerationStatus.status || null,
+          progress: typeof svbLatestGenerationStatus.progress !== 'undefined' ? svbLatestGenerationStatus.progress : null,
+          delivery_locked: svbLatestGenerationStatus.delivery_locked,
+          can_download: svbLatestGenerationStatus.can_download,
+          last_error: svbLatestGenerationStatus.last_error || null,
+        }
+      : null,
   };
   window.__svb_debug_snapshot = snap;
   console.group('[SVB DEBUG][STEP3] snapshot');
@@ -2648,6 +2663,7 @@ async function svbCheckPaymentStatus(orderId, token) {
 
 function svbShowGenerationStatus(payload) {
   const status = payload && payload.generation_status ? payload.generation_status : (payload && payload.status ? payload.status : 'processing');
+  svbLatestGenerationStatus = payload || null;
   const statusEl = document.getElementById('svb-status');
   const map = {
     queued: 'Замовлення в черзі. Це може зайняти до 1–2 хвилин…',
@@ -2686,10 +2702,6 @@ async function svbPollPaymentConfirmation(orderId, token) {
   try {
     document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
   } catch (e) {}
-
-  svbShowPaymentChecking();
-  const paid = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
-  svbConsumeReturnFlag();
 
   svbShowPaymentError('Оплата ще не підтверджена. Спробуйте оновити сторінку або зачекайте хвилину.');
   if (svbIsDebugMode()) {
@@ -4445,6 +4457,10 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
     const resolvedOrderId = orderId || active.order_id || null;
     const tokenToUse = publicToken || active.public_token || '';
 
+    if (svbGenerationStartToken && tokenToUse && svbGenerationStartToken !== tokenToUse) {
+        svbGenerationStartRequested = false;
+    }
+
     if (pageBootOrder) {
         if (resolvedOrderId && String(resolvedOrderId) !== pageBootOrder) {
             console.error('[SVB DEBUG][GENERATION] abort: order_id mismatch with page_boot', { page_boot_order: pageBootOrder, requested: resolvedOrderId });
@@ -4461,6 +4477,13 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
         return;
     }
 
+    if (svbGenerationStartRequested && svbGenerationStartToken === tokenToUse) {
+        if (svbIsDebugMode()) {
+            console.log('[SVB DEBUG][GENERATION][START][SKIP_DUPLICATE]', { token: svbMaskToken(tokenToUse) });
+        }
+        return;
+    }
+
     svbSetStep(3, 'start_generation_by_token');
     svbShowGenerationProcessing();
 
@@ -4470,6 +4493,10 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
 
     if (svbGenerationPollLock) return;
     svbGenerationPollLock = true;
+    svbGenerationStartRequested = true;
+    svbGenerationStartToken = tokenToUse;
+
+    const returnFlow = svbHadReturnParams || svbShouldResumeAfterReturn();
 
     const returnFlow = svbHadReturnParams || svbShouldResumeAfterReturn();
 
@@ -4490,6 +4517,8 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
             if (svbIsDebugMode()) {
                 console.warn('[SVB DEBUG][GENERATION][START][FAIL]', { response: data });
             }
+            svbGenerationStartRequested = false;
+            svbGenerationStartToken = null;
             return;
         }
 
@@ -4518,6 +4547,8 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
         svbScheduleGenerationPoll(tokenToUse);
     } catch (err) {
         svbShowPaymentError(err && err.message ? err.message : 'Помилка запуску генерації');
+        svbGenerationStartRequested = false;
+        svbGenerationStartToken = null;
     } finally {
         svbGenerationPollLock = false;
     }
