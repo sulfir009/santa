@@ -2682,6 +2682,14 @@ async function svbPollPaymentConfirmation(orderId, token) {
     svbShowGenerationStatus(result || {});
     await svbSleep(2500);
   }
+  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
+  try {
+    document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch (e) {}
+
+  svbShowPaymentChecking();
+  const paid = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
+  svbConsumeReturnFlag();
 
   svbShowPaymentError('Оплата ще не підтверджена. Спробуйте оновити сторінку або зачекайте хвилину.');
   if (svbIsDebugMode()) {
@@ -2698,14 +2706,6 @@ async function svbHandleResumeFromUrl(params) {
   if (!hasExplicitReturn && !svbShouldResumeAfterReturn()) {
     return false;
   }
-  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
-  try {
-    document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
-  } catch (e) {}
-
-  svbShowPaymentChecking();
-  const paid = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
-  svbConsumeReturnFlag();
 
   const tokenToUse = token || (() => {
     try { return sessionStorage.getItem(SVB_RETURN_TOKEN) || ''; } catch (e) { return ''; }
@@ -2729,12 +2729,12 @@ async function svbHandleResumeFromUrl(params) {
     document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
   } catch (e) {}
 
-  svbShowPaymentChecking();
-  const paid = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
-  svbConsumeReturnFlag();
+    svbShowPaymentChecking();
+    const paymentConfirmed = await svbPollPaymentConfirmation(orderToUse, tokenToUse);
+    svbConsumeReturnFlag();
 
-  return paid;
-}
+    return paymentConfirmed;
+  }
 
 async function svbAutoResumeFromLocal(opts = {}) {
   const isPaymentReturn = !!opts.isPaymentReturn;
