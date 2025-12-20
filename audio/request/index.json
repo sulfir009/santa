@@ -45,12 +45,12 @@
     "label": "Постарайся ввічливо говорити з усіма"
   },
   {
-    "file": "troshki-bilshe-sluhatisya.MP3",
-    "label": "Трошки більше слухайся"
+    "file": "Postarajsja bilshe vuvchaty angl..mp3",
+    "label": "Постарайся більше вивчати англійську мову"
   },
 {
     "file": "Postarajtesja bil_she chasu provodyty na svizhomu povitri.mp3",
-    "label": "Постарайтеся більше часу проводити на свіжому повітрі",
+    "label": "Постарайтеся більше гуляти на свіжому повітрі",
     "type": "group"
   },
   {
@@ -75,17 +75,12 @@
   },
   {
     "file": "Postarajtesja menshe sydity v telefonakh.mp3",
-    "label": "Постарайтеся менше сидіти в телефонах",
+    "label": "Постарайтеся менше сидіти в телефоні",
     "type": "group"
   },
   {
     "file": "Postarajtesja prydiljaty bil_she chasu navchannju.mp3",
     "label": "Постарайтеся приділяти більше часу навчанню",
-    "type": "group"
-  },
-  {
-    "file": "Postarajtesja rozpovidaty bat_kam pro svoyi pochuttja i dumky.mp3",
-    "label": "Постарайтеся розповідати батькам про свої почуття і думки",
     "type": "group"
   },
   {
@@ -104,8 +99,12 @@
     "type": "group"
   },
   {
-    "file": "Postarajtesja vytrachaty trokhy bil_she chasu na chytannja.mp3",
-    "label": "Постарайтеся витрачати трохи більше часу на читання",
+    "file": "Postaraitesjsja trokhy bil_she chytaty knyzhky..mp3",
+    "label": "Постарайтеся трохи більше читати книжки",
     "type": "group"
   }
+{
+    "file": "Postaraitesjsja bilshe vuvchaty angl..mp3",
+    "label": "Постарайтеся більше вивчати англійську мову"
+  },
 ]

@@ -28,10 +28,6 @@
     "label": "Я також бачу, що ти любиш гратися з тваринками"
   },
   {
-    "file": "Ja takozh bachu,.. shcho ty ljubysh hraty u nastil_ni ihry..mp3",
-    "label": "Я також бачу, що ти любиш грати у настільні ігри"
-  },
-  {
     "file": "Ja takozh bachu,.. shcho ty ljubysh hraty v futbol..mp3",
     "label": "Я також бачу, що ти любиш грати у футбол"
   },
@@ -80,8 +76,8 @@
     "label": "Я також бачу, що ти любиш збирати конструктори"
   },
   {
-    "file": "ya-takozh-bachu-sho-ti-lyubish-gratisya-z-tvarinka.MP3",
-    "label": "Я також бачу, що ти любиш гратися з тваринками"
+    "file": "Ja takozh bachu,.. shcho ty ljubysh katatysja na samokati..mp3",
+    "label": "Я також бачу, що ти любиш кататися на самокаті"
   },
   {
     "file": "Ja takozh bachu, shcho vy ljubyte chytaty knyzhky..mp3",
@@ -114,11 +110,6 @@
     "type": "group"
   },
   {
-    "file": "Ja takozh bachu, shcho vy ljubyte hraty u nastil_ni ihry..mp3",
-    "label": "Я також бачу, що ви любите грати у настільні ігри",
-    "type": "group"
-  },
-  {
     "file": "Ja takozh bachu, shcho vy ljubyte hraty v ihry..mp3",
     "label": "Я також бачу, що ви любите грати в ігри",
     "type": "group"
@@ -141,6 +132,11 @@
   {
     "file": "Ja takozh bachu, shcho vy ljubyte katatysja na velosypedakh..mp3",
     "label": "Я також бачу, що ви любите кататися на велосипедах",
+    "type": "group"
+  },
+{
+    "file": "Ja takozh bachu, shcho vy ljubyte katatysja na samokatah..mp3",
+    "label": "Я також бачу, що ви любите кататися на самокаті",
     "type": "group"
   },
   {
