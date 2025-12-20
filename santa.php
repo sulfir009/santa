@@ -395,6 +395,8 @@ function svb_handle_payment_return_redirect() {
 
         svb_clear_user_state('payment_return_not_found');
 
+        svb_clear_user_state('payment_return_not_found');
+
         $fallback_target = home_url('/');
         if ($is_token_valid) {
             $fallback_target = add_query_arg([
