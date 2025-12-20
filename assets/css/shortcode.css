@@ -109,13 +109,60 @@ input.svb-input {
     .svb-int-row .svb-int-start, .svb-int-row .svb-int-end { flex: 0 0 90px; }
 }
 
-.svb-child-count-wrap { display:flex; gap:10px; margin-bottom:16px; justify-content: center; flex-wrap: wrap; }
+.svb-child-count-wrap { display:flex; gap:12px; margin-bottom:16px; justify-content: center; flex-wrap: wrap; }
 .svb-child-radio { display:none; }
-.svb-child-label { padding: 12px 16px; border: 1px solid #E3E3E3; border-radius: 50px; cursor: pointer; font-weight: 600; color: #666; transition: all 0.2s; width: 100%; text-align: center; }
-.svb-child-label .svb-c-price { display: inline-flex; gap: 6px; align-items: center; }
+.svb-child-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 6px 20px;
+    min-height: 38px;
+    border: 1px solid #E3E3E3;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 18px;
+    color: #333;
+    transition: all 0.2s;
+    width: auto;
+    max-width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+}
+.svb-child-label .svb-c-price {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    background: #F4D03F;
+    color: #000;
+    border-radius: 30px;
+    padding: 6px 14px;
+    font-weight: 800;
+    white-space: nowrap;
+}
 .svb-child-radio:checked + .svb-child-label { background: #D62828; color: #fff; border-color: #D62828; }
-@media (min-width: 480px) { .svb-child-label { flex: 1 1 calc(50% - 10px); } }
-@media (min-width: 768px) { .svb-child-label { flex: 0 1 auto; min-width: 0; width: auto; padding: 10px 20px; } }
+@media (max-width: 1023.98px) {
+    .svb-child-label {
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        gap: 8px;
+    }
+    .svb-child-label .svb-c-price { margin-left: 0; }
+}
+@media (min-width: 1024px) {
+    .svb-child-count-wrap { justify-content: center; }
+    .svb-child-label {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 12px;
+        width: auto;
+    }
+    .svb-child-label .svb-c-price { margin-left: 8px; }
+    .svb-child-label .svb-c-text { white-space: nowrap; }
+}
 
 /* ========================================================================= */
 /* ===  ДИЗАЙН КАРТОК (ВИПРАВЛЕНИЙ ПІД ВАШ ЗАПИТ) === */
@@ -584,9 +631,10 @@ word-wrap: break-word
 /* === НОВЫЕ СТИЛИ ДЛЯ КНОПОК С ЦЕНАМИ === */
 
 
+
 .svb-child-count-wrap {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     margin-bottom: 16px;
     justify-content: center;
     flex-wrap: wrap;
@@ -596,27 +644,31 @@ word-wrap: break-word
 
 /* Основной контейнер кнопки (текст + цена) */
 .svb-child-label {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 12px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 6px 20px;
+    min-height: 38px;
     border: 1px solid #E3E3E3;
     border-radius: 50px;
     cursor: pointer;
     font-family: 'Roboto', sans-serif;
     font-weight: 700;
-    font-size: 16px;
+    font-size: 18px;
     color: #333;
     background: #fff;
     transition: all 0.2s ease;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    width: 100%;
-    text-align: left;
+    width: auto;
+    max-width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+    flex-wrap: wrap;
 }
 
 .svb-child-label .svb-c-text {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
 }
 
@@ -659,16 +711,41 @@ word-wrap: break-word
 }
 
 /* Мобильная адаптация кнопок */
-@media (max-width: 480px) {
+@media (max-width: 1023.98px) {
     .svb-child-label {
-        font-size: 15px;
-        padding-left: 15px;
-        width: 100%; /* На мобильном кнопки на всю ширину */
-    }
-    .svb-child-count-wrap {
         flex-direction: column;
+        align-items: center;
+        width: 100%;
         gap: 8px;
     }
+    .svb-c-price {
+        margin-left: 0;
+        align-self: center;
+    }
+    .svb-child-count-wrap {
+        flex-direction: row;
+    }
+}
+
+@media (min-width: 1024px) {
+    .svb-child-count-wrap {
+        justify-content: center;
+        gap: 12px;
+    }
+    .svb-child-label {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        width: auto;
+        min-width: 0;
+    }
+    .svb-c-price {
+        margin-left: 8px;
+        align-self: center;
+    }
+    .svb-child-label .svb-c-text { white-space: nowrap; }
 }
 
 @media (max-width: 1023.98px) {
