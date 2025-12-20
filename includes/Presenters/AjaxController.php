@@ -2246,7 +2246,7 @@ function svb_create_invoice() {
         $message_parts = [];
         if ($status) $message_parts[] = 'http=' . $status;
         if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
         wp_send_json_error($public_message);
     }
 
@@ -2601,7 +2601,7 @@ function svb_payment_gate() {
             $message_parts = [];
             if ($status) $message_parts[] = 'http=' . $status;
             if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-            $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+            $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
             wp_send_json_error($public_message);
         }
 
@@ -2799,7 +2799,7 @@ function svb_monobank_create_invoice() {
         $message_parts = [];
         if ($status) $message_parts[] = 'http=' . $status;
         if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
         wp_send_json_error($public_message);
     }
 
