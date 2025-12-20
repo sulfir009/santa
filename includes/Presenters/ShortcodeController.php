@@ -1,4 +1,6 @@
 <?php
+if (!defined('ABSPATH')) { exit; }
+
 function svb_render_form() {
     // === 1. ЛОГІКА ЗАМОВЛЕННЯ (ORDER SYSTEM) ===
     // Ініціалізуємо або отримуємо існуюче замовлення для цього користувача
