@@ -8,6 +8,14 @@ function svb_render_form() {
     $order_id = $order_data['order_id'];
     $payment_state = isset($order_data['payment']) ? $order_data['payment'] : svb_get_payment_defaults();
 
+    svb_log('payment_debug_page_boot', [
+        'source' => 'render_form',
+        'order_id' => $order_id,
+        'payment_status' => $payment_state['status'] ?? '',
+        'public_token' => !empty($order_data['public_token']) ? svb_mask_value($order_data['public_token']) : '',
+        'session_id' => !empty($order_data['session_id']) ? svb_mask_value($order_data['session_id']) : '',
+    ]);
+
     $welcome_msg = "Раді бачити вас знову! Ваше замовлення №<strong>{$order_id}</strong>.";
     $video_ready_html = '';
 
