@@ -1853,8 +1853,9 @@ function svb_mask_page_url($url) {
 }
 
 function svb_payment_normalize_status($status) {
-    if ($status === 'paid') {
-        return 'success';
+    $normalized = strtolower((string) $status);
+    if (in_array($normalized, ['paid', 'success'], true)) {
+        return 'paid';
     }
 
     return svb_monobank_normalize_status($status);
@@ -1862,30 +1863,20 @@ function svb_payment_normalize_status($status) {
 
 function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_current, $meta = []) {
     $normalized = svb_payment_normalize_status($payment_status);
-    $has_transaction = !empty($meta['transaction_id']);
-    $has_paid_at = !empty($meta['paid_at']);
 
-    if ($normalized === 'success' || $has_transaction || $has_paid_at) {
+    if ($normalized === 'paid') {
         if ($paid_fingerprint && $fingerprint_current && svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
-            return ['paid', 'success', 'paid_match'];
+            return ['paid', 'paid', 'paid_match'];
         }
 
-        if ($paid_fingerprint && $fingerprint_current && !svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
-            return ['paid', 'success', 'fingerprint_mismatch'];
-        }
-
-        return ['paid', 'success', 'status_success'];
+        return ['pay', 'paid', $paid_fingerprint ? 'fingerprint_mismatch' : 'missing_paid_fingerprint'];
     }
 
     if ($normalized === 'failure') {
-        return ['failed', $normalized, 'status_failure'];
+        return ['pay', $normalized, 'status_failure'];
     }
 
-    if ($normalized === 'processing' || $normalized === 'pending') {
-        return ['pending', $normalized, 'status_pending'];
-    }
-
-    return ['not_paid', $normalized, 'unpaid'];
+    return ['pay', $normalized, 'unpaid'];
 }
 
 function svb_pay_debug_state() {
@@ -2544,11 +2535,14 @@ function svb_payment_gate() {
         'fingerprint_current' => $fingerprint_current,
     ]);
 
+    $payment_disabled = isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1';
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $paid_fingerprint = isset($payment['paid_fingerprint']) ? $payment['paid_fingerprint'] : '';
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
-    $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
-    $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
+    $is_paid_for_current = ($payment_status === 'paid')
+        && $paid_fingerprint
+        && $fingerprint_current
+        && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
 
     $payment_url = $payment['invoice_page_url'] ?? '';
     $invoice_id = $payment['invoice_id'] ?? '';
@@ -2562,15 +2556,29 @@ function svb_payment_gate() {
             $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
             $paid_fingerprint = $payment['paid_fingerprint'] ?? $paid_fingerprint;
             $payment_url = $payment['invoice_page_url'] ?? $payment_url;
-            $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
-            $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
+            $is_paid_for_current = ($payment_status === 'paid')
+                && $paid_fingerprint
+                && $fingerprint_current
+                && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
         }
+    }
+
+    if ($payment_disabled && !$is_paid_for_current) {
+        svb_update_order_payment_by_order_id($order_row['order_id'], [
+            'status' => 'paid',
+            'paid_fingerprint' => $fingerprint_current,
+            'payment_updated_at' => time(),
+            'invoice_fingerprint' => $fingerprint_current,
+        ]);
+        $payment_status = 'paid';
+        $paid_fingerprint = $fingerprint_current;
+        $is_paid_for_current = true;
     }
 
     $invoice_matches_fp = empty($payment['invoice_fingerprint'])
         ? true
         : svb_safe_hash_equals((string) $payment['invoice_fingerprint'], (string) $fingerprint_current);
-    $should_create_invoice = !$is_paid_for_current && (
+    $should_create_invoice = !$payment_disabled && !$is_paid_for_current && (
         empty($payment_url)
         || !in_array($payment_status, ['pending', 'processing'], true)
         || !$recent_invoice
@@ -2626,27 +2634,34 @@ function svb_payment_gate() {
     }
 
     $invoice_masked = svb_monobank_mask_invoice($invoice_id);
-    $decision = $is_paid_for_current ? 'PAID' : 'PAY';
+
+    list($decision, $normalized_payment_status, $reason) = svb_payment_decision(
+        $payment_status,
+        $paid_fingerprint,
+        $fingerprint_current,
+        ['transaction_id' => $payment['transaction_id'] ?? '', 'paid_at' => $payment['paid_at'] ?? 0]
+    );
+
     $response = [
         'order_id' => (int) $order_row['order_id'],
         'public_token' => $public_token,
         'fingerprint_current' => $fingerprint_current,
         'paid_fingerprint' => $paid_fingerprint,
-        'payment_status' => $payment_status,
+        'payment_status' => $normalized_payment_status,
         'payment_status_raw' => $payment['status'] ?? 'unpaid',
         'invoice_id' => $invoice_id,
         'invoice_page_url' => $payment_url,
         'payment_url' => $payment_url,
         'invoice_masked' => $invoice_masked,
         'invoice_page_url_masked' => svb_mask_page_url($payment_url),
-        'is_paid_for_current' => $is_paid_for_current,
-        'decision' => $decision,
-        'reason' => $is_paid_for_current ? 'paid' : 'pay_required',
+        'is_paid_for_current' => ($decision === 'paid'),
+        'decision' => ($decision === 'paid') ? 'PAID' : 'PAY',
+        'reason' => $reason,
         'storage' => $storage,
         'resume_url' => svb_build_resume_url($order_row['order_id'], $public_token),
         'transaction_id' => $payment['transaction_id'] ?? '',
         'paid_at' => isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0,
-        'is_paid' => $is_paid_for_current,
+        'is_paid' => ($decision === 'paid'),
     ];
 
     if (function_exists('svb_debug_enabled') && svb_debug_enabled()) {

@@ -3183,36 +3183,65 @@ async function svbHandleStep2Next() {
   console.groupEnd();
   try {
     const photoHashes = await svbCollectPhotoHashes();
-    const adminSkipPayment = !!(SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin());
-    const invoice = await svbCreateInvoiceRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes, !adminSkipPayment);
+    const fingerprintPayload = {
+      selected_video_id: SVB_SELECTED_VIDEO_ID,
+      child_count: childCount,
+      overlay_keys: Object.keys(overlayData || {}).sort(),
+      segments: segmentsValue || '',
+      voice: voicePayload || {},
+    };
 
-    if (invoice && invoice.order_id) {
-      svbUpdateState({ order_id: invoice.order_id, public_token: invoice.public_token });
+    const fingerprint = await svbComputeFingerprint(fingerprintPayload, photoHashes);
+    console.log('[SVB GATE] fingerprint_current', fingerprint, 'photo_hashes.length', photoHashes.length);
+
+    const fd = new FormData();
+    fd.append('action', 'svb_gate');
+    fd.append('_svb_nonce', SVB_AJAX.nonce);
+    fd.append('child_count', childCount);
+    fd.append('selected_video_id', SVB_SELECTED_VIDEO_ID);
+    fd.append('overlay_json', JSON.stringify(overlayData || {}));
+    fd.append('segments', segmentsValue || '');
+    fd.append('voice_payload', JSON.stringify(voicePayload || {}));
+    fd.append('photo_hashes', JSON.stringify(photoHashes || []));
+    fd.append('fingerprint', fingerprint);
+
+    const savedOrderId = savedState.order_id || null;
+    const savedToken = savedState.public_token || '';
+    if (savedOrderId) fd.append('order_id', savedOrderId);
+    if (savedToken) fd.append('token', savedToken);
+
+    const toggle = document.querySelector('#svb_payment_toggle');
+    if (toggle && !toggle.checked) {
+      fd.append('payment_disabled', '1');
     }
 
-    if (adminSkipPayment || (invoice && invoice.bypass)) {
-      svbPaymentStatus = 'paid';
-      svbProceedToGenerateFlow();
+    const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+    if (!res.ok) {
+      throw new Error('Payment gate network error');
+    }
+    const gate = await res.json();
+    if (!gate.success) {
+      throw new Error(gate.data || 'Gate rejected');
+    }
+
+    const payload = gate.data || {};
+    svbUpdateState({ order_id: payload.order_id, public_token: payload.public_token });
+    try { localStorage.setItem('svb_public_token', payload.public_token || ''); } catch (e) {}
+
+    svbLog('[SVB GATE] response', Object.assign({}, payload, { fingerprint_prefix: (fingerprint || '').slice(0, 12) }));
+
+    if (payload.decision === 'PAY') {
+      if (payload.payment_url) {
+        svbStoreLastOrderToken(payload.order_id, payload.public_token || '');
+        window.location = payload.payment_url;
+        return;
+      }
+      svbShowPaymentError('Не вдалося отримати лінк на оплату. Спробуйте ще раз.');
       return;
     }
 
-    const paymentUrl = invoice.payment_url || '';
-    if (paymentUrl) {
-      console.log('[SVB PAY] payment_url=', svbMaskUrlToken(paymentUrl));
-      console.log('[SVB PAY] redirecting…');
-      svbStoreLastOrderToken(invoice.order_id, invoice.public_token || '');
-      svbSaveLastPaymentAttempt({
-        order_id: invoice.order_id,
-        public_token: invoice.public_token || '',
-        pageUrl: paymentUrl,
-        invoiceId: invoice.invoice_id || '',
-        fingerprint_prefix: '',
-      });
-      window.location = paymentUrl;
-      return;
-    }
-
-    svbShowPaymentError('Не вдалося отримати лінк на оплату. Спробуйте ще раз.');
+    svbPaymentStatus = 'paid';
+    svbProceedToGenerateFlow();
   } catch (err) {
     svbError('[SVB PAY] invoice creation failed', err);
     if (svbIsDebugMode()) {
