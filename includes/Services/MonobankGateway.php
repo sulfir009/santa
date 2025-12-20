@@ -395,6 +395,10 @@ function svb_handle_monobank_return() {
         $_COOKIE['svb_public_token'] = $token_from_url;
     }
     if (!$uid) {
+        svb_log('mono_return_missing_uid', [
+            'order_id' => $order_id,
+            'token' => svb_mask_value($token_from_url),
+        ]);
         return;
     }
 
@@ -406,11 +410,19 @@ function svb_handle_monobank_return() {
     }
 
     if (!$invoice_id) {
+        svb_log('mono_return_no_invoice', [
+            'uid' => svb_mask_value($uid),
+            'order_id' => $order_row['order_id'] ?? 0,
+        ]);
         return;
     }
 
     $status = svb_monobank_get_invoice_status($invoice_id);
     if (is_wp_error($status)) {
+        svb_log('mono_return_status_error', [
+            'invoice' => svb_mask_value($invoice_id),
+            'error' => $status->get_error_message(),
+        ]);
         return;
     }
 
@@ -425,6 +437,12 @@ function svb_handle_monobank_return() {
     svb_update_user_payment_state($uid, [
         'status' => $normalized_status,
         'invoice_id' => $invoice_id,
+    ]);
+
+    svb_log('mono_return_applied', [
+        'order_id' => $order_row['order_id'] ?? 0,
+        'status' => $normalized_status,
+        'invoice' => svb_mask_value($invoice_id),
     ]);
 }
 

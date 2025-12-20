@@ -378,7 +378,7 @@ function svb_order_recover() {
     $session_matches = false;
     $session_candidates = array_filter([$session_id, $uid]);
     foreach ($session_candidates as $candidate) {
-        if ($candidate && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $candidate)) {
+        if ($candidate && !empty($order_row['session_id']) && svb_safe_hash_equals((string) $order_row['session_id'], (string) $candidate)) {
             $session_matches = true;
             break;
         }
@@ -466,7 +466,7 @@ function svb_order_resume_info() {
 
     $debug['found_order_id'] = (int) $order_row['order_id'];
     $debug['email_hash_prefix'] = substr($order_row['email_hash'] ?? '', 0, 8);
-    $debug['session_match'] = ($session_id && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $session_id));
+    $debug['session_match'] = ($session_id && !empty($order_row['session_id']) && svb_safe_hash_equals((string) $order_row['session_id'], (string) $session_id));
 
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
@@ -632,7 +632,7 @@ function svb_generate() {
             wp_send_json_error('Оплата не відповідає вибраній кількості дітей.');
         }
 
-        if ($current_fingerprint && $paid_fingerprint && !hash_equals($current_fingerprint, $paid_fingerprint)) {
+        if ($current_fingerprint && $paid_fingerprint && !svb_safe_hash_equals($current_fingerprint, $paid_fingerprint)) {
             wp_send_json_error('Оплата неуспішна або параметри змінені. Генерація відео не буде виконана.');
         }
     }
@@ -1866,11 +1866,11 @@ function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_c
     $has_paid_at = !empty($meta['paid_at']);
 
     if ($normalized === 'success' || $has_transaction || $has_paid_at) {
-        if ($paid_fingerprint && $fingerprint_current && hash_equals($paid_fingerprint, $fingerprint_current)) {
+        if ($paid_fingerprint && $fingerprint_current && svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
             return ['paid', 'success', 'paid_match'];
         }
 
-        if ($paid_fingerprint && $fingerprint_current && !hash_equals($paid_fingerprint, $fingerprint_current)) {
+        if ($paid_fingerprint && $fingerprint_current && !svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
             return ['paid', 'success', 'fingerprint_mismatch'];
         }
 
@@ -2031,14 +2031,14 @@ function svb_monobank_sync_status() {
     }
 
     $authorized = false;
-    if ($token_req && !empty($order_row['token_hash']) && hash_equals($order_row['token_hash'], hash('sha256', $token_req))) {
+    if ($token_req && !empty($order_row['token_hash']) && svb_safe_hash_equals($order_row['token_hash'], hash('sha256', $token_req))) {
         $authorized = true;
     }
-    if ($token_req && isset($order_row['public_token']) && hash_equals((string) $order_row['public_token'], (string) $token_req)) {
+    if ($token_req && isset($order_row['public_token']) && svb_safe_hash_equals((string) $order_row['public_token'], (string) $token_req)) {
         $authorized = true;
     }
 
-    if (!$authorized && $session_id && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $session_id)) {
+    if (!$authorized && $session_id && !empty($order_row['session_id']) && svb_safe_hash_equals((string) $order_row['session_id'], (string) $session_id)) {
         $authorized = true;
     }
 
@@ -2210,7 +2210,7 @@ function svb_payment_gate() {
     }
 
     $fingerprint_matches = $order_row && !empty($order_row['fingerprint_current'])
-        ? hash_equals((string) $order_row['fingerprint_current'], (string) $fingerprint_current)
+        ? svb_safe_hash_equals((string) $order_row['fingerprint_current'], (string) $fingerprint_current)
         : false;
 
     if (!$order_row || !$fingerprint_matches) {
@@ -2343,6 +2343,14 @@ function svb_payment_gate() {
         'paid_at' => isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0,
         'is_paid' => $is_paid_for_current,
     ];
+
+    if (function_exists('svb_debug_enabled') && svb_debug_enabled()) {
+        $response['debug'] = [
+            'storage' => $storage,
+            'has_invoice' => !empty($invoice_id),
+            'token_mask' => svb_mask_value($public_token),
+        ];
+    }
 
     if (svb_pay_should_log()) {
         svb_pay_log('payment_gate.result', [
@@ -2610,11 +2618,11 @@ function svb_monobank_invalidate_invoice() {
     }
 
     $authorized = false;
-    if ($token_req && !empty($order_row['token_hash']) && hash_equals($order_row['token_hash'], hash('sha256', $token_req))) {
+    if ($token_req && !empty($order_row['token_hash']) && svb_safe_hash_equals($order_row['token_hash'], hash('sha256', $token_req))) {
         $authorized = true;
     }
 
-    if (!$authorized && $session_id && !empty($order_row['session_id']) && hash_equals((string) $order_row['session_id'], (string) $session_id)) {
+    if (!$authorized && $session_id && !empty($order_row['session_id']) && svb_safe_hash_equals((string) $order_row['session_id'], (string) $session_id)) {
         $authorized = true;
     }
 
