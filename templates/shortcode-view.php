@@ -1,6 +1,3 @@
-
-
-
 <?php if ( ! defined( 'ABSPATH' ) ) { exit; } ?>
 <style>
 <?php if ( ! $is_admin ) : ?>
@@ -1844,12 +1841,7 @@
         </div>
 
         <div id="svb-payment-pending" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#e8f4ff; border:1px solid #b6ddff; border-radius:8px;">
-          <div class="svb-payment-error__text" id="svb-payment-pending-text" style="margin-bottom:8px; color:#155189;">Оплата в процесі. Ви можете продовжити оплату або створити новий інвойс.</div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button type="button" class="svb-btn primary" id="svb-payment-open">Перейти до оплати</button>
-            <button type="button" class="svb-btn ghost" id="svb-payment-check">Я вже оплатив</button>
-            <button type="button" class="svb-btn ghost" id="svb-payment-new">Створити новий інвойс</button>
-          </div>
+          <div class="svb-payment-error__text" id="svb-payment-pending-text" style="margin-bottom:8px; color:#155189;">Оплата в процесі. Очікуємо підтвердження…</div>
         </div>
       </section>
 
