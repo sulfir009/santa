@@ -583,6 +583,7 @@ word-wrap: break-word
 }
 /* === НОВЫЕ СТИЛИ ДЛЯ КНОПОК С ЦЕНАМИ === */
 
+
 .svb-child-count-wrap {
     display: flex;
     gap: 10px;
@@ -595,9 +596,10 @@ word-wrap: break-word
 
 /* Основной контейнер кнопки (текст + цена) */
 .svb-child-label {
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     padding: 12px 16px;
     border: 1px solid #E3E3E3;
     border-radius: 50px;
@@ -610,6 +612,12 @@ word-wrap: break-word
     transition: all 0.2s ease;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     width: 100%;
+    text-align: left;
+}
+
+.svb-child-label .svb-c-text {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 /* Активное состояние (выбранная кнопка) */
@@ -633,6 +641,7 @@ word-wrap: break-word
     gap: 6px;
     line-height: 1.1;
     font-weight: 800;
+    white-space: nowrap;
 }
 
 /* Старая цена (зачеркнутая) */
@@ -655,11 +664,42 @@ word-wrap: break-word
         font-size: 15px;
         padding-left: 15px;
         width: 100%; /* На мобильном кнопки на всю ширину */
-        justify-content: space-between;
     }
     .svb-child-count-wrap {
         flex-direction: column;
         gap: 8px;
+    }
+}
+
+@media (max-width: 1023.98px) {
+    .svb-child-label {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+        gap: 8px;
+    }
+    .svb-c-price {
+        margin-left: 0;
+        align-self: flex-start;
+    }
+}
+
+@media (min-width: 1024px) {
+    .svb-child-count-wrap {
+        justify-content: flex-start;
+        gap: 12px;
+    }
+    .svb-child-label {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        width: auto;
+        min-width: 0;
+    }
+    .svb-c-price {
+        margin-left: auto;
+        align-self: center;
     }
 }
 /* ========================================= */
