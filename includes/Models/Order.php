@@ -13,6 +13,33 @@ function svb_get_orders_dir() {
     return $dir;
 }
 
+function svb_get_logs_dir() {
+    $upload = wp_upload_dir();
+    $dir = trailingslashit($upload['basedir']) . 'svb-logs';
+
+    if (!file_exists($dir)) {
+        wp_mkdir_p($dir);
+        @file_put_contents($dir . '/index.php', '<?php // Silence');
+        @file_put_contents($dir . '/.htaccess', "deny from all\n");
+    }
+
+    return $dir;
+}
+
+function svb_get_order_log_path($order_id, $ensure = true) {
+    $order_id = absint($order_id);
+    if (!$order_id) {
+        return '';
+    }
+
+    $dir = svb_get_logs_dir();
+    if ($ensure && $dir && !file_exists($dir)) {
+        wp_mkdir_p($dir);
+    }
+
+    return $dir ? trailingslashit($dir) . 'order_' . $order_id . '.log' : '';
+}
+
 function svb_detect_ssl() {
     if (is_ssl()) {
         return true;
@@ -650,8 +677,24 @@ function svb_init_user_order() {
         $data['order_id'] = (int) $order_row['order_id'];
         $data['public_token'] = $order_row['public_token'];
         $data['token_hash'] = $order_row['token_hash'];
+
+        $db_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+        if (!empty($db_payment)) {
+            $data['payment'] = array_merge(svb_get_payment_defaults(), $db_payment);
+        }
+
         $data['state_version'] = SVB_STATE_VERSION;
         $data['state_updated_at'] = time();
+
+        svb_log('payment_debug_page_boot', [
+            'source' => 'db_merge',
+            'order_id' => (int) $order_row['order_id'],
+            'payment_status_db' => $db_payment['status'] ?? '',
+            'payment_status_state' => $data['payment']['status'] ?? '',
+            'session_id' => isset($order_row['session_id']) ? svb_mask_value($order_row['session_id']) : '',
+            'public_token' => $data['public_token'] ? svb_mask_value($data['public_token']) : '',
+        ]);
+
         file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
 

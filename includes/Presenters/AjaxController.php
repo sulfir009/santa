@@ -512,6 +512,76 @@ function svb_order_resume_info() {
     wp_send_json_success($response);
 }
 
+function svb_check_payment() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+    $token = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+
+    $response = [
+        'found' => false,
+        'payment_status' => 'unpaid',
+    ];
+
+    if (!$order_id || !$token) {
+        wp_send_json_success($response);
+    }
+
+    $order_row = svb_get_order_by_id_and_token($order_id, $token);
+    if (!$order_row) {
+        svb_log('payment_debug_check', [
+            'reason' => 'not_found',
+            'order_id' => $order_id,
+            'public_token' => svb_mask_value($token),
+        ]);
+        wp_send_json_success($response);
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+
+    if (!in_array($status, ['paid', 'success'], true)) {
+        $invoice_id = $payment['invoice_id'] ?? '';
+        if ($invoice_id) {
+            $invoice_status = svb_monobank_get_invoice_status($invoice_id);
+            if (!is_wp_error($invoice_status) && isset($invoice_status['status']) && $invoice_status['status'] === 'success') {
+                $payment_updates = [
+                    'status' => 'paid',
+                    'transaction_id' => $invoice_status['invoiceId'] ?? $invoice_id,
+                    'paid_at' => time(),
+                ];
+                $updated = svb_update_order_payment_by_order_id($order_id, $payment_updates);
+                if (is_array($updated)) {
+                    $payment = $updated;
+                    $status = svb_payment_normalize_status($updated['status'] ?? 'unpaid');
+                }
+            }
+        }
+    }
+
+    $generation = svb_generation_state_payload($order_row);
+
+    $response = [
+        'found' => true,
+        'order_id' => (int) $order_row['order_id'],
+        'payment_status' => $status,
+        'generation_status' => $generation['status'],
+        'download_url' => $generation['download_url'],
+    ];
+
+    svb_log('payment_debug_check', [
+        'order_id' => (int) $order_row['order_id'],
+        'payment_status' => $status,
+        'invoice_id' => svb_monobank_mask_invoice($payment['invoice_id'] ?? ''),
+        'public_token' => svb_mask_value($token),
+        'generation_status' => $generation['status'],
+    ]);
+
+    wp_send_json_success($response);
+}
+
 function svb_find_video() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');
@@ -1281,12 +1351,12 @@ $makeAudioBlocks('name',   $A_NAME);
     $output = $job_dir . '/video.mp4';
     
     $env_report = 'FFREPORT=file='.escapeshellarg($job_dir.'/ffreport.log').':level=32';
-    
+
     $cmd = $env_report.' '.$ffmpeg
     . ' -nostdin -y -hide_banner'
-    . ' -loglevel level+info' 
+    . ' -loglevel level+info'
     . ' -probesize 50M -analyzeduration 50M'
-    . ' -filter_complex_threads 8' 
+    . ' -filter_complex_threads 8'
     . ' -fflags +genpts -avoid_negative_ts make_zero'
     . ' ' . implode(' ', $inputs)
     . ' -filter_complex ' . escapeshellarg($filter_complex)
@@ -1298,10 +1368,11 @@ $makeAudioBlocks('name',   $A_NAME);
     . ' -max_muxing_queue_size 8192'
     . ' -muxdelay 0 -muxpreload 0'
     . ' -movflags +faststart'
-    . ' -t ' . escapeshellarg((string)$tplDur) 
+    . ' -progress pipe:1'
+    . ' -t ' . escapeshellarg((string)$tplDur)
     . ' ' . escapeshellarg($output);
-    
-    $logFile = $job_dir . '/ffmpeg.log';
+
+    $logFile = svb_get_order_log_path($order_data['order_id'] ?? 0) ?: ($job_dir . '/ffmpeg.log');
     $pidFile = $job_dir . '/ffmpeg.pid';
     $rcFile  = $job_dir . '/ffmpeg.rc';
     if (file_exists($rcFile)) { @unlink($rcFile); }
@@ -1309,6 +1380,24 @@ $makeAudioBlocks('name',   $A_NAME);
     if (file_put_contents($logFile, "Init...\n") === false) {
         wp_send_json_error(['msg' => 'Помилка: Неможливо створити файл логу. Перевірте права на папку: ' . $job_dir]);
     }
+
+    $initial_log = [
+        'ts' => date('c'),
+        'order_id' => $order_data['order_id'] ?? null,
+        'cmd' => $cmd,
+        'output' => $output,
+        'job_dir' => $job_dir,
+    ];
+    @file_put_contents($logFile, "=== SVB FFmpeg start ===\n" . wp_json_encode($initial_log, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) . "\n\n", FILE_APPEND);
+
+    svb_merge_order_result($order_row, [
+        'status' => 'running',
+        'progress' => 0,
+        'updated_at' => current_time('mysql'),
+        'log_path' => $logFile,
+        'last_error' => '',
+        'duration' => $tplDur,
+    ]);
 
     set_transient('svb_job_data_' . $job, [
         'job_dir'  => $job_dir,
@@ -1319,6 +1408,8 @@ $makeAudioBlocks('name',   $A_NAME);
         'job_url'  => $job_url,
         'rcFile'   => $rcFile,
         'cmd'      => $cmd,
+        'order_id' => $order_data['order_id'] ?? 0,
+        'log_path' => $logFile,
     ], HOUR_IN_SECONDS);
 
     $cmd_bg = '(' . $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1; echo $? > ' . escapeshellarg($rcFile) . ') > /dev/null 2>&1 & echo $!';
@@ -1569,6 +1660,8 @@ function svb_check_progress() {
     $logFile    = $data['logFile'];
     $outputFile = $data['output'];
     $tplDur     = (float)$data['tplDur'];
+    $order_id   = isset($data['order_id']) ? (int) $data['order_id'] : 0;
+    $order_row  = $order_id ? svb_get_order_by_id($order_id) : null;
     
     // Якщо тривалість не визначилась (0), ставимо 8 хвилин (480с) як заглушку, щоб прогрес йшов
     if ($tplDur <= 0) $tplDur = 480.0;
@@ -1583,7 +1676,7 @@ function svb_check_progress() {
 
     if (file_exists($logFile)) {
         $size = filesize($logFile);
-        $readSize = 10240; 
+        $readSize = 10240;
         $offset = max(0, $size - $readSize);
         $log_content = file_get_contents($logFile, false, null, $offset);
         
@@ -1612,6 +1705,17 @@ function svb_check_progress() {
         }
     }
 
+    if ($order_row && !$is_finished) {
+        svb_merge_order_result($order_row, [
+            'status' => 'running',
+            'progress' => $percent,
+            'updated_at' => current_time('mysql'),
+            'log_path' => $logFile,
+            'last_error' => '',
+            'duration' => $tplDur,
+        ]);
+    }
+
     // Якщо відео готове
     $rcFile = isset($data['rcFile']) ? $data['rcFile'] : '';
     $cmdRun = isset($data['cmd']) ? $data['cmd'] : '';
@@ -1632,6 +1736,16 @@ function svb_check_progress() {
                 'stderr' => $logTail,
             ]);
 
+            if ($order_row) {
+                svb_merge_order_result($order_row, [
+                    'status' => 'failed',
+                    'progress' => $percent,
+                    'last_error' => $logTail ?: 'FFmpeg exited with non-zero code',
+                    'updated_at' => current_time('mysql'),
+                    'log_path' => $logFile,
+                ]);
+            }
+
             delete_transient('svb_job_data_'.$token);
             delete_transient('svb_job_'.$token);
 
@@ -1642,7 +1756,6 @@ function svb_check_progress() {
     if ($is_finished && file_exists($outputFile) && filesize($outputFile) > 10000) {
         svb_schedule_cleanup($data['job_dir']);
         @unlink($data['pidFile']);
-        @unlink($logFile);
         if ($rcFile) { @unlink($rcFile); }
         
         $videoUrl = trailingslashit($data['job_url']) . 'video.mp4';
@@ -1669,14 +1782,6 @@ function svb_check_progress() {
             ]);
 
             if ($order_id && !is_wp_error($order_row)) {
-                global $wpdb;
-                $table = $wpdb->prefix . 'svb_orders';
-                $result = [
-                    'video_path' => $permanent_path,
-                    'generated_at' => current_time('mysql'),
-                ];
-                $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => $order_id], ['%s'], ['%d']);
-
                 $verified_order = svb_get_order_by_id($order_id);
                 $order_exists = (bool) $verified_order;
 
@@ -1685,6 +1790,19 @@ function svb_check_progress() {
                     if ($downloadUrl) {
                         $videoUrl = $downloadUrl;
                     }
+                }
+
+                if ($verified_order) {
+                    $result = svb_read_order_result($verified_order);
+                    $result['video_path'] = $permanent_path;
+                    $result['generated_at'] = current_time('mysql');
+                    $result['status'] = 'done';
+                    $result['progress'] = 100;
+                    $result['updated_at'] = current_time('mysql');
+                    $result['download_url'] = $videoUrl;
+                    $result['log_path'] = $logFile;
+                    $result['last_error'] = '';
+                    svb_update_order_result_status($order_id, $result);
                 }
 
                 if (!empty($data['job_dir'])) {
@@ -1853,8 +1971,9 @@ function svb_mask_page_url($url) {
 }
 
 function svb_payment_normalize_status($status) {
-    if ($status === 'paid') {
-        return 'success';
+    $normalized = strtolower((string) $status);
+    if (in_array($normalized, ['paid', 'success'], true)) {
+        return 'paid';
     }
 
     return svb_monobank_normalize_status($status);
@@ -1862,30 +1981,20 @@ function svb_payment_normalize_status($status) {
 
 function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_current, $meta = []) {
     $normalized = svb_payment_normalize_status($payment_status);
-    $has_transaction = !empty($meta['transaction_id']);
-    $has_paid_at = !empty($meta['paid_at']);
 
-    if ($normalized === 'success' || $has_transaction || $has_paid_at) {
+    if ($normalized === 'paid') {
         if ($paid_fingerprint && $fingerprint_current && svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
-            return ['paid', 'success', 'paid_match'];
+            return ['paid', 'paid', 'paid_match'];
         }
 
-        if ($paid_fingerprint && $fingerprint_current && !svb_safe_hash_equals($paid_fingerprint, $fingerprint_current)) {
-            return ['paid', 'success', 'fingerprint_mismatch'];
-        }
-
-        return ['paid', 'success', 'status_success'];
+        return ['pay', 'paid', $paid_fingerprint ? 'fingerprint_mismatch' : 'missing_paid_fingerprint'];
     }
 
     if ($normalized === 'failure') {
-        return ['failed', $normalized, 'status_failure'];
+        return ['pay', $normalized, 'status_failure'];
     }
 
-    if ($normalized === 'processing' || $normalized === 'pending') {
-        return ['pending', $normalized, 'status_pending'];
-    }
-
-    return ['not_paid', $normalized, 'unpaid'];
+    return ['pay', $normalized, 'unpaid'];
 }
 
 function svb_pay_debug_state() {
@@ -2246,7 +2355,7 @@ function svb_create_invoice() {
         $message_parts = [];
         if ($status) $message_parts[] = 'http=' . $status;
         if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
         wp_send_json_error($public_message);
     }
 
@@ -2344,26 +2453,210 @@ function svb_update_order_result_status($order_id, array $result) {
     $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => (int) $order_id], ['%s'], ['%d']);
 }
 
+function svb_merge_order_result($order_row, array $updates) {
+    $order_id = (int) ($order_row['order_id'] ?? 0);
+    if (!$order_id) {
+        return [];
+    }
+
+    $result = svb_read_order_result($order_row);
+    $changed = false;
+
+    foreach ($updates as $key => $value) {
+        $existing = $result[$key] ?? null;
+        if ($existing !== $value) {
+            $result[$key] = $value;
+            $changed = true;
+        }
+    }
+
+    if ($changed) {
+        svb_update_order_result_status($order_id, $result);
+    }
+
+    return $result;
+}
+
+function svb_tail_log_file($path, $max_bytes = 20000) {
+    if (!$path || !file_exists($path)) {
+        return '';
+    }
+
+    $size = filesize($path);
+    $offset = max(0, $size - $max_bytes);
+
+    $contents = file_get_contents($path, false, null, $offset);
+    if (!is_string($contents)) {
+        return '';
+    }
+
+    $lines = explode("\n", $contents);
+    $tail_lines = array_slice($lines, -400);
+
+    return implode("\n", $tail_lines);
+}
+
+function svb_order_has_recent_invoice(array $payment, $max_age_seconds = 1800) {
+    $created = 0;
+    if (!empty($payment['invoice_created_at'])) {
+        $created = (int) $payment['invoice_created_at'];
+    } elseif (!empty($payment['payment_updated_at'])) {
+        $created = (int) $payment['payment_updated_at'];
+    }
+
+    if ($created <= 0) {
+        return true;
+    }
+
+    return (time() - $created) <= $max_age_seconds;
+}
+
+function svb_generation_return_flow_allowed($expected_token) {
+    $has_marker = (isset($_POST['return_flow']) && $_POST['return_flow'] === '1')
+        || isset($_POST['svb_return'])
+        || isset($_POST['svb_payment_return'])
+        || isset($_POST['svb_payment_success'])
+        || isset($_POST['invoiceId'])
+        || isset($_POST['svb_token'])
+        || isset($_POST['token'])
+        || isset($_POST['order_id']);
+
+    if (!$has_marker) {
+        return false;
+    }
+
+    $token_from_req = isset($_POST['public_token']) ? sanitize_text_field(wp_unslash($_POST['public_token'])) : '';
+    if ($expected_token && $token_from_req && $token_from_req !== $expected_token) {
+        return false;
+    }
+
+    return true;
+}
+
+function svb_generation_pending_allowed($order_row, $public_token, array $payment, array $result = []) {
+    if (!defined('SVB_ALLOW_PENDING_GENERATION') || !SVB_ALLOW_PENDING_GENERATION) {
+        return false;
+    }
+
+    $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    $already_locked = !empty($result['delivery_locked']) || !empty($result['payment_pending_started_at']);
+    if ($payment_status !== 'pending') {
+        return $already_locked;
+    }
+
+    $return_allowed = svb_generation_return_flow_allowed($public_token);
+    $recent_invoice = svb_order_has_recent_invoice($payment);
+
+    return $already_locked || ($return_allowed && $recent_invoice && $public_token && !empty($order_row['order_id']));
+}
+
+function svb_parse_generation_progress($log_content, $duration) {
+    $duration = (float) $duration;
+    if ($duration <= 0 || !is_string($log_content) || $log_content === '') {
+        return null;
+    }
+
+    if (preg_match_all('/out_time_ms=([0-9]+)/', $log_content, $matches) && !empty($matches[1])) {
+        $last_ms = (float) end($matches[1]);
+        $seconds = $last_ms / 1000000.0;
+        return (int) min(99, floor(($seconds / $duration) * 100));
+    }
+
+    if (preg_match_all('/time=\s*([\d:.]+)/', $log_content, $matches) && !empty($matches[1])) {
+        $last_time_str = end($matches[1]);
+        $seconds = svb_ts_to_seconds($last_time_str);
+        return (int) min(99, floor(($seconds / $duration) * 100));
+    }
+
+    return null;
+}
+
 function svb_generation_state_payload($order_row) {
     $order_id = (int) ($order_row['order_id'] ?? 0);
     $public_token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    $invoice_id = $payment['invoice_id'] ?? '';
     $result = svb_read_order_result($order_row);
     $video_path = isset($result['video_path']) ? $result['video_path'] : '';
     $file_exists = $video_path && file_exists($video_path);
-    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'processing');
+    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'queued');
+    $progress = isset($result['progress']) ? (int) $result['progress'] : ($status === 'done' ? 100 : 0);
+    $last_error = isset($result['last_error']) ? $result['last_error'] : '';
+    $updated_at = isset($result['updated_at']) ? $result['updated_at'] : '';
+    $log_path = isset($result['log_path']) ? $result['log_path'] : ($order_id ? svb_get_order_log_path($order_id, false) : '');
+    $duration = isset($result['duration']) ? (float) $result['duration'] : 0.0;
     $download_url = '';
+    $log_tail = '';
+    $delivery_locked = !empty($result['delivery_locked']);
+    $can_download = ($payment_status === 'paid');
+    $ui_message = '';
 
-    if ($file_exists && $public_token && $order_id) {
+    if ($file_exists && $public_token && $order_id && $can_download) {
         $download_url = svb_build_download_url($order_id, $public_token);
         $status = 'done';
-        if (empty($result['status']) || $result['status'] !== 'done') {
+        $progress = 100;
+        if (empty($result['status']) || $result['status'] !== 'done' || empty($result['download_url'])) {
             $result['status'] = 'done';
             $result['download_url'] = $download_url;
+            $result['progress'] = 100;
+            $result['updated_at'] = current_time('mysql');
+            $result['log_path'] = $log_path;
             svb_update_order_result_status($order_id, $result);
         }
+    } elseif ($file_exists && !$can_download) {
+        $status = 'done';
+        $progress = 100;
+        $ui_message = 'Оплата підтверджується. Відео готове, посилання з\'явиться після підтвердження.';
     } elseif (!isset($result['status'])) {
-        $result['status'] = 'processing';
-        $result['started_at'] = $result['started_at'] ?? time();
+        $result['status'] = 'queued';
+        $result['updated_at'] = $result['updated_at'] ?? current_time('mysql');
+        svb_update_order_result_status($order_id, $result);
+    } elseif ($status === 'queued' && (!empty($result['started_at']) || ($log_path && file_exists($log_path)))) {
+        $status = 'running';
+    }
+
+    if ($log_path && file_exists($log_path)) {
+        $log_tail = svb_tail_log_file($log_path, 40000);
+        $parsed = svb_parse_generation_progress($log_tail, $duration);
+        if ($parsed !== null) {
+            $progress = max($progress, $parsed);
+        }
+        $mtime = @filemtime($log_path);
+        if ($mtime) {
+            $updated_at = date('Y-m-d H:i:s', $mtime);
+        }
+    }
+
+    $stale_seconds = 5 * MINUTE_IN_SECONDS;
+    $updated_ts = $updated_at ? strtotime($updated_at) : 0;
+    if (in_array($status, ['running', 'processing', 'queued'], true) && $updated_ts && (time() - $updated_ts) > $stale_seconds) {
+        $status = 'failed';
+        if (!$last_error) {
+            $last_error = 'Generation stalled (timeout).';
+        }
+    }
+
+    if (!$can_download && $download_url) {
+        $download_url = '';
+    }
+
+    if (!$can_download && !$ui_message && in_array($payment_status, ['pending', 'processing'], true)) {
+        $ui_message = 'Оплата підтверджується. Відео вже генерується, посилання з\'явиться після підтвердження.';
+    }
+
+    if ($order_id && (!isset($result['status'])
+        || $result['status'] !== $status
+        || ($progress && (!isset($result['progress']) || (int) $result['progress'] !== (int) $progress))
+        || ($last_error && $last_error !== ($result['last_error'] ?? ''))
+        || ($updated_at && $updated_at !== ($result['updated_at'] ?? ''))
+        || ($log_path && $log_path !== ($result['log_path'] ?? '')))) {
+        $result['status'] = $status;
+        $result['progress'] = $progress;
+        $result['last_error'] = $last_error;
+        $result['updated_at'] = $updated_at ?: current_time('mysql');
+        $result['log_path'] = $log_path;
+        $result['delivery_locked'] = $delivery_locked;
         svb_update_order_result_status($order_id, $result);
     }
 
@@ -2374,6 +2667,15 @@ function svb_generation_state_payload($order_row) {
         'download_url' => $download_url,
         'has_file' => $file_exists,
         'started_at' => isset($result['started_at']) ? (int) $result['started_at'] : 0,
+        'progress' => $progress,
+        'last_error' => $last_error,
+        'updated_at' => $updated_at,
+        'log_tail' => $log_tail,
+        'payment_status' => $payment_status,
+        'invoice_id' => $invoice_id,
+        'can_download' => $can_download,
+        'delivery_locked' => $delivery_locked,
+        'ui_message' => $ui_message,
     ];
 }
 
@@ -2392,15 +2694,27 @@ function svb_start_generation() {
         wp_send_json_error('Order not found');
     }
 
-    $payload = svb_generation_state_payload($order);
-    if ($payload['status'] !== 'done' && empty($payload['started_at'])) {
-        $result = svb_read_order_result($order);
-        if (!isset($result['status'])) {
-            $result['status'] = 'processing';
-            $result['started_at'] = time();
-            svb_update_order_result_status($payload['order_id'], $result);
-        }
+    $result = svb_read_order_result($order);
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order['payment'] ?? []));
+    $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    $is_paid = ($payment_status === 'paid');
+    $pending_allowed = svb_generation_pending_allowed($order, $public_token, $payment, $result);
+
+    if (!$is_paid && !$pending_allowed) {
+        wp_send_json_error([
+            'code' => 'PAYMENT_NOT_CONFIRMED',
+            'payment_status' => $payment_status,
+        ]);
     }
+
+    if ($pending_allowed && empty($result['delivery_locked'])) {
+        $result['delivery_locked'] = true;
+        $result['payment_pending_started_at'] = $result['payment_pending_started_at'] ?? time();
+        svb_update_order_result_status($order['order_id'], $result);
+        $order['result'] = $result;
+    }
+
+    $payload = svb_generation_state_payload($order);
 
     wp_send_json_success($payload);
 }
@@ -2422,6 +2736,38 @@ function svb_generation_status() {
 
     $payload = svb_generation_state_payload($order);
     wp_send_json_success($payload);
+}
+
+function svb_ffmpeg_log() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $public_token = isset($_POST['public_token']) ? sanitize_text_field(wp_unslash($_POST['public_token'])) : '';
+    if (!$public_token) {
+        wp_send_json_error('Missing token');
+    }
+
+    $order = svb_get_order_by_token($public_token);
+    if (!$order) {
+        wp_send_json_error('Order not found');
+    }
+
+    $payload = svb_generation_state_payload($order);
+    $result = svb_read_order_result($order);
+    $log_path = isset($result['log_path']) ? $result['log_path'] : ($payload['order_id'] ? svb_get_order_log_path($payload['order_id'], false) : '');
+    $log_tail = $log_path ? svb_tail_log_file($log_path, 40000) : ($payload['log_tail'] ?? '');
+
+    wp_send_json_success([
+        'order_id' => $payload['order_id'],
+        'generation_status' => $payload['status'],
+        'progress' => $payload['progress'] ?? 0,
+        'last_error' => $payload['last_error'] ?? '',
+        'updated_at' => $payload['updated_at'] ?? '',
+        'log_tail' => $log_tail,
+        'payment_status' => $payload['payment_status'] ?? '',
+        'can_download' => $payload['can_download'] ?? false,
+    ]);
 }
 
 function svb_payment_gate() {
@@ -2544,11 +2890,14 @@ function svb_payment_gate() {
         'fingerprint_current' => $fingerprint_current,
     ]);
 
+    $payment_disabled = isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1';
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $paid_fingerprint = isset($payment['paid_fingerprint']) ? $payment['paid_fingerprint'] : '';
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
-    $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
-    $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
+    $is_paid_for_current = ($payment_status === 'paid')
+        && $paid_fingerprint
+        && $fingerprint_current
+        && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
 
     $payment_url = $payment['invoice_page_url'] ?? '';
     $invoice_id = $payment['invoice_id'] ?? '';
@@ -2562,15 +2911,29 @@ function svb_payment_gate() {
             $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
             $paid_fingerprint = $payment['paid_fingerprint'] ?? $paid_fingerprint;
             $payment_url = $payment['invoice_page_url'] ?? $payment_url;
-            $is_paid = ($payment_status === 'success') || !empty($payment['transaction_id']) || !empty($payment['paid_at']);
-            $is_paid_for_current = $is_paid && $fingerprint_matches ? true : $is_paid;
+            $is_paid_for_current = ($payment_status === 'paid')
+                && $paid_fingerprint
+                && $fingerprint_current
+                && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
         }
+    }
+
+    if ($payment_disabled && !$is_paid_for_current) {
+        svb_update_order_payment_by_order_id($order_row['order_id'], [
+            'status' => 'paid',
+            'paid_fingerprint' => $fingerprint_current,
+            'payment_updated_at' => time(),
+            'invoice_fingerprint' => $fingerprint_current,
+        ]);
+        $payment_status = 'paid';
+        $paid_fingerprint = $fingerprint_current;
+        $is_paid_for_current = true;
     }
 
     $invoice_matches_fp = empty($payment['invoice_fingerprint'])
         ? true
         : svb_safe_hash_equals((string) $payment['invoice_fingerprint'], (string) $fingerprint_current);
-    $should_create_invoice = !$is_paid_for_current && (
+    $should_create_invoice = !$payment_disabled && !$is_paid_for_current && (
         empty($payment_url)
         || !in_array($payment_status, ['pending', 'processing'], true)
         || !$recent_invoice
@@ -2601,7 +2964,7 @@ function svb_payment_gate() {
             $message_parts = [];
             if ($status) $message_parts[] = 'http=' . $status;
             if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-            $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+            $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
             wp_send_json_error($public_message);
         }
 
@@ -2626,27 +2989,34 @@ function svb_payment_gate() {
     }
 
     $invoice_masked = svb_monobank_mask_invoice($invoice_id);
-    $decision = $is_paid_for_current ? 'PAID' : 'PAY';
+
+    list($decision, $normalized_payment_status, $reason) = svb_payment_decision(
+        $payment_status,
+        $paid_fingerprint,
+        $fingerprint_current,
+        ['transaction_id' => $payment['transaction_id'] ?? '', 'paid_at' => $payment['paid_at'] ?? 0]
+    );
+
     $response = [
         'order_id' => (int) $order_row['order_id'],
         'public_token' => $public_token,
         'fingerprint_current' => $fingerprint_current,
         'paid_fingerprint' => $paid_fingerprint,
-        'payment_status' => $payment_status,
+        'payment_status' => $normalized_payment_status,
         'payment_status_raw' => $payment['status'] ?? 'unpaid',
         'invoice_id' => $invoice_id,
         'invoice_page_url' => $payment_url,
         'payment_url' => $payment_url,
         'invoice_masked' => $invoice_masked,
         'invoice_page_url_masked' => svb_mask_page_url($payment_url),
-        'is_paid_for_current' => $is_paid_for_current,
-        'decision' => $decision,
-        'reason' => $is_paid_for_current ? 'paid' : 'pay_required',
+        'is_paid_for_current' => ($decision === 'paid'),
+        'decision' => ($decision === 'paid') ? 'PAID' : 'PAY',
+        'reason' => $reason,
         'storage' => $storage,
         'resume_url' => svb_build_resume_url($order_row['order_id'], $public_token),
         'transaction_id' => $payment['transaction_id'] ?? '',
         'paid_at' => isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0,
-        'is_paid' => $is_paid_for_current,
+        'is_paid' => ($decision === 'paid'),
     ];
 
     if (function_exists('svb_debug_enabled') && svb_debug_enabled()) {
@@ -2799,7 +3169,7 @@ function svb_monobank_create_invoice() {
         $message_parts = [];
         if ($status) $message_parts[] = 'http=' . $status;
         if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
         wp_send_json_error($public_message);
     }
 
