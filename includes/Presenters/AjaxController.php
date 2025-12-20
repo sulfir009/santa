@@ -1351,12 +1351,12 @@ $makeAudioBlocks('name',   $A_NAME);
     $output = $job_dir . '/video.mp4';
     
     $env_report = 'FFREPORT=file='.escapeshellarg($job_dir.'/ffreport.log').':level=32';
-    
+
     $cmd = $env_report.' '.$ffmpeg
     . ' -nostdin -y -hide_banner'
-    . ' -loglevel level+info' 
+    . ' -loglevel level+info'
     . ' -probesize 50M -analyzeduration 50M'
-    . ' -filter_complex_threads 8' 
+    . ' -filter_complex_threads 8'
     . ' -fflags +genpts -avoid_negative_ts make_zero'
     . ' ' . implode(' ', $inputs)
     . ' -filter_complex ' . escapeshellarg($filter_complex)
@@ -1368,10 +1368,11 @@ $makeAudioBlocks('name',   $A_NAME);
     . ' -max_muxing_queue_size 8192'
     . ' -muxdelay 0 -muxpreload 0'
     . ' -movflags +faststart'
-    . ' -t ' . escapeshellarg((string)$tplDur) 
+    . ' -progress pipe:1'
+    . ' -t ' . escapeshellarg((string)$tplDur)
     . ' ' . escapeshellarg($output);
-    
-    $logFile = $job_dir . '/ffmpeg.log';
+
+    $logFile = svb_get_order_log_path($order_data['order_id'] ?? 0) ?: ($job_dir . '/ffmpeg.log');
     $pidFile = $job_dir . '/ffmpeg.pid';
     $rcFile  = $job_dir . '/ffmpeg.rc';
     if (file_exists($rcFile)) { @unlink($rcFile); }
@@ -1379,6 +1380,24 @@ $makeAudioBlocks('name',   $A_NAME);
     if (file_put_contents($logFile, "Init...\n") === false) {
         wp_send_json_error(['msg' => 'Помилка: Неможливо створити файл логу. Перевірте права на папку: ' . $job_dir]);
     }
+
+    $initial_log = [
+        'ts' => date('c'),
+        'order_id' => $order_data['order_id'] ?? null,
+        'cmd' => $cmd,
+        'output' => $output,
+        'job_dir' => $job_dir,
+    ];
+    @file_put_contents($logFile, "=== SVB FFmpeg start ===\n" . wp_json_encode($initial_log, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) . "\n\n", FILE_APPEND);
+
+    svb_merge_order_result($order_row, [
+        'status' => 'running',
+        'progress' => 0,
+        'updated_at' => current_time('mysql'),
+        'log_path' => $logFile,
+        'last_error' => '',
+        'duration' => $tplDur,
+    ]);
 
     set_transient('svb_job_data_' . $job, [
         'job_dir'  => $job_dir,
@@ -1389,6 +1408,8 @@ $makeAudioBlocks('name',   $A_NAME);
         'job_url'  => $job_url,
         'rcFile'   => $rcFile,
         'cmd'      => $cmd,
+        'order_id' => $order_data['order_id'] ?? 0,
+        'log_path' => $logFile,
     ], HOUR_IN_SECONDS);
 
     $cmd_bg = '(' . $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1; echo $? > ' . escapeshellarg($rcFile) . ') > /dev/null 2>&1 & echo $!';
@@ -1639,6 +1660,8 @@ function svb_check_progress() {
     $logFile    = $data['logFile'];
     $outputFile = $data['output'];
     $tplDur     = (float)$data['tplDur'];
+    $order_id   = isset($data['order_id']) ? (int) $data['order_id'] : 0;
+    $order_row  = $order_id ? svb_get_order_by_id($order_id) : null;
     
     // Якщо тривалість не визначилась (0), ставимо 8 хвилин (480с) як заглушку, щоб прогрес йшов
     if ($tplDur <= 0) $tplDur = 480.0;
@@ -1653,7 +1676,7 @@ function svb_check_progress() {
 
     if (file_exists($logFile)) {
         $size = filesize($logFile);
-        $readSize = 10240; 
+        $readSize = 10240;
         $offset = max(0, $size - $readSize);
         $log_content = file_get_contents($logFile, false, null, $offset);
         
@@ -1682,6 +1705,17 @@ function svb_check_progress() {
         }
     }
 
+    if ($order_row && !$is_finished) {
+        svb_merge_order_result($order_row, [
+            'status' => 'running',
+            'progress' => $percent,
+            'updated_at' => current_time('mysql'),
+            'log_path' => $logFile,
+            'last_error' => '',
+            'duration' => $tplDur,
+        ]);
+    }
+
     // Якщо відео готове
     $rcFile = isset($data['rcFile']) ? $data['rcFile'] : '';
     $cmdRun = isset($data['cmd']) ? $data['cmd'] : '';
@@ -1702,6 +1736,16 @@ function svb_check_progress() {
                 'stderr' => $logTail,
             ]);
 
+            if ($order_row) {
+                svb_merge_order_result($order_row, [
+                    'status' => 'failed',
+                    'progress' => $percent,
+                    'last_error' => $logTail ?: 'FFmpeg exited with non-zero code',
+                    'updated_at' => current_time('mysql'),
+                    'log_path' => $logFile,
+                ]);
+            }
+
             delete_transient('svb_job_data_'.$token);
             delete_transient('svb_job_'.$token);
 
@@ -1712,7 +1756,6 @@ function svb_check_progress() {
     if ($is_finished && file_exists($outputFile) && filesize($outputFile) > 10000) {
         svb_schedule_cleanup($data['job_dir']);
         @unlink($data['pidFile']);
-        @unlink($logFile);
         if ($rcFile) { @unlink($rcFile); }
         
         $videoUrl = trailingslashit($data['job_url']) . 'video.mp4';
@@ -1739,14 +1782,6 @@ function svb_check_progress() {
             ]);
 
             if ($order_id && !is_wp_error($order_row)) {
-                global $wpdb;
-                $table = $wpdb->prefix . 'svb_orders';
-                $result = [
-                    'video_path' => $permanent_path,
-                    'generated_at' => current_time('mysql'),
-                ];
-                $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => $order_id], ['%s'], ['%d']);
-
                 $verified_order = svb_get_order_by_id($order_id);
                 $order_exists = (bool) $verified_order;
 
@@ -1755,6 +1790,19 @@ function svb_check_progress() {
                     if ($downloadUrl) {
                         $videoUrl = $downloadUrl;
                     }
+                }
+
+                if ($verified_order) {
+                    $result = svb_read_order_result($verified_order);
+                    $result['video_path'] = $permanent_path;
+                    $result['generated_at'] = current_time('mysql');
+                    $result['status'] = 'done';
+                    $result['progress'] = 100;
+                    $result['updated_at'] = current_time('mysql');
+                    $result['download_url'] = $videoUrl;
+                    $result['log_path'] = $logFile;
+                    $result['last_error'] = '';
+                    svb_update_order_result_status($order_id, $result);
                 }
 
                 if (!empty($data['job_dir'])) {
@@ -2405,6 +2453,70 @@ function svb_update_order_result_status($order_id, array $result) {
     $wpdb->update($table, ['result' => wp_json_encode($result)], ['order_id' => (int) $order_id], ['%s'], ['%d']);
 }
 
+function svb_merge_order_result($order_row, array $updates) {
+    $order_id = (int) ($order_row['order_id'] ?? 0);
+    if (!$order_id) {
+        return [];
+    }
+
+    $result = svb_read_order_result($order_row);
+    $changed = false;
+
+    foreach ($updates as $key => $value) {
+        $existing = $result[$key] ?? null;
+        if ($existing !== $value) {
+            $result[$key] = $value;
+            $changed = true;
+        }
+    }
+
+    if ($changed) {
+        svb_update_order_result_status($order_id, $result);
+    }
+
+    return $result;
+}
+
+function svb_tail_log_file($path, $max_bytes = 20000) {
+    if (!$path || !file_exists($path)) {
+        return '';
+    }
+
+    $size = filesize($path);
+    $offset = max(0, $size - $max_bytes);
+
+    $contents = file_get_contents($path, false, null, $offset);
+    if (!is_string($contents)) {
+        return '';
+    }
+
+    $lines = explode("\n", $contents);
+    $tail_lines = array_slice($lines, -400);
+
+    return implode("\n", $tail_lines);
+}
+
+function svb_parse_generation_progress($log_content, $duration) {
+    $duration = (float) $duration;
+    if ($duration <= 0 || !is_string($log_content) || $log_content === '') {
+        return null;
+    }
+
+    if (preg_match_all('/out_time_ms=([0-9]+)/', $log_content, $matches) && !empty($matches[1])) {
+        $last_ms = (float) end($matches[1]);
+        $seconds = $last_ms / 1000000.0;
+        return (int) min(99, floor(($seconds / $duration) * 100));
+    }
+
+    if (preg_match_all('/time=\s*([\d:.]+)/', $log_content, $matches) && !empty($matches[1])) {
+        $last_time_str = end($matches[1]);
+        $seconds = svb_ts_to_seconds($last_time_str);
+        return (int) min(99, floor(($seconds / $duration) * 100));
+    }
+
+    return null;
+}
+
 function svb_generation_state_payload($order_row) {
     $order_id = (int) ($order_row['order_id'] ?? 0);
     $public_token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
@@ -2412,14 +2524,24 @@ function svb_generation_state_payload($order_row) {
     $video_path = isset($result['video_path']) ? $result['video_path'] : '';
     $file_exists = $video_path && file_exists($video_path);
     $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'queued');
+    $progress = isset($result['progress']) ? (int) $result['progress'] : ($status === 'done' ? 100 : 0);
+    $last_error = isset($result['last_error']) ? $result['last_error'] : '';
+    $updated_at = isset($result['updated_at']) ? $result['updated_at'] : '';
+    $log_path = isset($result['log_path']) ? $result['log_path'] : ($order_id ? svb_get_order_log_path($order_id, false) : '');
+    $duration = isset($result['duration']) ? (float) $result['duration'] : 0.0;
     $download_url = '';
+    $log_tail = '';
 
     if ($file_exists && $public_token && $order_id) {
         $download_url = svb_build_download_url($order_id, $public_token);
         $status = 'done';
+        $progress = 100;
         if (empty($result['status']) || $result['status'] !== 'done') {
             $result['status'] = 'done';
             $result['download_url'] = $download_url;
+            $result['progress'] = 100;
+            $result['updated_at'] = current_time('mysql');
+            $result['log_path'] = $log_path;
             svb_update_order_result_status($order_id, $result);
         }
     } elseif (!isset($result['status'])) {
@@ -2430,6 +2552,41 @@ function svb_generation_state_payload($order_row) {
         $status = 'running';
     }
 
+    if ($log_path && file_exists($log_path)) {
+        $log_tail = svb_tail_log_file($log_path, 40000);
+        $parsed = svb_parse_generation_progress($log_tail, $duration);
+        if ($parsed !== null) {
+            $progress = max($progress, $parsed);
+        }
+        $mtime = @filemtime($log_path);
+        if ($mtime) {
+            $updated_at = date('Y-m-d H:i:s', $mtime);
+        }
+    }
+
+    $stale_seconds = 5 * MINUTE_IN_SECONDS;
+    $updated_ts = $updated_at ? strtotime($updated_at) : 0;
+    if (in_array($status, ['running', 'processing', 'queued'], true) && $updated_ts && (time() - $updated_ts) > $stale_seconds) {
+        $status = 'failed';
+        if (!$last_error) {
+            $last_error = 'Generation stalled (timeout).';
+        }
+    }
+
+    if ($order_id && (!isset($result['status'])
+        || $result['status'] !== $status
+        || ($progress && (!isset($result['progress']) || (int) $result['progress'] !== (int) $progress))
+        || ($last_error && $last_error !== ($result['last_error'] ?? ''))
+        || ($updated_at && $updated_at !== ($result['updated_at'] ?? ''))
+        || ($log_path && $log_path !== ($result['log_path'] ?? '')))) {
+        $result['status'] = $status;
+        $result['progress'] = $progress;
+        $result['last_error'] = $last_error;
+        $result['updated_at'] = $updated_at ?: current_time('mysql');
+        $result['log_path'] = $log_path;
+        svb_update_order_result_status($order_id, $result);
+    }
+
     return [
         'order_id' => $order_id,
         'public_token' => $public_token,
@@ -2437,6 +2594,10 @@ function svb_generation_state_payload($order_row) {
         'download_url' => $download_url,
         'has_file' => $file_exists,
         'started_at' => isset($result['started_at']) ? (int) $result['started_at'] : 0,
+        'progress' => $progress,
+        'last_error' => $last_error,
+        'updated_at' => $updated_at,
+        'log_tail' => $log_tail,
     ];
 }
 
@@ -2486,6 +2647,36 @@ function svb_generation_status() {
 
     $payload = svb_generation_state_payload($order);
     wp_send_json_success($payload);
+}
+
+function svb_ffmpeg_log() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $public_token = isset($_POST['public_token']) ? sanitize_text_field(wp_unslash($_POST['public_token'])) : '';
+    if (!$public_token) {
+        wp_send_json_error('Missing token');
+    }
+
+    $order = svb_get_order_by_token($public_token);
+    if (!$order) {
+        wp_send_json_error('Order not found');
+    }
+
+    $payload = svb_generation_state_payload($order);
+    $result = svb_read_order_result($order);
+    $log_path = isset($result['log_path']) ? $result['log_path'] : ($payload['order_id'] ? svb_get_order_log_path($payload['order_id'], false) : '');
+    $log_tail = $log_path ? svb_tail_log_file($log_path, 40000) : ($payload['log_tail'] ?? '');
+
+    wp_send_json_success([
+        'order_id' => $payload['order_id'],
+        'generation_status' => $payload['status'],
+        'progress' => $payload['progress'] ?? 0,
+        'last_error' => $payload['last_error'] ?? '',
+        'updated_at' => $payload['updated_at'] ?? '',
+        'log_tail' => $log_tail,
+    ]);
 }
 
 function svb_payment_gate() {

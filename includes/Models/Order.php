@@ -13,6 +13,33 @@ function svb_get_orders_dir() {
     return $dir;
 }
 
+function svb_get_logs_dir() {
+    $upload = wp_upload_dir();
+    $dir = trailingslashit($upload['basedir']) . 'svb-logs';
+
+    if (!file_exists($dir)) {
+        wp_mkdir_p($dir);
+        @file_put_contents($dir . '/index.php', '<?php // Silence');
+        @file_put_contents($dir . '/.htaccess', "deny from all\n");
+    }
+
+    return $dir;
+}
+
+function svb_get_order_log_path($order_id, $ensure = true) {
+    $order_id = absint($order_id);
+    if (!$order_id) {
+        return '';
+    }
+
+    $dir = svb_get_logs_dir();
+    if ($ensure && $dir && !file_exists($dir)) {
+        wp_mkdir_p($dir);
+    }
+
+    return $dir ? trailingslashit($dir) . 'order_' . $order_id . '.log' : '';
+}
+
 function svb_detect_ssl() {
     if (is_ssl()) {
         return true;
