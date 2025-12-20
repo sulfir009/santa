@@ -304,6 +304,35 @@ function svb_get_order_by_id_and_token($order_id, $token) {
     return $order;
 }
 
+function svb_get_order_by_token($token) {
+    if (!$token || !svb_orders_table_exists()) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $hash = hash('sha256', $token);
+    $row = $wpdb->get_row(
+        $wpdb->prepare(
+            "SELECT order_id FROM {$table} WHERE token_hash = %s OR public_token = %s ORDER BY id DESC LIMIT 1",
+            $hash,
+            sanitize_text_field($token)
+        ),
+        ARRAY_A
+    );
+
+    if (!$row || empty($row['order_id'])) {
+        return null;
+    }
+
+    $order = svb_get_order_by_id((int) $row['order_id']);
+    if ($order) {
+        $order['public_token'] = $token;
+    }
+
+    return $order;
+}
+
 function svb_resolve_order_public_token(array $order_row) {
     $token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
     if ($token) {
