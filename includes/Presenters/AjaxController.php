@@ -2137,6 +2137,191 @@ function svb_gate() {
     return svb_payment_gate();
 }
 
+function svb_create_invoice() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_data = svb_init_user_order();
+    $uid = $order_data['uid'] ?? '';
+    if (!$uid) {
+        wp_send_json_error('Session missing');
+    }
+
+    $child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 1;
+    if ($child_count < 1) $child_count = 1;
+    if ($child_count > 3) $child_count = 3;
+
+    $selected_video_id = isset($_POST['selected_video_id']) ? sanitize_text_field(wp_unslash($_POST['selected_video_id'])) : '';
+    $overlay_json_raw = isset($_POST['overlay_json']) ? wp_unslash($_POST['overlay_json']) : '';
+    $overlay_json = json_decode($overlay_json_raw, true);
+    if (!is_array($overlay_json)) {
+        $overlay_json = [];
+    }
+
+    $segments_raw = isset($_POST['segments']) ? wp_unslash($_POST['segments']) : '';
+    $segments = json_decode($segments_raw, true);
+    if (!is_array($segments)) {
+        $segments = [];
+    }
+
+    $voice_raw = isset($_POST['voice_payload']) ? wp_unslash($_POST['voice_payload']) : '';
+    $voice = json_decode($voice_raw, true);
+    if (!is_array($voice)) {
+        $voice = [];
+    }
+
+    $photos_raw = isset($_POST['photos']) ? wp_unslash($_POST['photos']) : '[]';
+    $photos = json_decode($photos_raw, true);
+    if (!is_array($photos)) {
+        $photos = [];
+    }
+
+    $customer_email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+    $customer_name = isset($_POST['customer_name']) ? sanitize_text_field(wp_unslash($_POST['customer_name'])) : '';
+
+    $order_row = svb_create_new_order_for_session($uid, [
+        'customer_email' => $customer_email,
+        'customer_name' => $customer_name,
+    ]);
+
+    if (is_wp_error($order_row)) {
+        wp_send_json_error('Order storage error');
+    }
+
+    $order_id = (int) ($order_row['order_id'] ?? 0);
+    $public_token = isset($order_row['public_token']) ? $order_row['public_token'] : '';
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $wpdb->update(
+        $table,
+        [
+            'child_count' => $child_count,
+            'selected_video_id' => $selected_video_id,
+            'overlay_json' => wp_json_encode($overlay_json),
+            'segments' => wp_json_encode($segments),
+            'voice' => wp_json_encode($voice),
+            'photos' => wp_json_encode($photos),
+        ],
+        ['order_id' => $order_id],
+        ['%d','%s','%s','%s','%s','%s'],
+        ['%d']
+    );
+
+    $admin_bypass = current_user_can('manage_options') && isset($_POST['payment_required']) && $_POST['payment_required'] === '0';
+    if ($admin_bypass) {
+        svb_update_order_payment_by_order_id($order_id, [
+            'status' => 'success',
+            'paid_at' => time(),
+            'invoice_created_at' => time(),
+        ]);
+        wp_send_json_success([
+            'order_id' => $order_id,
+            'public_token' => $public_token,
+            'payment_url' => '',
+            'bypass' => true,
+        ]);
+    }
+
+    if (!svb_monobank_get_token()) {
+        wp_send_json_error('Payment is not configured.');
+    }
+
+    $amount = svb_monobank_amount_for_children($child_count);
+    if ($amount <= 0) {
+        wp_send_json_error('Invalid amount for selected children');
+    }
+
+    $return_url = svb_monobank_build_redirect_url($public_token);
+    $webhook_url = svb_monobank_build_webhook_url($public_token);
+    $reference = 'SVB-' . $order_id . '-' . wp_generate_password(6, false, false);
+    $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_id);
+
+    $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment, $webhook_url);
+    if (is_wp_error($invoice)) {
+        $err_data = $invoice->get_error_data();
+        $status = is_array($err_data) ? ($err_data['status'] ?? '') : '';
+        $body_snippet = (is_array($err_data) && isset($err_data['body'])) ? svb_pay_trim($err_data['body']) : '';
+        $message_parts = [];
+        if ($status) $message_parts[] = 'http=' . $status;
+        if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
+        $public_message = $message_parts ? ('mono api ' . implode(' ', $message_parts)) : $invoice->get_error_message();
+        wp_send_json_error($public_message);
+    }
+
+    $invoice_id = isset($invoice['invoiceId']) ? sanitize_text_field($invoice['invoiceId']) : '';
+    $payment_url = $invoice['pageUrl'] ?? '';
+
+    svb_update_order_payment_by_order_id($order_id, [
+        'status' => 'pending',
+        'invoice_id' => $invoice_id,
+        'invoice_page_url' => $payment_url,
+        'reference' => $reference,
+        'invoice_created_at' => time(),
+        'payment_updated_at' => time(),
+    ]);
+
+    wp_send_json_success([
+        'order_id' => $order_id,
+        'public_token' => $public_token,
+        'payment_url' => $payment_url,
+        'invoice_id' => $invoice_id,
+        'invoice_masked' => svb_monobank_mask_invoice($invoice_id),
+    ]);
+}
+
+function svb_resume_by_identity() {
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
+        wp_send_json_error('Bad nonce');
+    }
+
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+    $email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+    if (!$order_id || !$email) {
+        wp_send_json_error('Потрібні email та номер замовлення');
+    }
+
+    $order = svb_get_order_by_id($order_id);
+    if (!$order) {
+        wp_send_json_error('Замовлення не знайдено');
+    }
+
+    $order_email = isset($order['customer_email']) ? sanitize_email($order['customer_email']) : '';
+    if (!$order_email || strtolower($order_email) !== strtolower($email)) {
+        wp_send_json_error('Email не співпадає з замовленням');
+    }
+
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order['payment'] ?? []));
+    $status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    if (!in_array($status, ['success', 'paid'], true)) {
+        wp_send_json_error('Оплата не підтверджена');
+    }
+
+    $result = [];
+    if (!empty($order['result'])) {
+        $decoded_result = is_array($order['result']) ? $order['result'] : json_decode((string) $order['result'], true);
+        if (is_array($decoded_result)) {
+            $result = $decoded_result;
+        }
+    }
+
+    $payload = [
+        'order_id' => $order_id,
+        'public_token' => $order['public_token'] ?? '',
+        'child_count' => isset($order['child_count']) ? (int) $order['child_count'] : 1,
+        'selected_video_id' => $order['selected_video_id'] ?? '',
+        'overlay_json' => !empty($order['overlay_json']) ? (is_array($order['overlay_json']) ? $order['overlay_json'] : json_decode((string) $order['overlay_json'], true)) : [],
+        'segments' => !empty($order['segments']) ? (is_array($order['segments']) ? $order['segments'] : json_decode((string) $order['segments'], true)) : [],
+        'voice' => !empty($order['voice']) ? (is_array($order['voice']) ? $order['voice'] : json_decode((string) $order['voice'], true)) : [],
+        'photos' => !empty($order['photos']) ? (is_array($order['photos']) ? $order['photos'] : json_decode((string) $order['photos'], true)) : [],
+        'generation_status' => $result['status'] ?? '',
+        'result_url' => $result['download_url'] ?? ($result['video_url'] ?? ''),
+    ];
+
+    wp_send_json_success($payload);
+}
+
 function svb_payment_gate() {
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
         wp_send_json_error('Bad nonce');

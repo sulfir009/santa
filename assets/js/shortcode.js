@@ -2956,68 +2956,56 @@ async function svbInvalidateInvoice(orderId, token) {
   return data.data || {};
 }
 
-async function svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes, fingerprint) {
+async function svbCreateInvoiceRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes, paymentRequired = true) {
   const fd = new FormData();
-  fd.append('action', 'svb_gate');
+  fd.append('action', 'svb_create_invoice');
   fd.append('_svb_nonce', SVB_AJAX.nonce);
   fd.append('child_count', childCount);
   fd.append('selected_video_id', SVB_SELECTED_VIDEO_ID);
   fd.append('overlay_json', JSON.stringify(overlayData || {}));
   fd.append('segments', segmentsValue || '');
   fd.append('voice_payload', JSON.stringify(voicePayload || {}));
-  fd.append('photo_hashes', JSON.stringify(photoHashes || []));
-  if (fingerprint) {
-    fd.append('fingerprint', fingerprint);
-  }
+  fd.append('photos', JSON.stringify(photoHashes || []));
+  fd.append('payment_required', paymentRequired ? '1' : '0');
 
   const saved = svbLoadState();
-  if (saved && saved.order_id) {
-    fd.append('order_id', saved.order_id);
+  const formData = saved && saved.formData ? saved.formData : {};
+  if (formData.email) {
+    fd.append('email', formData.email);
   }
-  if (saved && saved.public_token) {
-    fd.append('token', saved.public_token);
+  if (formData.customer_name) {
+    fd.append('customer_name', formData.customer_name);
   }
 
-  svbLog('[SVB GATE] request', {
+  svbLog('[SVB CREATE INVOICE] request', {
     child_count: childCount,
     selected_video_id: SVB_SELECTED_VIDEO_ID,
     overlay_keys: Object.keys(overlayData || {}),
     has_segments: !!segmentsValue,
     photo_hashes: (photoHashes || []).length,
-    order_id: saved && saved.order_id ? saved.order_id : null,
-    token: saved && saved.public_token ? svbMaskToken(saved.public_token) : null,
-    fingerprint: fingerprint ? fingerprint.slice(0, 12) : '',
+    payment_required: paymentRequired,
   });
 
   const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
   if (!res.ok) {
-    svbError('[SVB GATE] network error', { status: res.status });
+    svbError('[SVB CREATE INVOICE] network error', { status: res.status });
     throw new Error('Сервер помилки оплати');
   }
 
   const data = await res.json();
   if (!data.success) {
-    svbError('[SVB GATE] error response', data);
+    svbError('[SVB CREATE INVOICE] error response', data);
     throw new Error(data.data || 'Оплата недоступна');
   }
 
   const payload = data.data || {};
-  svbUpdateState({
-    order_id: payload.order_id,
-    public_token: payload.public_token,
-  });
-  svbStoreLastOrderToken(payload.order_id, payload.public_token || '');
-
-  svbLog('[SVB GATE] response', {
-    order_id: payload.order_id,
-    public_token: payload.public_token ? svbMaskToken(payload.public_token) : null,
-    fingerprint_current: payload.fingerprint_current,
-    paid_fingerprint: payload.paid_fingerprint,
-    payment_status: payload.payment_status,
-    is_paid_for_current: payload.is_paid_for_current,
-    reason: payload.reason,
-    storage: payload.storage,
-  });
+  if (payload.order_id) {
+    svbUpdateState({
+      order_id: payload.order_id,
+      public_token: payload.public_token,
+    });
+    svbStoreLastOrderToken(payload.order_id, payload.public_token || '');
+  }
 
   return payload;
 }
@@ -3186,65 +3174,30 @@ async function svbHandleStep2Next() {
   console.groupEnd();
   try {
     const photoHashes = await svbCollectPhotoHashes();
-    let segmentsParsed = [];
-    try {
-      segmentsParsed = segmentsValue ? JSON.parse(segmentsValue) : [];
-    } catch (e) {
-      segmentsParsed = [];
+    const adminSkipPayment = !!(SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin());
+    const invoice = await svbCreateInvoiceRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes, !adminSkipPayment);
+
+    if (invoice && invoice.order_id) {
+      svbUpdateState({ order_id: invoice.order_id, public_token: invoice.public_token });
     }
 
-    const fingerprintPayload = {
-      child_count: childCount,
-      selected_video_id: SVB_SELECTED_VIDEO_ID,
-      voice: voicePayload,
-      segments: segmentsParsed,
-      overlay_json: overlayData,
-    };
-    const fingerprint = await svbComputeFingerprint(fingerprintPayload, photoHashes);
-    const gate = await svbPaymentGateRequest(childCount, overlayData, segmentsValue, voicePayload, photoHashes, fingerprint);
-    console.groupCollapsed('[SVB PAY][GATE] response');
-    console.log({
-      order_id: gate.order_id,
-      decision: gate.decision,
-      payment_status: gate.payment_status,
-      invoice_masked: gate.invoice_masked,
-      page_url_masked: gate.invoice_page_url_masked,
-      fingerprint_current: gate.fingerprint_current,
-      paid_fingerprint: gate.paid_fingerprint,
-    });
-    console.groupEnd();
-    svbPaymentStatus = gate.is_paid_for_current ? 'paid' : 'unpaid';
-    const gateDecision = gate.decision || (gate.is_paid_for_current ? 'paid' : 'not_paid');
-    const gateToken = gate.public_token || (savedState && savedState.public_token ? savedState.public_token : '');
-
-    svbLog('[SVB STEP2] gate decision', {
-      order_id: gate.order_id,
-      fingerprint_current: gate.fingerprint_current,
-      paid_fingerprint: gate.paid_fingerprint,
-      payment_status: gate.payment_status,
-      decision: gateDecision,
-      reason: gate.reason,
-    });
-
-    const normalizedDecision = gateDecision ? gateDecision.toLowerCase() : '';
-    if (normalizedDecision === 'paid' || gate.payment_status === 'success' || gate.is_paid) {
-      svbLog('[SVB STEP2] gate says paid, proceeding to generate');
-      svbSaveLastPaidOrder(gate.order_id, gateToken, gate.fingerprint_current);
+    if (adminSkipPayment || (invoice && invoice.bypass)) {
+      svbPaymentStatus = 'paid';
       svbProceedToGenerateFlow();
       return;
     }
 
-    const paymentUrl = gate.payment_url || gate.invoice_page_url || gate.pageUrl || '';
+    const paymentUrl = invoice.payment_url || '';
     if (paymentUrl) {
       console.log('[SVB PAY] payment_url=', svbMaskUrlToken(paymentUrl));
       console.log('[SVB PAY] redirecting…');
-      svbStoreLastOrderToken(gate.order_id, gateToken);
+      svbStoreLastOrderToken(invoice.order_id, invoice.public_token || '');
       svbSaveLastPaymentAttempt({
-        order_id: gate.order_id,
-        public_token: gateToken,
+        order_id: invoice.order_id,
+        public_token: invoice.public_token || '',
         pageUrl: paymentUrl,
-        invoiceId: gate.invoice_id || '',
-        fingerprint_prefix: (gate.fingerprint_current || '').toString().slice(0, 8),
+        invoiceId: invoice.invoice_id || '',
+        fingerprint_prefix: '',
       });
       window.location = paymentUrl;
       return;
@@ -3448,6 +3401,61 @@ let svbPollInterval = null;
 const next2Btn = document.getElementById('svb-next-2');
 if (next2Btn) {
   next2Btn.addEventListener('click', svbHandleStep2Next);
+}
+const restoreBtn = document.getElementById('svb-restore-btn');
+if (restoreBtn) {
+  restoreBtn.addEventListener('click', async () => {
+    const emailField = document.getElementById('svb-restore-email');
+    const orderField = document.getElementById('svb-restore-order');
+    const statusBox = document.getElementById('svb-restore-status');
+    const email = emailField ? emailField.value.trim() : '';
+    const orderId = orderField ? parseInt(orderField.value, 10) : 0;
+    if (!email || !orderId) {
+      if (statusBox) {
+        statusBox.style.display = 'block';
+        statusBox.textContent = 'Вкажіть email та номер замовлення.';
+      }
+      return;
+    }
+
+    if (statusBox) {
+      statusBox.style.display = 'block';
+      statusBox.textContent = 'Шукаємо замовлення...';
+    }
+
+    try {
+      const fd = new FormData();
+      fd.append('action', 'svb_resume_by_identity');
+      fd.append('_svb_nonce', SVB_AJAX.nonce);
+      fd.append('email', email);
+      fd.append('order_id', orderId);
+      const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.data || 'Не вдалося відновити');
+      }
+      const payload = data.data || {};
+      svbUpdateState(Object.assign({}, svbLoadState(), {
+        order_id: payload.order_id,
+        public_token: payload.public_token,
+        child_count: payload.child_count,
+        selected_video_id: payload.selected_video_id,
+        overlay_json: payload.overlay_json,
+        segments: payload.segments,
+        formData: Object.assign({}, svbLoadState().formData || {}, { email }),
+      }));
+      svbStoreLastOrderToken(payload.order_id, payload.public_token || '');
+      if (statusBox) {
+        statusBox.textContent = 'Замовлення знайдено. Переходимо до генерації...';
+      }
+      svbSetStep(3);
+      svbStartGenerate();
+    } catch (resumeErr) {
+      if (statusBox) {
+        statusBox.textContent = resumeErr.message || 'Не вдалося відновити замовлення';
+      }
+    }
+  });
 }
 const paymentRetryBtn = document.getElementById('svb-payment-retry');
 if (paymentRetryBtn) {

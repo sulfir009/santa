@@ -200,10 +200,6 @@ add_filter('redirect_canonical', function($redirect_url, $requested_url) {
         return false;
     }
 
-    if (isset($_GET['svb_payment_return'])) {
-        return false;
-    }
-
     return $redirect_url;
 }, 10, 2);
 
@@ -507,6 +503,8 @@ svb_register_ajax_handler('svb_request_name', 'svb_request_name', true);
 svb_register_ajax_handler('svb_find_video', 'svb_find_video', true);
 svb_register_ajax_handler('svb_order_recover', 'svb_order_recover', true);
 svb_register_ajax_handler('svb_order_resume_info', 'svb_order_resume_info', true);
+svb_register_ajax_handler('svb_create_invoice', 'svb_create_invoice', true);
+svb_register_ajax_handler('svb_resume_by_identity', 'svb_resume_by_identity', true);
 svb_register_ajax_handler('svb_gate', 'svb_gate', true);
 svb_register_ajax_handler('svb_payment_gate', 'svb_payment_gate', true);
 svb_register_ajax_handler('svb_pay_debug_state', 'svb_pay_debug_state', true);
