@@ -275,7 +275,9 @@ word-wrap: break-word
 }
 
 /* === 1. ПРАВИЛА СКРЫТИЯ (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЮЗЕРОВ) === */
-
+.svb-customer-col {
+    width: 100%;
+}
 /* === ВСТАВИТЬ ЭТО В БЛОК STYLE === */
 .svb-names-row {
     grid-column: 1 / -1; 
