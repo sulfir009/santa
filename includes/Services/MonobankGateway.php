@@ -369,8 +369,31 @@ function svb_handle_monobank_return() {
         return;
     }
 
-    $order_data = svb_init_user_order();
-    $uid = $order_data['uid'] ?? '';
+    $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
+    $token_from_url = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+    if (!$token_from_url && isset($_GET['svb_order'])) {
+        $token_from_url = sanitize_text_field(wp_unslash($_GET['svb_order']));
+    }
+
+    $order_row = null;
+    if ($order_id && $token_from_url) {
+        $order_row = svb_get_order_by_id_and_token($order_id, $token_from_url);
+    }
+
+    $order_data = $order_row ?: svb_init_user_order();
+    $uid = $order_data['uid'] ?? ($order_row['session_id'] ?? '');
+    if ($order_row && !empty($order_row['session_id'])) {
+        svb_set_lax_cookie('svb_session', $order_row['session_id'], time() + MONTH_IN_SECONDS, true);
+        $_COOKIE['svb_session'] = $order_row['session_id'];
+    }
+    if ($order_row && $uid) {
+        svb_set_lax_cookie('svb_user_uid', $uid, time() + MONTH_IN_SECONDS, false);
+        $_COOKIE['svb_user_uid'] = $uid;
+    }
+    if ($order_row && $token_from_url) {
+        svb_set_lax_cookie('svb_public_token', $token_from_url, time() + MONTH_IN_SECONDS, true);
+        $_COOKIE['svb_public_token'] = $token_from_url;
+    }
     if (!$uid) {
         return;
     }
