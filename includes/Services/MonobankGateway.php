@@ -138,6 +138,14 @@ function svb_monobank_apply_payment_status(array $order_row, array $status_paylo
 
     if ($normalized_status === 'success') {
         $updates['paid_fingerprint'] = $payment['paid_fingerprint'] ?? ($order_row['fingerprint_current'] ?? '');
+        if (!empty($status_payload['paymentDetails']['transactionId'])) {
+            $updates['transaction_id'] = sanitize_text_field($status_payload['paymentDetails']['transactionId']);
+        } elseif (!empty($status_payload['transactionId'])) {
+            $updates['transaction_id'] = sanitize_text_field($status_payload['transactionId']);
+        }
+        if (empty($payment['paid_at'])) {
+            $updates['paid_at'] = time();
+        }
     }
 
     $updated_payment = svb_update_order_payment_by_order_id($order_row['order_id'], $updates);

@@ -93,6 +93,7 @@ let svbState = null;
 let svbRecoveredFromLookup = false;
 let svbLookupDownloadUrl = '';
 let svbLookupInFlight = false;
+let svbStep2InFlight = false;
 
 function svbGetVideoSelectionMap() {
     const state = svbLoadState();
@@ -2200,10 +2201,10 @@ async function svbHandleStep1Next(e) {
 }
 
 async function svbHandleResumeFromUrl(params) {
-  if (!params || !params.has('svb_resume_order')) return false;
+  if (!params || (!params.has('svb_resume_order') && !params.has('svb_order'))) return false;
 
   const orderId = parseInt(params.get('order_id') || '0', 10);
-  const token = params.get('token') || '';
+  const token = params.get('token') || params.get('svb_order') || '';
   if (!orderId || !token) return false;
 
   const flagKey = `svb_resume_redirect_done:${orderId}`;
@@ -2216,6 +2217,7 @@ async function svbHandleResumeFromUrl(params) {
 
   svbEnsureStateStructure();
   svbUpdateState({ order_id: orderId, public_token: token });
+  svbStoreLastOrderToken(orderId, token);
   try {
     document.cookie = `svb_public_token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
   } catch (e) {}
@@ -2290,6 +2292,7 @@ async function svbAutoResumeFromLocal(opts = {}) {
 
   const lastAttempt = svbLoadLastPaymentAttempt();
   let stored = svbLoadLastPaidOrder();
+  const storedOrderToken = svbLoadLastOrderToken();
 
   if (lastAttempt && (!stored || (lastAttempt.saved_at > (stored.saved_at || 0)))) {
     stored = {
@@ -2298,6 +2301,15 @@ async function svbAutoResumeFromLocal(opts = {}) {
       saved_at: lastAttempt.saved_at || Date.now(),
     };
     console.log('[SVB RESUME][CHOOSE]', { chosen: 'lastPaymentAttempt', order_id: stored.order_id });
+  }
+
+  if ((!stored || !stored.order_id || !stored.token) && storedOrderToken && storedOrderToken.order_id) {
+    stored = {
+      order_id: storedOrderToken.order_id,
+      token: storedOrderToken.token,
+      saved_at: storedOrderToken.saved_at || Date.now(),
+    };
+    console.log('[SVB RESUME][CHOOSE]', { chosen: 'lastOrderToken', order_id: stored.order_id });
   }
 
   if (!stored || !stored.order_id || !stored.token) {
@@ -2349,6 +2361,7 @@ const SVB_PAYMENT_SESSION = {
 
 const SVB_RESUME_STORAGE = 'svb_last_paid_order';
 const SVB_LAST_PAYMENT_ATTEMPT = 'svb_last_payment_attempt';
+const SVB_LAST_ORDER_TOKEN = 'svb_last_order_token';
 
 function svbSaveLastPaymentAttempt(meta = {}) {
   if (!meta.order_id) return;
@@ -2370,6 +2383,30 @@ function svbSaveLastPaymentAttempt(meta = {}) {
     fingerprint_prefix: payload.fingerprint_prefix,
     step: (svbLoadState().step) || null,
   });
+}
+
+function svbStoreLastOrderToken(orderId, token) {
+  if (!orderId || !token) return;
+  const payload = {
+    order_id: orderId,
+    token,
+    saved_at: Date.now(),
+  };
+  try { localStorage.setItem(SVB_LAST_ORDER_TOKEN, JSON.stringify(payload)); } catch (e) {}
+}
+
+function svbLoadLastOrderToken() {
+  try {
+    const raw = localStorage.getItem(SVB_LAST_ORDER_TOKEN);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.order_id && parsed.token) return parsed;
+  } catch (e) {}
+  return null;
+}
+
+function svbClearLastOrderToken() {
+  try { localStorage.removeItem(SVB_LAST_ORDER_TOKEN); } catch (e) {}
 }
 
 function svbLoadLastPaymentAttempt() {
@@ -2748,12 +2785,31 @@ function svbShowPaymentError(message) {
   box.style.display = 'block';
 }
 
+function svbAugmentReturnUrlWithOrder(url, orderContext = {}) {
+  try {
+    const target = new URL(url, window.location.origin);
+    if (orderContext && orderContext.order_id) {
+      target.searchParams.set('order_id', orderContext.order_id);
+    }
+    if (orderContext && orderContext.public_token) {
+      target.searchParams.set('token', orderContext.public_token);
+      target.searchParams.set('svb_order', orderContext.public_token);
+    }
+    target.searchParams.set('svb_payment_return', '1');
+    return target.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
 async function svbCreateInvoice(childCount, orderContext = {}, forceNew = false) {
   const fd = new FormData();
   fd.append('action', 'svb_monobank_create_invoice');
   fd.append('_svb_nonce', SVB_AJAX.nonce);
   fd.append('child_count', childCount);
-  fd.append('return_url', SVB_PAYMENT.return_url || window.location.href);
+  const safeReturnUrl = (SVB_PAYMENT.return_url || window.location.href || '').split('#')[0];
+  const enhancedReturnUrl = svbAugmentReturnUrlWithOrder(safeReturnUrl, orderContext);
+  fd.append('return_url', enhancedReturnUrl);
 
   if (orderContext && orderContext.order_id) {
     fd.append('order_id', orderContext.order_id);
@@ -2770,13 +2826,12 @@ async function svbCreateInvoice(childCount, orderContext = {}, forceNew = false)
     fd.append('payment_disabled', '1');
   }
 
-  const safeReturnUrl = (SVB_PAYMENT.return_url || window.location.href || '').split('#')[0];
   svbLog('[SVB PAY] Preparing invoice request', {
     action: 'svb_monobank_create_invoice',
     hasNonce: !!SVB_AJAX.nonce,
     payload: {
       child_count: childCount,
-      return_url: safeReturnUrl,
+      return_url: enhancedReturnUrl,
       payment_disabled: SVB_PAYMENT.is_admin && svbIsPaymentDisabledByAdmin() ? '1' : '0',
       order_id: orderContext && orderContext.order_id ? orderContext.order_id : null,
       token: orderContext && orderContext.public_token ? svbMaskToken(orderContext.public_token) : null,
@@ -2799,6 +2854,43 @@ async function svbCreateInvoice(childCount, orderContext = {}, forceNew = false)
   }
 
   return data.data;
+}
+
+async function svbStartPaymentRedirect(orderId, token, gateContext = {}, childCount = 1) {
+  console.log(`[SVB PAY] starting payment for order_id=${orderId || 'n/a'}`, { token_masked: svbMaskToken(token || '') });
+  if (orderId && token) {
+    svbStoreLastOrderToken(orderId, token);
+  }
+
+  const paymentUrl = gateContext.payment_url || gateContext.invoice_page_url || gateContext.pageUrl || '';
+  if (paymentUrl) {
+    console.log('[SVB PAY] payment_url=', svbMaskUrlToken(paymentUrl));
+    console.log('[SVB PAY] redirecting…');
+    window.location = paymentUrl;
+    return;
+  }
+
+  const invoice = await svbCreateInvoice(childCount, { order_id: orderId, public_token: token }, true);
+  if (invoice && invoice.invoiceId) {
+    svbStoreInvoiceId(invoice.invoiceId);
+    svbStorePaymentDebugMeta(orderId || 0, invoice.invoiceId, gateContext.fingerprint_current || '');
+    svbSaveLastPaymentAttempt({
+      order_id: orderId || 0,
+      public_token: token || '',
+      invoiceId: invoice.invoiceId,
+      pageUrl: invoice.pageUrl || '',
+      fingerprint_prefix: (gateContext.fingerprint_current || '').toString().slice(0, 8),
+    });
+  }
+
+  if (invoice && invoice.pageUrl) {
+    console.log('[SVB PAY] payment_url=', svbMaskUrlToken(invoice.pageUrl));
+    console.log('[SVB PAY] redirecting…');
+    window.location = invoice.pageUrl;
+    return;
+  }
+
+  svbShowPaymentError('Не вдалося отримати лінк на оплату. Спробуйте ще раз.');
 }
 
 async function svbInvalidateInvoice(orderId, token) {
@@ -2870,6 +2962,7 @@ async function svbPaymentGateRequest(childCount, overlayData, segmentsValue, voi
     order_id: payload.order_id,
     public_token: payload.public_token,
   });
+  svbStoreLastOrderToken(payload.order_id, payload.public_token || '');
 
   svbLog('[SVB GATE] response', {
     order_id: payload.order_id,
@@ -3005,6 +3098,14 @@ function svbProceedToGenerateFlow() {
 }
 
 async function svbHandleStep2Next() {
+  if (svbStep2InFlight) {
+    console.log('[SVB PAY][STEP2] click ignored: in-flight');
+    return;
+  }
+  const nextBtn = document.getElementById('svb-next-2');
+  svbStep2InFlight = true;
+  if (nextBtn) nextBtn.disabled = true;
+
   svbHidePaymentError();
   svbPersistStep2State();
   svbSerializeSegmentsToField();
@@ -3054,6 +3155,8 @@ async function svbHandleStep2Next() {
   if (!requirePayment) {
     svbLog('[SVB STEP2] payRequired=false, skipping payment and going to step3');
     svbProceedToGenerateFlow();
+    svbStep2InFlight = false;
+    if (nextBtn) nextBtn.disabled = false;
     return;
   }
 
@@ -3084,7 +3187,7 @@ async function svbHandleStep2Next() {
       reason: gate.reason,
     });
 
-    if (gateDecision === 'paid') {
+    if (gateDecision === 'paid' || gate.payment_status === 'success' || gate.is_paid) {
       svbLog('[SVB STEP2] gate says paid_match, proceeding to generate');
       svbSaveLastPaidOrder(gate.order_id, gateToken, gate.fingerprint_current);
       svbProceedToGenerateFlow();
@@ -3096,48 +3199,18 @@ async function svbHandleStep2Next() {
       return;
     }
 
-    if (gateDecision === 'failed') {
-      svbShowPaymentError('Оплата не підтверджена. Спробуйте ще раз.');
-      return;
-    }
-
     svbPaymentStatus = 'pending';
-    svbLog('[SVB STEP2] payRequired=true → creating invoice');
-    const invoice = await svbCreateInvoice(childCount, gate);
-
-    if (invoice && invoice.bypass) {
-      svbLog('[SVB STEP2] invoice bypass received, going to step3');
-      svbProceedToGenerateFlow();
-      return;
-    }
-
-    if (invoice && invoice.invoiceId) {
-      svbLog('[SVB PAY] invoiceId received', { invoiceId: invoice.invoiceId });
-      svbStoreInvoiceId(invoice.invoiceId);
-      svbStorePaymentDebugMeta(gate.order_id, invoice.invoiceId, gate.fingerprint_current);
-      svbSaveLastPaymentAttempt({
-        order_id: gate.order_id,
-        public_token: gateToken,
-        invoiceId: invoice.invoiceId,
-        pageUrl: invoice.pageUrl || gate.invoice_page_url || '',
-        fingerprint_prefix: gate.fingerprint_current ? String(gate.fingerprint_current).slice(0, 8) : '',
-      });
-    }
-
-    if (invoice && invoice.pageUrl) {
-      svbLog('[SVB PAY] redirecting to pageUrl', { pageUrl: invoice.pageUrl });
-      window.location = invoice.pageUrl;
-      return;
-    }
-
-    svbLog('[SVB PAY] missing pageUrl, cannot redirect', invoice || {});
-    svbShowPaymentError('Не вдалося створити інвойс для оплати.');
+    svbLog('[SVB STEP2] payRequired=true → creating/using invoice');
+    await svbStartPaymentRedirect(gate.order_id, gateToken, gate, childCount);
   } catch (err) {
     svbError('[SVB PAY] invoice creation failed', err);
     if (svbIsDebugMode()) {
       alert((err && err.message) ? err.message : 'Invoice creation failed');
     }
     svbShowPaymentError(err.message || 'Оплата тимчасово недоступна.');
+  } finally {
+    svbStep2InFlight = false;
+    if (nextBtn) nextBtn.disabled = false;
   }
 }
 
@@ -3237,10 +3310,17 @@ async function svbHandlePaymentReturnFlow(params) {
   const isPaymentReturn = params.has('svb_payment_return');
   const savedState = svbEnsureStateStructure();
   const lastAttempt = svbLoadLastPaymentAttempt();
+  const storedOrder = svbLoadLastOrderToken();
   const hasState = !!savedState;
+  const urlOrderId = parseInt(params.get('order_id') || '0', 10);
+  const urlToken = params.get('token') || params.get('svb_order') || '';
   const paymentAttemptId = lastAttempt && lastAttempt.order_id ? lastAttempt.order_id : null;
-  const orderId = paymentAttemptId || (savedState && savedState.order_id) || 0;
-  const token = (lastAttempt && lastAttempt.public_token) || (savedState && savedState.public_token) || '';
+  const orderId = urlOrderId || paymentAttemptId || (savedState && savedState.order_id) || (storedOrder && storedOrder.order_id) || 0;
+  const token = urlToken || (lastAttempt && lastAttempt.public_token) || (savedState && savedState.public_token) || (storedOrder && storedOrder.token) || '';
+
+  if (orderId && token) {
+    svbStoreLastOrderToken(orderId, token);
+  }
 
   console.log('[SVB PAY][RETURN]', {
     hasLastPaymentAttempt: !!lastAttempt,
@@ -3253,9 +3333,10 @@ async function svbHandlePaymentReturnFlow(params) {
 
   await svbFetchSessionDebug('payment_return');
 
-  if (!lastAttempt || !orderId) {
-    svbShowPaymentProcessing('Повернення з оплати: замовлення не знайдено. Поверніться до кроку 1.');
-    svbSetStep(1);
+  if (!orderId) {
+    svbShowPaymentProcessing('Повернення з оплати: замовлення не знайдено.');
+    svbSetStep(2);
+    svbRestoreStep2State();
     return;
   }
 
@@ -3273,16 +3354,16 @@ async function svbHandlePaymentReturnFlow(params) {
       svbShowPendingNotice('Оплата ще не підтверджена. Очікуємо…', {
         order_id: orderId,
         token,
-        pageUrl: state.pageUrl || lastAttempt.pageUrl || '',
-        invoice_id: state.invoice_id || lastAttempt.invoiceId || '',
-        fingerprint_current: state.fingerprint_current || lastAttempt.fingerprint_prefix || '',
+        pageUrl: state.pageUrl || (lastAttempt ? lastAttempt.pageUrl : '') || '',
+        invoice_id: state.invoice_id || (lastAttempt ? lastAttempt.invoiceId : '') || '',
+        fingerprint_current: state.fingerprint_current || (lastAttempt ? lastAttempt.fingerprint_prefix : '') || '',
         child_count: savedState.child_count || 1,
       });
       svbStartPendingPoll();
       return;
     }
 
-    if (state.decision === 'paid' || state.decision === 'success') {
+    if (state.decision === 'paid' || state.decision === 'success' || state.is_paid) {
       svbSaveLastPaidOrder(orderId, token, state.fingerprint_current || state.paid_fingerprint);
       svbUpdateState({ order_id: orderId, public_token: token, payment_status: 'success' });
 
@@ -4387,7 +4468,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const urlParams = new URLSearchParams(window.location.search);
   const isPaymentReturn = urlParams.has('svb_payment_return');
-  const isResumeFromUrl = urlParams.has('svb_resume_order');
+  const isResumeFromUrl = urlParams.has('svb_resume_order') || urlParams.has('svb_order');
 
   (async () => {
     let resumeHandled = false;
