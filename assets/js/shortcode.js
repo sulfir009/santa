@@ -4283,23 +4283,27 @@ if (saveBtn) {
                 console.groupEnd();
             }
 
+            const payloadMessage = (json && json.data) ? (json.data.message || json.data) : '';
+
             if (!response.ok) {
-                const message = (json && json.data) ? json.data : `Помилка ${status || ''}`;
-                throw new Error(message || 'Запит відхилено');
+                const fallback = status ? `Сталася помилка на сервері (${status})` : 'Сталася помилка на сервері';
+                throw new Error(payloadMessage || fallback);
             }
 
             if (!json) {
-                throw new Error('Некоректна відповідь сервера');
+                const fallback = status ? `Сталася помилка на сервері (${status})` : 'Некоректна відповідь сервера';
+                throw new Error(payloadMessage || fallback);
             }
 
             if(json.success) {
                 saveBtn.disabled = false;
                 saveBtn.textContent = oldText;
-                alert('✅ ' + json.data);
+                const okText = payloadMessage || json.data || 'Налаштування збережено';
+                alert('✅ ' + okText);
                 return;
             }
 
-            const errText = json.data || 'Помилка збереження';
+            const errText = payloadMessage || json.data || 'Помилка збереження';
             throw new Error(errText);
         })
         .catch(err => {
