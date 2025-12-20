@@ -19,11 +19,22 @@ input.svb-input {
 .svb-actions { display:flex; gap:12px; margin-top:20px; }
 
 /* === Кнопки (Загальні) === */
-.svb-btn { appearance:none; border:none; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer; transition:.2s ease; }
+.svb-btn { appearance:none; border:none; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer; transition:.2s ease; display: inline-flex; align-items: center; gap: 8px; line-height: 1.2; text-decoration: none; }
+.svb-btn:focus-visible { outline: 2px solid #B81F1F; outline-offset: 2px; box-shadow: 0 0 0 3px rgba(214,40,40,0.2); }
 .svb-btn.primary { background:#D62828; color:#fff; }
 .svb-btn.primary:hover { background:#B81F1F; }
+.svb-btn.primary:disabled, .svb-btn.primary[disabled] { background: #f1b6b6; color: #fff; cursor: not-allowed; box-shadow: none; opacity: 0.8; }
 .svb-btn.ghost { background:#f3f3f3; padding: 6px 10px; font-size: 13px; }
 .svb-btn--next { width: 100%; justify-content: center; }
+@media (min-width: 1024px) {
+    .svb-btn--next {
+        min-height: 50px;
+        padding: 0 26px;
+        font-size: 16px;
+        border-radius: 14px;
+        box-shadow: 0 8px 18px rgba(214, 40, 40, 0.2);
+    }
+}
 
 .svb-lookup {
     background: #fff6f0;
@@ -42,7 +53,7 @@ input.svb-input {
 .svb-lookup__status { min-height: 18px; font-size: 13px; color: #c0392b; }
 .svb-lookup__status.is-success { color: #1b7f3a; }
 .svb-lookup__status.is-error { color: #c0392b; }
-.svb-name-play.is-loading { opacity: 0.6; }
+.svb-name-play.is-loading { opacity: 0.65; }
 
 /* === Сітка та поля === */
 .svb-grid { display:grid; gap:16px; }
@@ -332,9 +343,11 @@ word-wrap: break-word
 /* Стили кнопки Play */
 .svb-name-play {
     display: none; /* Скрыта пока не выбрано имя */
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+    padding: 10px 14px;
+    min-height: 38px;
+    width: auto;
+    height: auto;
+    border-radius: 18px;
     background: #D62828;
     color: #fff;
     border: none;
@@ -342,16 +355,17 @@ word-wrap: break-word
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: background 0.2s;
-    font-size: 14px;
-    padding: 0;
+    transition: background 0.2s, transform 0.2s;
+    font-size: 13px;
+    font-weight: 700;
+    gap: 6px;
 }
-.svb-name-play:hover {
-    background: #B81F1F;
-}
-/* Если кнопка активна (display: flex), центруем иконку */
+.svb-name-play:hover { background: #B81F1F; }
+.svb-name-play:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 3px rgba(214,40,40,0.4); }
+.svb-name-play.is-loading { opacity: 0.65; cursor: progress; }
+/* Если кнопка активна (display: flex), центруем іконку */
 .svb-name-play[style*="display: flex"] {
-    display: flex !important;
+    display: inline-flex !important;
 }
 
 /* === Виджет запроса имени === */
@@ -436,6 +450,41 @@ word-wrap: break-word
     margin-top: 6px;
     display: inline-block;
     font-weight: 500;
+}
+
+/* === Додаткові мобільні правки === */
+@media (max-width: 1024px) {
+    .svb-wrap { padding: 0 10px; }
+    .svb-card { padding: 16px 12px; }
+    .svb-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .svb-grid.cols-2 { grid-template-columns: 1fr; }
+    .svb-audio-row { flex-direction: column; align-items: stretch; }
+    .svb-audio-row .svb-select { width: 100%; }
+    .svb-audio-row .svb-play { align-self: flex-start; }
+    .svb-child-count-wrap { width: 100%; justify-content: center; }
+    .svb-child-label { width: 100%; white-space: normal; }
+    .svb-child-label .svb-c-text { white-space: normal; }
+    .svb-lookup__fields { grid-template-columns: 1fr; }
+    .svb-lookup__actions { flex-direction: column; align-items: stretch; }
+    .svb-actions { width: 100%; }
+    .svb-vid-controls { width: 100%; }
+}
+
+@media (max-width: 768px) {
+    .svb-wrap { padding: 0 8px; }
+    .svb-actions { flex-direction: column; }
+    .svb-actions .svb-btn { width: 100%; }
+    .svb-photo-grid { grid-template-columns: 1fr; }
+    .svb-input-wrapper { flex-wrap: wrap; }
+    .svb-input-wrapper .svb-input { flex: 1 1 100%; }
+    .svb-name-play { width: 100%; justify-content: center; }
+    .svb-header { align-items: flex-start; }
+    .svb-lookup { padding: 12px; }
+    .svb-lookup__fields { gap: 10px; }
+    .svb-vid-controls { flex-direction: column; align-items: stretch; }
+    .svb-vid-controls input[type="range"] { width: 100%; }
+    .svb-vid-preview { margin: 0; }
+    .svb-customer-cell { flex-direction: column; gap: 12px; }
 }
 .svb-req-trigger-link:hover {
     color: #B81F1F;

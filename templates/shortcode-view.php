@@ -95,7 +95,7 @@
                 <label class="svb-label">Імʼя (Дитина 1)</label>
                 <div class="svb-input-wrapper">
                     <input class="svb-input" type="text" name="name_text" placeholder="Почніть вводити ім'я..." autocomplete="off" />
-                    <button class="svb-play svb-name-play" type="button" id="svb-name-play-1" title="Прослухати ім'я">▶</button>
+                    <button class="svb-play svb-name-play" type="button" id="svb-name-play-1" title="Прослухати ім'я">🔊 Прослухати</button>
                 </div>
                 <div id="svb-name-suggest"></div>
                 <select name="name_audio" style="display:none;"></select> 
@@ -111,7 +111,7 @@
                  <label class="svb-label">Імʼя (Дитина 2)</label>
                  <div class="svb-input-wrapper">
                      <input class="svb-input" type="text" name="name_text_2" placeholder="Ім'я другої дитини..." autocomplete="off" />
-                     <button class="svb-play svb-name-play" type="button" id="svb-name-play-2" title="Прослухати ім'я">▶</button>
+                     <button class="svb-play svb-name-play" type="button" id="svb-name-play-2" title="Прослухати ім'я">🔊 Прослухати</button>
                  </div>
                  <div id="svb-name-suggest-2" class="svb-suggest-box"></div>
                  <select name="name_audio_2" style="display:none;"></select>
@@ -123,7 +123,7 @@
                  <label class="svb-label">Імʼя (Дитина 3)</label>
                  <div class="svb-input-wrapper">
                      <input class="svb-input" type="text" name="name_text_3" placeholder="Ім'я третьої дитини..." autocomplete="off" />
-                     <button class="svb-play svb-name-play" type="button" id="svb-name-play-3" title="Прослухати ім'я">▶</button>
+                     <button class="svb-play svb-name-play" type="button" id="svb-name-play-3" title="Прослухати ім'я">🔊 Прослухати</button>
                  </div>
                  <div id="svb-name-suggest-3" class="svb-suggest-box"></div>
                  <select name="name_audio_3" style="display:none;"></select>
