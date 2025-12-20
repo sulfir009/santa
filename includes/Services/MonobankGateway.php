@@ -138,6 +138,14 @@ function svb_monobank_apply_payment_status(array $order_row, array $status_paylo
 
     if ($normalized_status === 'success') {
         $updates['paid_fingerprint'] = $payment['paid_fingerprint'] ?? ($order_row['fingerprint_current'] ?? '');
+        if (!empty($status_payload['paymentDetails']['transactionId'])) {
+            $updates['transaction_id'] = sanitize_text_field($status_payload['paymentDetails']['transactionId']);
+        } elseif (!empty($status_payload['transactionId'])) {
+            $updates['transaction_id'] = sanitize_text_field($status_payload['transactionId']);
+        }
+        if (empty($payment['paid_at'])) {
+            $updates['paid_at'] = time();
+        }
     }
 
     $updated_payment = svb_update_order_payment_by_order_id($order_row['order_id'], $updates);
@@ -361,8 +369,31 @@ function svb_handle_monobank_return() {
         return;
     }
 
-    $order_data = svb_init_user_order();
-    $uid = $order_data['uid'] ?? '';
+    $order_id = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
+    $token_from_url = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+    if (!$token_from_url && isset($_GET['svb_order'])) {
+        $token_from_url = sanitize_text_field(wp_unslash($_GET['svb_order']));
+    }
+
+    $order_row = null;
+    if ($order_id && $token_from_url) {
+        $order_row = svb_get_order_by_id_and_token($order_id, $token_from_url);
+    }
+
+    $order_data = $order_row ?: svb_init_user_order();
+    $uid = $order_data['uid'] ?? ($order_row['session_id'] ?? '');
+    if ($order_row && !empty($order_row['session_id'])) {
+        svb_set_lax_cookie('svb_session', $order_row['session_id'], time() + MONTH_IN_SECONDS, true);
+        $_COOKIE['svb_session'] = $order_row['session_id'];
+    }
+    if ($order_row && $uid) {
+        svb_set_lax_cookie('svb_user_uid', $uid, time() + MONTH_IN_SECONDS, false);
+        $_COOKIE['svb_user_uid'] = $uid;
+    }
+    if ($order_row && $token_from_url) {
+        svb_set_lax_cookie('svb_public_token', $token_from_url, time() + MONTH_IN_SECONDS, true);
+        $_COOKIE['svb_public_token'] = $token_from_url;
+    }
     if (!$uid) {
         return;
     }
