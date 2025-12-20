@@ -2862,12 +2862,21 @@ async function svbStartPaymentRedirect(orderId, token, gateContext = {}, childCo
     svbStoreLastOrderToken(orderId, token);
   }
 
-  const paymentUrl = gateContext.payment_url || gateContext.invoice_page_url || gateContext.pageUrl || '';
+  const status = (gateContext && gateContext.payment_status ? gateContext.payment_status : '').toString().toLowerCase();
+  const decision = (gateContext && gateContext.decision ? gateContext.decision : '').toString().toLowerCase();
+  const forceFreshInvoice = ['failure', 'failed', 'no_invoice', 'mono_error', 'not_paid', 'unpaid', 'expired', 'canceled', 'cancelled']
+    .includes(status) || ['failed', 'not_paid'].includes(decision);
+
+  const paymentUrl = forceFreshInvoice ? '' : (gateContext.payment_url || gateContext.invoice_page_url || gateContext.pageUrl || '');
   if (paymentUrl) {
     console.log('[SVB PAY] payment_url=', svbMaskUrlToken(paymentUrl));
     console.log('[SVB PAY] redirecting…');
     window.location = paymentUrl;
     return;
+  }
+
+  if (forceFreshInvoice) {
+    console.warn('[SVB PAY] forcing new invoice because gate returned failed/unpaid status', { status, decision });
   }
 
   const invoice = await svbCreateInvoice(childCount, { order_id: orderId, public_token: token }, true);
