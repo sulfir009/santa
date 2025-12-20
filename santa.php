@@ -405,19 +405,6 @@ function svb_handle_payment_return_redirect() {
 
         svb_clear_user_state('payment_return_not_found');
 
-        if ($has_return_flag) {
-            $fallback_target = home_url('/');
-            if ($is_token_valid) {
-                $fallback_target = add_query_arg([
-                    'svb_step'  => 2,
-                    'svb_token' => $token,
-                ], $fallback_target);
-            }
-
-            wp_safe_redirect($fallback_target);
-            exit;
-        }
-
         return;
     }
 
@@ -441,11 +428,19 @@ function svb_handle_payment_return_redirect() {
     if ($has_return_flag) {
         $resume_url = add_query_arg(
             [
+                'svb_return' => 1,
                 'svb_token' => $public_token,
-                'svb_step' => 3,
+                'svb_order' => $order_row['order_id'] ?? 0,
             ],
             home_url('/')
         );
+
+        $current_url = (is_ssl() ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '');
+        if ($current_url === $resume_url || isset($_COOKIE['svb_return_redirected'])) {
+            return;
+        }
+
+        svb_set_lax_cookie('svb_return_redirected', '1', time() + 300, true);
 
         wp_safe_redirect($resume_url);
         exit;

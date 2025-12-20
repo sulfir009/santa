@@ -2411,7 +2411,7 @@ function svb_generation_state_payload($order_row) {
     $result = svb_read_order_result($order_row);
     $video_path = isset($result['video_path']) ? $result['video_path'] : '';
     $file_exists = $video_path && file_exists($video_path);
-    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'processing');
+    $status = isset($result['status']) ? $result['status'] : ($file_exists ? 'done' : 'queued');
     $download_url = '';
 
     if ($file_exists && $public_token && $order_id) {
@@ -2423,9 +2423,11 @@ function svb_generation_state_payload($order_row) {
             svb_update_order_result_status($order_id, $result);
         }
     } elseif (!isset($result['status'])) {
-        $result['status'] = 'processing';
+        $result['status'] = 'queued';
         $result['started_at'] = $result['started_at'] ?? time();
         svb_update_order_result_status($order_id, $result);
+    } elseif ($status === 'queued' && !empty($result['started_at'])) {
+        $status = 'running';
     }
 
     return [
@@ -2454,12 +2456,13 @@ function svb_start_generation() {
     }
 
     $payload = svb_generation_state_payload($order);
-    if ($payload['status'] !== 'done' && empty($payload['started_at'])) {
+    if ($payload['status'] === 'queued' || $payload['status'] === 'processing') {
         $result = svb_read_order_result($order);
-        if (!isset($result['status'])) {
-            $result['status'] = 'processing';
-            $result['started_at'] = time();
+        if (!isset($result['status']) || in_array($result['status'], ['queued', 'processing'], true)) {
+            $result['status'] = 'running';
+            $result['started_at'] = $result['started_at'] ?? time();
             svb_update_order_result_status($payload['order_id'], $result);
+            $payload['status'] = 'running';
         }
     }
 

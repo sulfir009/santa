@@ -476,11 +476,20 @@ function svb_handle_monobank_return() {
     if ($token_from_url) {
         $redirect = add_query_arg(
             [
+                'svb_return' => 1,
                 'svb_token' => $token_from_url,
-                'svb_step' => 3,
+                'svb_order' => isset($order_row['order_id']) ? (int) $order_row['order_id'] : 0,
             ],
             home_url('/')
         );
+
+        $current_url = (is_ssl() ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '');
+        if ($current_url === $redirect || isset($_COOKIE['svb_return_redirected'])) {
+            return;
+        }
+
+        svb_set_lax_cookie('svb_return_redirected', '1', time() + 300, true);
+
         wp_safe_redirect($redirect);
         exit;
     }
