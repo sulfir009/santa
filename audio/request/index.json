@@ -27,7 +27,6 @@
     "file": "Postarajsja prydiljaty bil_she chasu navchannju..mp3",
     "label": "Постарайся приділяти більше часу навчанню"
   },
-
   {
     "file": "Postarajsja samostijno zbyraty svoyi rechi..mp3",
     "label": "Постарайся самостійно збирати свої речі"
@@ -48,7 +47,7 @@
     "file": "Postarajsja bilshe vuvchaty angl..mp3",
     "label": "Постарайся більше вивчати англійську мову"
   },
-{
+  {
     "file": "Postarajtesja bil_she chasu provodyty na svizhomu povitri.mp3",
     "label": "Постарайтеся більше гуляти на свіжому повітрі",
     "type": "group"
@@ -102,9 +101,10 @@
     "file": "Postaraitesjsja trokhy bil_she chytaty knyzhky..mp3",
     "label": "Постарайтеся трохи більше читати книжки",
     "type": "group"
-  }
-{
-    "file": "Postaraitesjsja bilshe vuvchaty angl..mp3",
-    "label": "Постарайтеся більше вивчати англійську мову"
   },
+  {
+    "file": "Postaraitesjsja bilshe vuvchaty angl..mp3",
+    "label": "Постарайтеся більше вивчати англійську мову",
+    "type": "group"
+  }
 ]

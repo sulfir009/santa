@@ -345,7 +345,9 @@ word-wrap: break-word
 }
 
 /* === 1. ПРАВИЛА СКРЫТИЯ (ТОЛЬКО ДЛЯ ОБЫЧНЫХ ЮЗЕРОВ) === */
-
+.svb-customer-col {
+    width: 100%;
+}
 /* === ВСТАВИТЬ ЭТО В БЛОК STYLE === */
 .svb-names-row {
     grid-column: 1 / -1; 
@@ -744,6 +746,38 @@ word-wrap: break-word
         align-self: center;
     }
     .svb-child-label .svb-c-text { white-space: nowrap; }
+}
+
+@media (max-width: 1023.98px) {
+    .svb-child-label {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+        gap: 8px;
+    }
+    .svb-c-price {
+        margin-left: 0;
+        align-self: flex-start;
+    }
+}
+
+@media (min-width: 1024px) {
+    .svb-child-count-wrap {
+        justify-content: flex-start;
+        gap: 12px;
+    }
+    .svb-child-label {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        width: auto;
+        min-width: 0;
+    }
+    .svb-c-price {
+        margin-left: auto;
+        align-self: center;
+    }
 }
 /* ========================================= */
 /* === СТИЛИ ДЛЯ ПК (Сетка) === */
