@@ -2289,10 +2289,10 @@ async function svbHandleResumeFromUrl(params) {
       svbSetStep(3);
       await svbHandlePaidResume(resolvedOrderId, token, info);
     } else {
-      svbSetStep(2);
-      if (typeof svbRenderUI === 'function') {
-        svbRenderUI();
-        svbRestoreStep2State();
+      // Even if resume info is missing (e.g., webhook delay), keep user on step 3 and kick off generation by token.
+      svbSetStep(3);
+      if (token) {
+        svbStartGenerationByToken(token, resolvedOrderId || null);
       }
     }
   } catch (resumeErr) {
