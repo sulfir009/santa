@@ -32,14 +32,14 @@
     "label": "За те, що вже спиш у своєму ліжечку"
   },
   {
+    "file": "Za tvoi starannya u navchanni..mp3",
+    "label": "За твої старання у навчанні"
+  },
+  {
     "file": "Za tvoju chesnist_, i spravedlyvist_..mp3",
     "label": "За твою чесність і справедливість"
   },
   {
-    "file": "Za tvoi starannya u navchanni.mp3",
-    "label": "За твої старання у навчанні"
-  },
-{
     "file": "Za te, shcho vy ne zdayetesja, navit_ koly vazhko..mp3",
     "label": "За те, що ви не здаєтеся, навіть коли важко",
     "type": "group"
@@ -80,13 +80,13 @@
     "type": "group"
   },
   {
-    "file": "Za vashu chesnist_ i spravedlyvist_..mp3",
-    "label": "За вашу чесність і справедливість",
+    "file": "Za vashi starannya u navchanni.mp3",
+    "label": "За ваші старання у навчанні",
     "type": "group"
   },
   {
-    "file": "Za vashi starannya u navchanni.mp3",
-    "label": "За ваші старання у навчанні",
+    "file": "Za vashu chesnist_ i spravedlyvist_..mp3",
+    "label": "За вашу чесність і справедливість",
     "type": "group"
   }
 ]
