@@ -13,6 +13,39 @@ define('SVB_PLUGIN_FILE', __FILE__);
 define('SVB_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SVB_PLUGIN_URL', plugin_dir_url(__FILE__));
 
+if (!function_exists('svb_error_log')) {
+    function svb_error_log($message, array $context = []) {
+        $encoded_message = is_string($message)
+            ? $message
+            : (function_exists('wp_json_encode') ? wp_json_encode($message) : json_encode($message));
+
+        $encoded_context = $context
+            ? (function_exists('wp_json_encode') ? wp_json_encode($context) : json_encode($context))
+            : '';
+
+        $line = '[SVB] ' . $encoded_message . ($encoded_context ? ' ' . $encoded_context : '');
+        error_log($line);
+
+        if (defined('WP_CONTENT_DIR')) {
+            $debug_file = trailingslashit(WP_CONTENT_DIR) . 'debug.log';
+            $dir = dirname($debug_file);
+            if (is_dir($dir) && is_writable($dir)) {
+                error_log($line . PHP_EOL, 3, $debug_file);
+            }
+        }
+    }
+}
+
+register_shutdown_function(function() {
+    $last_error = error_get_last();
+    if (!$last_error) {
+        return;
+    }
+
+    // Log all shutdown errors to simplify diagnosing “critical error” reports.
+    svb_error_log('[SVB_FATAL] shutdown', $last_error);
+});
+
 if (!defined('SVB_DEBUG')) {
     define('SVB_DEBUG', true);
 }
@@ -39,6 +72,10 @@ add_action('svb_cleanup_order_results', 'svb_cleanup_order_results_cb');
 
 add_filter('redirect_canonical', function($redirect_url, $requested_url) {
     if (isset($_GET['svb_download'])) {
+        return false;
+    }
+
+    if (isset($_GET['svb_payment_return'])) {
         return false;
     }
 
@@ -159,6 +196,14 @@ function svb_stream_order_video($order_id, $token) {
 }
 
 function svb_handle_public_order() {
+    if (!empty($_GET['svb_payment_return'])) {
+        return; // Payment return flow should never trigger downloads.
+    }
+
+    if (!isset($_GET['svb_download'])) {
+        return; // Only respond when explicit download flag is present.
+    }
+
     if (empty($_GET['svb_order']) || empty($_GET['token'])) {
         return;
     }
