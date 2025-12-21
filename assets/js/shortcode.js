@@ -4826,6 +4826,19 @@ async function svbPollGeneration(publicToken) {
     try {
         const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
         const data = await res.json();
+        console.log("🚀 [SVB POLL DEBUG] HTTP:", res.status, res.statusText);
+console.log("🚀 [SVB POLL DEBUG] Server Answer:", data);
+
+if (data && data.success && data.data) {
+  console.log(
+    "👉 payment_status:", data.data.payment_status,
+    "| generation_status:", data.data.generation_status,
+    "| step:", data.data.step,
+    "| order_id:", data.data.order_id
+  );
+} else {
+  console.log("⚠️ [SVB POLL DEBUG] Unexpected response shape:", data);
+}
         if (!data.success) {
             svbShowPaymentError(data.data || 'Помилка перевірки статусу.');
             return;

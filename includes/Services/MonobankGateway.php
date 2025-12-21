@@ -478,6 +478,11 @@ function svb_monobank_invalidate_invoice_request($invoice_id) {
 }
 
 function svb_handle_monobank_return() {
+    // === [DEBUG START] ===
+    if (!empty($_GET['svb_token']) || !empty($_GET['svb_payment_return'])) {
+        error_log('[SVB DEBUG][MONO RETURN] Incoming GET params: ' . print_r($_GET, true));
+    }
+    // === [DEBUG END] ===
     if (empty($_GET['svb_payment_return']) && empty($_GET['svb_token'])) {
         return;
     }
@@ -583,6 +588,9 @@ function svb_handle_monobank_return() {
 
         svb_set_lax_cookie('svb_return_redirected', '1', time() + 300, true);
 
+        // === [DEBUG START] ===
+        error_log('[SVB DEBUG][MONO RETURN] Redirecting user to: ' . $redirect);
+        // === [DEBUG END] ===
         wp_safe_redirect($redirect);
         exit;
     }

@@ -546,6 +546,9 @@ function svb_check_payment() {
 
     if ($invoice_id) {
         $invoice_status = svb_monobank_get_invoice_status($invoice_id);
+        // === [DEBUG START] ===
+            error_log('[SVB DEBUG][AJAX CHECK] Mono Response: ' . print_r($invoice_status, true));
+            // === [DEBUG END] ===
         if (!is_wp_error($invoice_status) && isset($invoice_status['status'])) {
             $remote_status = $invoice_status['status'];
             $normalized_status = svb_monobank_map_remote_status($remote_status);
@@ -622,6 +625,15 @@ function svb_check_payment() {
         'generation_status' => $generation['status'],
         'source' => 'db_refresh',
     ]);
+
+    // === [DEBUG START] ===
+        error_log('[SVB DEBUG][AJAX CHECK] Sending Response to JS: ' . print_r([
+            'order_id' => $order_id,
+            'payment_status' => $status,
+            'generation_status' => $order_row['generation_status'] ?? 'unknown',
+            'is_paid_check' => ($status === 'paid' ? 'YES' : 'NO')
+        ], true));
+        // === [DEBUG END] ===
 
     wp_send_json_success($response);
 }

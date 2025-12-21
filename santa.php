@@ -492,6 +492,21 @@ function svb_register_ajax_handler($action, $callback, $allow_nopriv = false) {
     }
 }
 
+// === [DEBUG START] LOG ALL REDIRECTS ===
+add_filter('wp_redirect', function($location, $status) {
+    $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+    $caller = isset($trace[1]['function']) ? $trace[1]['function'] : 'unknown';
+    
+    error_log(sprintf(
+        '[SVB DEBUG][REDIRECT TRACE] Initiated by: %s | Location: %s | Status: %d',
+        $caller,
+        $location,
+        $status
+    ));
+    return $location;
+}, 999, 2);
+// === [DEBUG END] ===
+
 add_action('wp_ajax_svb_save_config', svb_wrap_ajax('svb_save_config', 'ajax:svb_save_config'));
 
 add_shortcode('santa_video_form', 'svb_render_form');
