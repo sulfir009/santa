@@ -3229,104 +3229,124 @@ function svb_monobank_check_status() {
         ]);
     }
 
-    $invoice_id = isset($_POST['invoice_id']) ? sanitize_text_field(wp_unslash($_POST['invoice_id'])) : '';
-    $order_data = svb_init_user_order();
-    $uid = $order_data['uid'] ?? '';
-    $payment_state = svb_get_user_payment_state($uid);
+    try {
+        $invoice_id = isset($_POST['invoice_id']) ? sanitize_text_field(wp_unslash($_POST['invoice_id'])) : '';
+        $order_data = svb_init_user_order();
+        $uid = $order_data['uid'] ?? '';
+        $payment_state = svb_get_user_payment_state($uid);
 
-    if (!$invoice_id && !empty($payment_state['invoice_id'])) {
-        $invoice_id = $payment_state['invoice_id'];
-    }
+        if (!$invoice_id && !empty($payment_state['invoice_id'])) {
+            $invoice_id = $payment_state['invoice_id'];
+        }
 
-    if (!$invoice_id) {
-        error_log('[svb_monobank_check_status] Missing invoice_id');
-        wp_send_json_error([
-            'message' => 'Invoice not found',
-        ]);
-    }
-
-    $order_row = null;
-    $status = svb_monobank_get_invoice_status($invoice_id);
-    if (is_wp_error($status)) {
-        $err_msg = $status->get_error_message();
-        error_log('[svb_monobank_check_status] API error: invoice=' . svb_monobank_mask_invoice($invoice_id) . ' msg=' . $err_msg);
-        wp_send_json_error([
-            'message' => $err_msg,
-        ]);
-    }
-
-    $remote_status = $status['status'] ?? '';
-    $is_reference_valid = true;
-    if (!empty($payment_state['reference']) && isset($status['paymentDetails']['merchantPaymInfo']['reference'])) {
-        $is_reference_valid = ($payment_state['reference'] === $status['paymentDetails']['merchantPaymInfo']['reference']);
-    }
-
-    if (!$is_reference_valid) {
-        error_log('[svb_monobank_check_status] Reference mismatch for invoice=' . svb_monobank_mask_invoice($invoice_id));
-        wp_send_json_error([
-            'message' => 'Invoice does not match this session',
-        ]);
-    }
-
-    $normalized_status = 'pending';
-    if ($remote_status === 'success') {
-        $normalized_status = 'paid';
-    } elseif (in_array($remote_status, ['failure', 'expired', 'canceled', 'reversed'], true)) {
-        $normalized_status = 'failed';
-    }
-
-    $order_row = svb_get_order_by_invoice_id($invoice_id);
-    if (!$order_row && !empty($order_data['order_id'])) {
-        $order_row = svb_get_order_by_id((int) $order_data['order_id']);
-    }
-
-    if ($order_row && !is_wp_error($order_row)) {
-        $current_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
-        $old_status = svb_payment_normalize_status($current_payment['status'] ?? 'unpaid');
-
-        if ($normalized_status === 'paid') {
-            svb_update_order_payment_by_order_id($order_row['order_id'], [
-                'status' => 'paid',
-                'invoice_id' => $invoice_id,
-                'transaction_id' => isset($status['invoiceId']) ? sanitize_text_field($status['invoiceId']) : $invoice_id,
-                'paid_at' => time(),
-                'payment_updated_at' => time(),
+        if (!$invoice_id) {
+            error_log('[SVB][MONO] Missing invoice_id in check_status');
+            wp_send_json_error([
+                'message' => 'Invoice not found',
             ]);
         }
 
-        if (function_exists('svb_pay_log')) {
-            svb_pay_log('monobank.check_status', [
-                'invoice_id' => svb_monobank_mask_invoice($invoice_id),
-                'order_id' => $order_row['order_id'],
-                'old_status' => $old_status,
-                'new_status' => $normalized_status,
-            ], $order_data);
+        $order_row = null;
+        $status = svb_monobank_get_invoice_status($invoice_id);
+        if (is_wp_error($status)) {
+            $err_msg = $status->get_error_message();
+            $err_data = $status->get_error_data();
+            error_log('[SVB][MONO] API error invoice=' . svb_monobank_mask_invoice($invoice_id) . ' msg=' . $err_msg . ' data=' . maybe_serialize($err_data));
+            wp_send_json_error([
+                'message' => $err_msg,
+                'details' => $err_data,
+            ]);
         }
 
-        error_log('[svb_monobank_check_status] invoice=' . svb_monobank_mask_invoice($invoice_id) . ' order_id=' . $order_row['order_id'] . ' status ' . $old_status . ' -> ' . $normalized_status);
+        $remote_status = $status['status'] ?? '';
+        $is_reference_valid = true;
+        if (!empty($payment_state['reference']) && isset($status['paymentDetails']['merchantPaymInfo']['reference'])) {
+            $is_reference_valid = ($payment_state['reference'] === $status['paymentDetails']['merchantPaymInfo']['reference']);
+        }
 
-        // Refresh row to reflect persisted payment_state if it was updated.
-        $order_row = svb_get_order_by_id((int) $order_row['order_id']);
+        if (!$is_reference_valid) {
+            error_log('[SVB][MONO] Reference mismatch invoice=' . svb_monobank_mask_invoice($invoice_id));
+            wp_send_json_error([
+                'message' => 'Invoice does not match this session',
+                'details' => ['invoice_id' => $invoice_id],
+            ]);
+        }
+
+        $normalized_status = 'pending';
+        if ($remote_status === 'success') {
+            $normalized_status = 'paid';
+        } elseif (in_array($remote_status, ['failure', 'expired', 'canceled', 'reversed'], true)) {
+            $normalized_status = 'failed';
+        }
+
+        $order_row = svb_get_order_by_invoice_id($invoice_id);
+        if (!$order_row && !empty($order_data['order_id'])) {
+            $order_row = svb_get_order_by_id((int) $order_data['order_id']);
+        }
+
         if ($order_row && !is_wp_error($order_row)) {
-            $order_data['order_id'] = (int) $order_row['order_id'];
-            $order_data['public_token'] = svb_resolve_order_public_token($order_row);
             $current_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
-            $normalized_status = svb_payment_normalize_status($current_payment['status'] ?? $normalized_status);
+            $old_status = svb_payment_normalize_status($current_payment['status'] ?? 'unpaid');
+
+            if ($normalized_status === 'paid') {
+                svb_update_order_payment_by_order_id($order_row['order_id'], [
+                    'status' => 'paid',
+                    'invoice_id' => $invoice_id,
+                    'transaction_id' => isset($status['invoiceId']) ? sanitize_text_field($status['invoiceId']) : $invoice_id,
+                    'paid_at' => time(),
+                    'payment_updated_at' => time(),
+                ]);
+            }
+
+            if (function_exists('svb_pay_log')) {
+                svb_pay_log('monobank.check_status', [
+                    'invoice_id' => svb_monobank_mask_invoice($invoice_id),
+                    'order_id' => $order_row['order_id'],
+                    'old_status' => $old_status,
+                    'new_status' => $normalized_status,
+                ], $order_data);
+            }
+
+            error_log('[SVB][MONO] invoice=' . svb_monobank_mask_invoice($invoice_id) . ' order_id=' . $order_row['order_id'] . ' status ' . $old_status . ' -> ' . $normalized_status);
+
+            // Refresh row to reflect persisted payment_state if it was updated.
+            $order_row = svb_get_order_by_id((int) $order_row['order_id']);
+            if ($order_row && !is_wp_error($order_row)) {
+                $order_data['order_id'] = (int) $order_row['order_id'];
+                $order_data['public_token'] = svb_resolve_order_public_token($order_row);
+                $current_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+                $normalized_status = svb_payment_normalize_status($current_payment['status'] ?? $normalized_status);
+            }
         }
+
+        svb_update_user_payment_state($uid, [
+            'status' => $normalized_status,
+            'invoice_id' => $invoice_id,
+        ]);
+
+        wp_send_json_success([
+            'status' => $normalized_status,
+            'invoiceId' => $invoice_id,
+            'order_id' => $order_data['order_id'] ?? ($order_row['order_id'] ?? null),
+            'payment_status' => $normalized_status,
+            'public_token' => isset($order_data['public_token']) ? $order_data['public_token'] : ($order_row['public_token'] ?? ''),
+        ]);
+    } catch (Throwable $e) {
+        $message = 'Unexpected error';
+        if (class_exists('WP_Error') && $e instanceof WP_Error) {
+            $message = $e->get_error_message();
+        } else {
+            $message = $e->getMessage();
+        }
+
+        $log_invoice = isset($invoice_id) ? svb_monobank_mask_invoice($invoice_id) : 'n/a';
+        $log_order = isset($order_data['order_id']) ? (int) $order_data['order_id'] : 0;
+        error_log('[SVB][MONO] exception invoice=' . $log_invoice . ' order_id=' . $log_order . ' error=' . $message);
+
+        wp_send_json_error([
+            'message' => $message,
+        ]);
     }
-
-    svb_update_user_payment_state($uid, [
-        'status' => $normalized_status,
-        'invoice_id' => $invoice_id,
-    ]);
-
-    wp_send_json_success([
-        'status' => $normalized_status,
-        'invoiceId' => $invoice_id,
-        'order_id' => $order_data['order_id'] ?? ($order_row['order_id'] ?? null),
-        'payment_status' => $normalized_status,
-        'public_token' => isset($order_data['public_token']) ? $order_data['public_token'] : ($order_row['public_token'] ?? ''),
-    ]);
 }
 
 function svb_monobank_invalidate_invoice() {

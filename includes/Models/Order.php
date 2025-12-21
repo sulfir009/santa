@@ -172,6 +172,43 @@ function svb_orders_table_exists() {
     return $found === $table;
 }
 
+if (!function_exists('svb_prepare_order_row')) {
+    function svb_prepare_order_row($row) {
+        if (!is_array($row) || empty($row)) {
+            return null;
+        }
+
+        $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+
+        // Rehydrate via the standard getter to ensure tokens/payment are normalized when possible.
+        if ($order_id) {
+            $hydrated = svb_get_order_by_id($order_id);
+            if ($hydrated && !is_wp_error($hydrated)) {
+                return $hydrated;
+            }
+        }
+
+        $normalized_status = 'unpaid';
+        if (isset($row['payment']) && is_array($row['payment'])) {
+            $raw_status = $row['payment']['status'] ?? '';
+            if (function_exists('svb_payment_normalize_status')) {
+                $normalized_status = svb_payment_normalize_status($raw_status);
+            } elseif ($raw_status) {
+                $normalized_status = sanitize_text_field($raw_status);
+            }
+        }
+
+        return [
+            'order_id' => $order_id,
+            'payment_invoice_id' => isset($row['payment_invoice_id']) ? sanitize_text_field($row['payment_invoice_id']) : '',
+            'payment_status' => $normalized_status,
+            'public_token' => isset($row['public_token']) ? sanitize_text_field($row['public_token']) : '',
+            'payment_updated_at' => isset($row['payment_updated_at']) ? (int) $row['payment_updated_at'] : 0,
+            'updated_at' => isset($row['updated_at']) ? $row['updated_at'] : '',
+        ];
+    }
+}
+
 function svb_orders_v2_table_exists() {
     global $wpdb;
     $table = svb_get_orders_v2_table();
