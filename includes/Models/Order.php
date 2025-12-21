@@ -13,6 +13,33 @@ function svb_get_orders_dir() {
     return $dir;
 }
 
+function svb_get_logs_dir() {
+    $upload = wp_upload_dir();
+    $dir = trailingslashit($upload['basedir']) . 'svb-logs';
+
+    if (!file_exists($dir)) {
+        wp_mkdir_p($dir);
+        @file_put_contents($dir . '/index.php', '<?php // Silence');
+        @file_put_contents($dir . '/.htaccess', "deny from all\n");
+    }
+
+    return $dir;
+}
+
+function svb_get_order_log_path($order_id, $ensure = true) {
+    $order_id = absint($order_id);
+    if (!$order_id) {
+        return '';
+    }
+
+    $dir = svb_get_logs_dir();
+    if ($ensure && $dir && !file_exists($dir)) {
+        wp_mkdir_p($dir);
+    }
+
+    return $dir ? trailingslashit($dir) . 'order_' . $order_id . '.log' : '';
+}
+
 function svb_detect_ssl() {
     if (is_ssl()) {
         return true;
@@ -143,6 +170,43 @@ function svb_orders_table_exists() {
     $table = $wpdb->prefix . 'svb_orders';
     $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
     return $found === $table;
+}
+
+if (!function_exists('svb_prepare_order_row')) {
+    function svb_prepare_order_row($row) {
+        if (!is_array($row) || empty($row)) {
+            return null;
+        }
+
+        $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+
+        // Rehydrate via the standard getter to ensure tokens/payment are normalized when possible.
+        if ($order_id) {
+            $hydrated = svb_get_order_by_id($order_id);
+            if ($hydrated && !is_wp_error($hydrated)) {
+                return $hydrated;
+            }
+        }
+
+        $normalized_status = 'unpaid';
+        if (isset($row['payment']) && is_array($row['payment'])) {
+            $raw_status = $row['payment']['status'] ?? '';
+            if (function_exists('svb_payment_normalize_status')) {
+                $normalized_status = svb_payment_normalize_status($raw_status);
+            } elseif ($raw_status) {
+                $normalized_status = sanitize_text_field($raw_status);
+            }
+        }
+
+        return [
+            'order_id' => $order_id,
+            'payment_invoice_id' => isset($row['payment_invoice_id']) ? sanitize_text_field($row['payment_invoice_id']) : '',
+            'payment_status' => $normalized_status,
+            'public_token' => isset($row['public_token']) ? sanitize_text_field($row['public_token']) : '',
+            'payment_updated_at' => isset($row['payment_updated_at']) ? (int) $row['payment_updated_at'] : 0,
+            'updated_at' => isset($row['updated_at']) ? $row['updated_at'] : '',
+        ];
+    }
 }
 
 function svb_orders_v2_table_exists() {
@@ -368,6 +432,47 @@ function svb_get_order_by_token($token) {
         $order['public_token'] = $token;
     }
 
+    return $order;
+}
+
+function svb_get_order_by_invoice_id($invoice_id) {
+    if (!$invoice_id || !svb_orders_table_exists()) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    $invoice_clean = sanitize_text_field($invoice_id);
+
+    // Prefer the dedicated column when available.
+    $row = null;
+    if (svb_orders_table_has_column($table, 'payment_invoice_id')) {
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE payment_invoice_id = %s ORDER BY id DESC LIMIT 1",
+                $invoice_clean
+            ),
+            ARRAY_A
+        );
+    }
+
+    // Fallback: search within the payment JSON for older rows without the column populated.
+    if (!$row) {
+        $like = '%' . $wpdb->esc_like('"invoice_id":"' . $invoice_clean . '"') . '%';
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE payment LIKE %s ORDER BY id DESC LIMIT 1",
+                $like
+            ),
+            ARRAY_A
+        );
+    }
+
+    if (!$row) {
+        return null;
+    }
+
+    $order = svb_prepare_order_row($row);
     return $order;
 }
 
@@ -650,8 +755,24 @@ function svb_init_user_order() {
         $data['order_id'] = (int) $order_row['order_id'];
         $data['public_token'] = $order_row['public_token'];
         $data['token_hash'] = $order_row['token_hash'];
+
+        $db_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+        if (!empty($db_payment)) {
+            $data['payment'] = array_merge(svb_get_payment_defaults(), $db_payment);
+        }
+
         $data['state_version'] = SVB_STATE_VERSION;
         $data['state_updated_at'] = time();
+
+        svb_log('payment_debug_page_boot', [
+            'source' => 'db_merge',
+            'order_id' => (int) $order_row['order_id'],
+            'payment_status_db' => $db_payment['status'] ?? '',
+            'payment_status_state' => $data['payment']['status'] ?? '',
+            'session_id' => isset($order_row['session_id']) ? svb_mask_value($order_row['session_id']) : '',
+            'public_token' => $data['public_token'] ? svb_mask_value($data['public_token']) : '',
+        ]);
+
         file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
 
@@ -1096,7 +1217,20 @@ function svb_update_order_payment_by_order_id($order_id, array $updates) {
         $new_payment['paid_fingerprint'] = $row['fingerprint_current'];
     }
 
-    $wpdb->update($table, ['payment' => wp_json_encode($new_payment)], ['id' => $row['id']], ['%s'], ['%d']);
+    $update_data = ['payment' => wp_json_encode($new_payment)];
+    $update_formats = ['%s'];
+
+    if (isset($updates['status'])) {
+        $update_data['payment_status'] = svb_payment_normalize_status($updates['status']);
+        $update_formats[] = '%s';
+    }
+
+    if (!empty($updates['invoice_id'])) {
+        $update_data['payment_invoice_id'] = sanitize_text_field($updates['invoice_id']);
+        $update_formats[] = '%s';
+    }
+
+    $wpdb->update($table, $update_data, ['id' => $row['id']], $update_formats, ['%d']);
 
     return $new_payment;
 }
