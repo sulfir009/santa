@@ -204,6 +204,38 @@ function svbSetActiveOrder(orderId, token, paymentStatus, opts = {}) {
   }
 }
 
+function svbMarkPaymentPaid(orderId, token, source = 'payment_paid') {
+  const currentState = svbLoadState() || {};
+  if (svbPaymentStatus === 'paid' && currentState.payment_status === 'success') {
+    return;
+  }
+
+  svbPaymentStatus = 'paid';
+  if (typeof SVB_PAYMENT !== 'undefined') {
+    SVB_PAYMENT.status = 'paid';
+  }
+
+  const nextState = Object.assign({}, currentState, {
+    payment_status: 'success',
+  });
+
+  if (orderId) nextState.order_id = orderId;
+  if (token) nextState.public_token = token;
+
+  svbUpdateState(nextState);
+  svbSetActiveOrder(orderId || svbActiveOrder.order_id, token || svbActiveOrder.public_token, 'paid', { reason: source, force: true });
+}
+
+function svbMaybeMarkPaymentPaidFromResult(payload, source = 'payment_state') {
+  if (!payload) return;
+  const status = (payload.payment_status || payload.status || '').toString().toLowerCase();
+  if (status === 'paid' || status === 'success') {
+    const orderId = payload.order_id || payload.orderId || null;
+    const token = payload.public_token || payload.token || '';
+    svbMarkPaymentPaid(orderId, token, source);
+  }
+}
+
 function svbInitActiveOrder(reason = 'init') {
   const state = svbLoadState() || {};
   const pageOrderId = SVB_PAGE_BOOT && SVB_PAGE_BOOT.order_id ? SVB_PAGE_BOOT.order_id : null;
@@ -2797,6 +2829,7 @@ async function svbPollPaymentConfirmation(orderId, token, opts = {}) {
       console.log('[SVB DEBUG][PAYMENT][POLL]', { attempt: i + 1, order_id: orderId, token, result });
     }
     if (result && (result.payment_status === 'paid' || result.payment_status === 'success')) {
+      svbMaybeMarkPaymentPaidFromResult(result, 'payment_poll');
       svbSetStep(3, 'payment_confirmed');
       if (result.download_url) {
         svbHandleSuccessInternal(result.download_url);
@@ -4015,6 +4048,7 @@ async function svbHandlePaymentReturnFlow(params) {
     }
 
     if (state.decision === 'paid' || state.decision === 'success' || state.is_paid) {
+      svbMarkPaymentPaid(resolvedOrderId, token, 'return_sync');
       svbSaveLastPaidOrder(resolvedOrderId, token, state.fingerprint_current || state.paid_fingerprint);
       svbUpdateState({ order_id: resolvedOrderId, public_token: token, payment_status: 'success' });
 
@@ -4669,6 +4703,7 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
       if (svbIsDebugMode()) {
         console.log('[SVB DEBUG][GENERATION][START][OK]', payload);
       }
+      svbMaybeMarkPaymentPaidFromResult(payload, 'generation_start');
       svbMarkGenerationStarted(tokenToUse);
       if (payload.status === 'done' && payload.download_url) {
         svbHandleSuccessInternal(payload.download_url);
@@ -4721,6 +4756,7 @@ async function svbPollGeneration(publicToken) {
                 console.warn('[SVB DEBUG] progress missing in status response');
             }
         }
+        svbMaybeMarkPaymentPaidFromResult(payload, 'generation_poll');
         if (payload.status === 'done' && payload.download_url && payload.can_download !== false) {
             svbHandleSuccessInternal(payload.download_url);
             svbStopGenerationPoll();

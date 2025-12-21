@@ -115,12 +115,12 @@ function svb_monobank_map_remote_status($remote_status) {
         return 'paid';
     }
 
-    if ($normalized === 'failure') {
-        return 'failed';
+    if ($normalized === 'processing') {
+        return 'paid';
     }
 
-    if ($normalized === 'processing') {
-        return 'pending';
+    if ($normalized === 'failure') {
+        return 'failed';
     }
 
     return 'pending';
@@ -162,14 +162,44 @@ function svb_monobank_apply_payment_status(array $order_row, array $status_paylo
     $saved_modified = isset($payment['modifiedDate']) ? (int) $payment['modifiedDate'] : 0;
 
     $remote_status = isset($status_payload['status']) ? $status_payload['status'] : '';
-    $normalized_status = svb_monobank_normalize_status($remote_status);
-    if ($normalized_status === 'success') {
-        $normalized_status = 'paid';
+    $normalized_status = svb_monobank_map_remote_status($remote_status);
+    if (function_exists('svb_payment_normalize_status')) {
+        $normalized_status = svb_payment_normalize_status($normalized_status);
     }
     $remote_modified = svb_monobank_extract_modified($status_payload);
 
-    $should_update = ($remote_modified && $remote_modified > $saved_modified);
+    $current_normalized = function_exists('svb_payment_normalize_status')
+        ? svb_payment_normalize_status($current_status)
+        : strtolower((string) $current_status);
+    $priority = ['unpaid' => 0, 'pending' => 1, 'processing' => 1, 'failed' => 2, 'paid' => 3];
+    $incoming_priority = isset($priority[$normalized_status]) ? $priority[$normalized_status] : 0;
+    $current_priority = isset($priority[$current_normalized]) ? $priority[$current_normalized] : 0;
+
+    $should_update = false;
+
+    if ($incoming_priority > $current_priority) {
+        $should_update = true;
+    } elseif ($incoming_priority === $current_priority) {
+        $should_update = ($remote_modified && $remote_modified > $saved_modified);
+    }
+
+    if ($current_normalized === 'paid' && $incoming_priority < $current_priority) {
+        $should_update = false;
+    }
+
+    if (!$should_update && !$saved_modified && !$remote_modified && $incoming_priority > 0 && $incoming_priority >= $current_priority) {
+        $should_update = true;
+    }
+
     if (!$should_update) {
+        svb_monobank_debug_log('status.skip_update', [
+            'order_id' => $order_row['order_id'] ?? null,
+            'remote_status' => $remote_status,
+            'normalized' => $normalized_status,
+            'current' => $current_normalized,
+            'incoming_modified' => $remote_modified,
+            'saved_modified' => $saved_modified,
+        ]);
         return $payment;
     }
 
@@ -178,6 +208,7 @@ function svb_monobank_apply_payment_status(array $order_row, array $status_paylo
         'invoice_id' => sanitize_text_field($status_payload['invoiceId'] ?? ($payment['invoice_id'] ?? '')),
         'modifiedDate' => $remote_modified ?: $saved_modified,
         'failureReason' => sanitize_text_field($status_payload['failureReason'] ?? ''),
+        'payment_updated_at' => time(),
     ];
 
     if (!empty($status_payload['paymentDetails']['merchantPaymInfo']['reference'])) {
@@ -197,6 +228,16 @@ function svb_monobank_apply_payment_status(array $order_row, array $status_paylo
     }
 
     $updated_payment = svb_update_order_payment_by_order_id($order_row['order_id'], $updates);
+
+    svb_monobank_debug_log('status.update', [
+        'order_id' => $order_row['order_id'] ?? null,
+        'remote_status' => $remote_status,
+        'normalized' => $normalized_status,
+        'old_status' => $current_status,
+        'new_status' => $updated_payment['status'] ?? $normalized_status,
+        'incoming_modified' => $remote_modified,
+        'saved_modified' => $saved_modified,
+    ]);
 
     if ($updated_payment && function_exists('svb_pay_log')) {
         svb_pay_log('mono.status.sync', [

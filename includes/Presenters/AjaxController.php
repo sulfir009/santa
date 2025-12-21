@@ -541,43 +541,34 @@ function svb_check_payment() {
 
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    $invoice_id = $payment['invoice_id'] ?? '';
 
-    if (!in_array($status, ['paid', 'success'], true)) {
-        $invoice_id = $payment['invoice_id'] ?? '';
-        if ($invoice_id) {
-            $invoice_status = svb_monobank_get_invoice_status($invoice_id);
-            if (!is_wp_error($invoice_status) && isset($invoice_status['status'])) {
-                $remote_status = $invoice_status['status'];
-                $normalized_status = svb_monobank_map_remote_status($remote_status);
+    if ($invoice_id) {
+        $invoice_status = svb_monobank_get_invoice_status($invoice_id);
+        if (!is_wp_error($invoice_status) && isset($invoice_status['status'])) {
+            $remote_status = $invoice_status['status'];
+            $normalized_status = svb_monobank_map_remote_status($remote_status);
 
-                svb_monobank_debug_log('check_payment.status', [
-                    'invoice' => svb_monobank_mask_invoice($invoice_id),
-                    'remote_status' => $remote_status,
-                    'normalized' => $normalized_status,
-                    'order_id' => $order_id,
-                ]);
+            svb_monobank_debug_log('check_payment.status', [
+                'invoice' => svb_monobank_mask_invoice($invoice_id),
+                'remote_status' => $remote_status,
+                'normalized' => $normalized_status,
+                'order_id' => $order_id,
+            ]);
 
-                if ($normalized_status === 'paid') {
-                    $payment_updates = [
-                        'status' => 'paid',
-                        'transaction_id' => $invoice_status['invoiceId'] ?? $invoice_id,
-                        'paid_at' => time(),
-                        'payment_updated_at' => time(),
-                    ];
-                    $updated = svb_update_order_payment_by_order_id($order_id, $payment_updates);
-                    if (is_array($updated)) {
-                        $payment = $updated;
-                        $status = svb_payment_normalize_status($updated['status'] ?? 'unpaid');
-                    }
-                } elseif ($normalized_status === 'failed') {
-                    svb_update_order_payment_by_order_id($order_id, [
-                        'status' => 'failed',
-                        'payment_updated_at' => time(),
-                    ]);
-                    $status = 'failed';
-                } else {
-                    $status = 'pending';
+            $updated_payment = svb_monobank_apply_payment_status($order_row, is_array($invoice_status) ? $invoice_status : []);
+            $payment = is_array($updated_payment) ? $updated_payment : $payment;
+            $status = svb_payment_normalize_status($payment['status'] ?? $status);
+
+            if (!empty($order_row['session_id'])) {
+                $user_updates = [
+                    'status' => $status,
+                    'invoice_id' => $payment['invoice_id'] ?? $invoice_id,
+                ];
+                if (isset($payment['modifiedDate'])) {
+                    $user_updates['modifiedDate'] = (int) $payment['modifiedDate'];
                 }
+                svb_update_user_payment_state($order_row['session_id'], $user_updates);
             }
         }
     }
@@ -1993,7 +1984,7 @@ function svb_mask_page_url($url) {
 
 function svb_payment_normalize_status($status) {
     $normalized = strtolower((string) $status);
-    if (in_array($normalized, ['paid', 'success'], true)) {
+    if (in_array($normalized, ['paid', 'success', 'processing'], true)) {
         return 'paid';
     }
 
@@ -3395,20 +3386,18 @@ function svb_monobank_check_status() {
             $current_payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
             $old_status = svb_payment_normalize_status($current_payment['status'] ?? 'unpaid');
 
-            if ($normalized_status === 'paid') {
-                svb_update_order_payment_by_order_id($order_row['order_id'], [
-                    'status' => 'paid',
-                    'invoice_id' => $invoice_id,
-                    'transaction_id' => isset($status['invoiceId']) ? sanitize_text_field($status['invoiceId']) : $invoice_id,
-                    'paid_at' => time(),
-                    'payment_updated_at' => time(),
+            $updated_payment = svb_monobank_apply_payment_status($order_row, is_array($status) ? $status : []);
+            $current_payment = is_array($updated_payment) ? $updated_payment : $current_payment;
+            $normalized_status = svb_payment_normalize_status($current_payment['status'] ?? $normalized_status);
+
+            if ($old_status === 'paid' && $normalized_status !== 'paid') {
+                svb_monobank_debug_log('monobank.check_status.downgrade_block', [
+                    'invoice' => svb_monobank_mask_invoice($invoice_id),
+                    'order_id' => $order_row['order_id'],
+                    'old_status' => $old_status,
+                    'incoming' => $status['status'] ?? '',
                 ]);
-            } elseif ($normalized_status === 'failed') {
-                svb_update_order_payment_by_order_id($order_row['order_id'], [
-                    'status' => 'failed',
-                    'invoice_id' => $invoice_id,
-                    'payment_updated_at' => time(),
-                ]);
+                $normalized_status = 'paid';
             }
 
             if (function_exists('svb_pay_log')) {
