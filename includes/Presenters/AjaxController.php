@@ -560,15 +560,15 @@ function svb_check_payment() {
             $updated_payment = svb_monobank_apply_payment_status($order_row, is_array($invoice_status) ? $invoice_status : [], 'poll');
             $payment = is_array($updated_payment) ? $updated_payment : $payment;
             
-            // === [FIX FINAL] Force Save to DB for Test Keys ===
+            // === [FIX FINAL] Force Save to DB for Test/Real Keys ===
             $raw_status = $invoice_status['status'] ?? '';
             
-            // Если Монобанк говорит success (даже тестовый), а в базе еще не paid
-            if ($raw_status === 'success') {
+            // Если Монобанк говорит success, а статус еще не обновился
+            if ($raw_status === 'success' || $raw_status === 'processing') {
                 $status = 'paid';
                 $payment['status'] = 'paid'; // Обновляем локальную переменную
                 
-                // ПРИНУДИТЕЛЬНО ПИШЕМ В БАЗУ, чтобы следующий блок кода (refreshed) увидел это
+                // ВАЖНО: ПРИНУДИТЕЛЬНО ПИШЕМ В БАЗУ, чтобы следующий блок кода (refreshed) увидел это
                 svb_update_order_payment_by_order_id($order_id, [
                     'status' => 'paid',
                     'paid_at' => time(), // Фиксируем время оплаты
