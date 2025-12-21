@@ -175,8 +175,15 @@ function svbGetActiveOrder(reason = 'read') {
 
 function svbSetActiveOrder(orderId, token, paymentStatus, opts = {}) {
   const normalizedToken = svbNormalizePublicToken(token);
-  const normalizedOrderId = orderId ? parseInt(orderId, 10) || orderId : null;
+  const normalizedOrderId = svbParseOrderId(orderId);
   const pageBootOrder = SVB_PAGE_BOOT && SVB_PAGE_BOOT.order_id ? SVB_PAGE_BOOT.order_id : null;
+
+  if (opts.reason === 'return_flow' && !normalizedOrderId) {
+    if (svbIsDebugMode()) {
+      console.error('[SVB DEBUG][ACTIVE ORDER] reject invalid return-flow order', { proposed: orderId, reason: opts.reason || 'unknown' });
+    }
+    return;
+  }
 
   if (pageBootOrder && normalizedOrderId && String(normalizedOrderId) !== String(pageBootOrder) && !opts.force) {
     if (svbIsDebugMode()) {
@@ -368,10 +375,15 @@ function svbSaveState() {
 
 function svbUpdateState(patch) {
     const current = svbLoadState();
-    svbState = Object.assign({}, current, patch || {});
+    const validatedPatch = Object.assign({}, patch || {});
+    if (Object.prototype.hasOwnProperty.call(validatedPatch, 'order_id')) {
+      const validOrder = svbParseOrderId(validatedPatch.order_id);
+      if (!validOrder) delete validatedPatch.order_id; else validatedPatch.order_id = validOrder;
+    }
+    svbState = Object.assign({}, current, validatedPatch);
     svbSaveState();
-    if (patch && (patch.order_id || patch.public_token || patch.payment_status)) {
-      svbSetActiveOrder(patch.order_id || svbState.order_id, patch.public_token || svbState.public_token, patch.payment_status || svbState.payment_status, { reason: 'state_update' });
+    if (validatedPatch && (validatedPatch.order_id || validatedPatch.public_token || validatedPatch.payment_status)) {
+      svbSetActiveOrder(validatedPatch.order_id || svbState.order_id, validatedPatch.public_token || svbState.public_token, validatedPatch.payment_status || svbState.payment_status, { reason: 'state_update' });
     }
 }
 
@@ -2766,8 +2778,11 @@ function svbShowGenerationStatus(payload) {
   }
 }
 
-async function svbPollPaymentConfirmation(orderId, token) {
+async function svbPollPaymentConfirmation(orderId, token, opts = {}) {
   const maxAttempts = 20;
+  const resumeSource = opts.resumeSource || 'session_return';
+  const resumeOrder = orderId || opts.recordOrderId || null;
+  const resumeToken = token || opts.recordToken || null;
   for (let i = 0; i < maxAttempts; i++) {
     const result = await svbCheckPaymentStatus(orderId, token);
     if (svbIsDebugMode()) {
@@ -2786,9 +2801,9 @@ async function svbPollPaymentConfirmation(orderId, token) {
     svbShowGenerationStatus(result || {});
     await svbSleep(2500);
   }
-  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
+  svbRecordResumeChoice(resumeSource, resumeOrder, resumeToken);
   try {
-    document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+    document.cookie = `svb_public_token=${resumeToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
   } catch (e) {}
 
   svbShowPaymentError('Оплата ще не підтверджена. Спробуйте оновити сторінку або зачекайте хвилину.');
@@ -2840,7 +2855,11 @@ async function svbHandleResumeFromUrl(params) {
   } catch (e) {}
 
     svbShowPaymentChecking();
-    const paymentConfirmed = await svbPollPaymentConfirmation(resolvedOrderId, tokenToUse);
+    const paymentConfirmed = await svbPollPaymentConfirmation(resolvedOrderId, tokenToUse, {
+      resumeSource: hasExplicitReturn ? 'url_return' : 'session_return',
+      recordOrderId: resolvedOrderId,
+      recordToken: tokenToUse,
+    });
     svbConsumeReturnFlag();
 
     return paymentConfirmed;
@@ -3682,7 +3701,10 @@ function svbProceedToGenerateFlow() {
   const saved = svbEnsureStateStructure();
   const active = svbGetActiveOrder('generate_flow');
   const token = active.public_token || saved.public_token || '';
-  const orderId = active.order_id || saved.order_id || null;
+  const parsedActiveOrder = svbParseOrderId(active.order_id);
+  const parsedSavedOrder = svbParseOrderId(saved.order_id);
+  const parsedPageOrder = svbParseOrderId(SVB_PAGE_BOOT && SVB_PAGE_BOOT.order_id);
+  const orderId = parsedActiveOrder || parsedSavedOrder || parsedPageOrder || null;
 
   if (svbIsDebugMode()) {
     console.log('[SVB DEBUG][GENERATION][TOKEN PICKER]', {
@@ -3695,11 +3717,6 @@ function svbProceedToGenerateFlow() {
       chosen_order_id: orderId || null,
       chosen_token: token || '',
     });
-  }
-
-  if (SVB_PAGE_BOOT && SVB_PAGE_BOOT.order_id && orderId && String(orderId) !== String(SVB_PAGE_BOOT.order_id)) {
-    console.error('[SVB DEBUG][GENERATION] order mismatch with page_boot', { page_boot_order: SVB_PAGE_BOOT.order_id, chosen: orderId });
-    return;
   }
 
   if (token) {
