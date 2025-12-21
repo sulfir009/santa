@@ -793,6 +793,53 @@ function svb_get_payment_defaults() {
     ];
 }
 
+function svb_payment_status_priority($status) {
+    $normalized = function_exists('svb_payment_normalize_status')
+        ? svb_payment_normalize_status($status)
+        : strtolower((string) $status);
+
+    $map = [
+        'paid' => 3,
+        'processing' => 2,
+        'pending' => 1,
+        'unpaid' => 0,
+        'failure' => 0,
+        'failed' => 0,
+    ];
+
+    return isset($map[$normalized]) ? $map[$normalized] : 0;
+}
+
+function svb_order_resolve_payment(array $order_row) {
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $status_json_raw = $payment['status'] ?? 'unpaid';
+    $status_json = svb_payment_normalize_status($status_json_raw);
+
+    $status_col_raw = isset($order_row['payment_status']) ? $order_row['payment_status'] : '';
+    $status_col = $status_col_raw !== '' ? svb_payment_normalize_status($status_col_raw) : '';
+
+    $status = $status_json;
+    $source = 'payment_json';
+
+    $json_priority = svb_payment_status_priority($status_json);
+    $col_priority = svb_payment_status_priority($status_col);
+
+    if ($status_col && $col_priority >= $json_priority) {
+        $status = $status_col;
+        $source = 'payment_status_col';
+    }
+
+    $payment['status'] = $status;
+
+    return [
+        'payment' => $payment,
+        'status' => $status,
+        'source' => $source,
+        'status_json' => $status_json,
+        'status_col' => $status_col,
+    ];
+}
+
 function svb_generate_public_token() {
     $token = bin2hex(random_bytes(32));
     return [
@@ -1149,6 +1196,15 @@ function svb_update_user_payment_state($uid, array $updates) {
 
     $defaults = svb_get_payment_defaults();
     $current = isset($data['payment']) && is_array($data['payment']) ? $data['payment'] : [];
+    $current_status = $current['status'] ?? 'unpaid';
+    $incoming_status = isset($updates['status']) ? $updates['status'] : $current_status;
+    $current_priority = svb_payment_status_priority($current_status);
+    $incoming_priority = svb_payment_status_priority($incoming_status);
+
+    if ($current_priority >= svb_payment_status_priority('paid') && $incoming_priority < $current_priority) {
+        unset($updates['status'], $updates['payment_status']);
+    }
+
     $data['payment'] = array_merge($defaults, $current, $updates, [
         'updated_at' => date('Y-m-d H:i:s'),
     ]);
@@ -1160,6 +1216,13 @@ function svb_update_user_payment_state($uid, array $updates) {
     $existing = $wpdb->get_row($wpdb->prepare("SELECT id,payment,fingerprint_current,order_id FROM {$table} WHERE session_id = %s ORDER BY id DESC LIMIT 1", $uid), ARRAY_A);
     if ($existing) {
         $stored_payment = svb_orders_decode_payment($existing['payment']);
+        $stored_status = $stored_payment['status'] ?? 'unpaid';
+        $stored_priority = svb_payment_status_priority($stored_status);
+        $incoming_priority_db = svb_payment_status_priority($incoming_status);
+        if ($stored_priority >= svb_payment_status_priority('paid') && $incoming_priority_db < $stored_priority) {
+            unset($updates['status'], $updates['payment_status']);
+        }
+
         $new_payment = array_merge($defaults, $stored_payment, $updates, [
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
@@ -1209,7 +1272,26 @@ function svb_update_order_payment_by_order_id($order_id, array $updates) {
 
     $defaults = svb_get_payment_defaults();
     $existing = svb_orders_decode_payment($row['payment']);
+    $existing_status = $existing['status'] ?? 'unpaid';
+    $incoming_status = isset($updates['status']) ? $updates['status'] : $existing_status;
+    $existing_modified = isset($existing['modifiedDate']) ? (int) $existing['modifiedDate'] : 0;
+    $incoming_modified = isset($updates['modifiedDate']) ? (int) $updates['modifiedDate'] : 0;
+
+    $current_priority = svb_payment_status_priority($existing_status);
+    $incoming_priority = svb_payment_status_priority($incoming_status);
+    if ($current_priority >= svb_payment_status_priority('paid') && $incoming_priority < $current_priority) {
+        unset($updates['status'], $updates['payment_status']);
+        if ($incoming_modified && $incoming_modified < $existing_modified) {
+            unset($updates['modifiedDate']);
+        }
+    } elseif ($incoming_priority === $current_priority && $incoming_modified && $incoming_modified <= $existing_modified) {
+        unset($updates['modifiedDate']);
+    }
+
+    $final_status = isset($updates['status']) ? $updates['status'] : $existing_status;
+
     $new_payment = array_merge($defaults, $existing, $updates, [
+        'status' => $final_status,
         'updated_at' => date('Y-m-d H:i:s'),
     ]);
 
@@ -1220,8 +1302,10 @@ function svb_update_order_payment_by_order_id($order_id, array $updates) {
     $update_data = ['payment' => wp_json_encode($new_payment)];
     $update_formats = ['%s'];
 
+    $final_normalized = svb_payment_normalize_status($final_status);
+
     if (isset($updates['status'])) {
-        $update_data['payment_status'] = svb_payment_normalize_status($updates['status']);
+        $update_data['payment_status'] = $final_normalized;
         $update_formats[] = '%s';
     }
 
