@@ -2591,6 +2591,27 @@ function svb_generation_state_payload($order_row) {
     $delivery_locked = !empty($result['delivery_locked']);
     $can_download = ($payment_status === 'paid');
     $ui_message = '';
+    $error_code = '';
+
+    $pid = isset($result['pid']) ? (int) $result['pid'] : 0;
+    $pid_file = $log_path ? trailingslashit(dirname($log_path)) . 'ffmpeg.pid' : '';
+    if (!$pid && $pid_file && file_exists($pid_file)) {
+        $pid = (int) trim((string) file_get_contents($pid_file));
+    }
+
+    $pid_alive = false;
+    if ($pid > 0) {
+        if (function_exists('posix_kill')) {
+            $pid_alive = @posix_kill($pid, 0);
+        } elseif (file_exists('/proc/' . $pid)) {
+            $pid_alive = true;
+        } else {
+            @exec('ps -p ' . escapeshellarg((string) $pid) . ' -o pid=', $out, $rc);
+            $pid_alive = ($rc === 0 && !empty($out));
+        }
+    }
+
+    $has_log = ($log_path && file_exists($log_path));
 
     if ($file_exists && $public_token && $order_id && $can_download) {
         $download_url = svb_build_download_url($order_id, $public_token);
@@ -2612,11 +2633,11 @@ function svb_generation_state_payload($order_row) {
         $result['status'] = 'queued';
         $result['updated_at'] = $result['updated_at'] ?? current_time('mysql');
         svb_update_order_result_status($order_id, $result);
-    } elseif ($status === 'queued' && (!empty($result['started_at']) || ($log_path && file_exists($log_path)))) {
+    } elseif ($status === 'queued' && (!empty($result['started_at']) || $has_log)) {
         $status = 'running';
     }
 
-    if ($log_path && file_exists($log_path)) {
+    if ($has_log) {
         $log_tail = svb_tail_log_file($log_path, 40000);
         $parsed = svb_parse_generation_progress($log_tail, $duration);
         if ($parsed !== null) {
@@ -2634,6 +2655,24 @@ function svb_generation_state_payload($order_row) {
         $status = 'failed';
         if (!$last_error) {
             $last_error = 'Generation stalled (timeout).';
+        }
+    }
+
+    if (!$can_download && !$file_exists && in_array($payment_status, ['pending', 'processing', 'unpaid'], true)) {
+        $status = 'payment_pending';
+        $progress = 0;
+        $download_url = '';
+        $error_code = 'PAYMENT_PENDING';
+        if (!$ui_message) {
+            $ui_message = 'Оплата не підтверджена. Очікуємо підтвердження платежу.';
+        }
+    }
+
+    if (in_array($status, ['running', 'processing'], true) && !$file_exists && !$pid_alive && !$has_log) {
+        $status = 'failed';
+        $error_code = $pid ? 'PROCESS_DIED' : 'NO_PROCESS';
+        if (!$last_error) {
+            $last_error = $pid ? 'Generation process stopped unexpectedly.' : 'Generation not started.';
         }
     }
 
@@ -2671,11 +2710,14 @@ function svb_generation_state_payload($order_row) {
         'last_error' => $last_error,
         'updated_at' => $updated_at,
         'log_tail' => $log_tail,
+        'pid' => $pid,
+        'process_alive' => $pid_alive,
         'payment_status' => $payment_status,
         'invoice_id' => $invoice_id,
         'can_download' => $can_download,
         'delivery_locked' => $delivery_locked,
         'ui_message' => $ui_message,
+        'error_code' => $error_code,
     ];
 }
 
@@ -2704,14 +2746,35 @@ function svb_start_generation() {
     $started_at = isset($result['started_at']) ? (int) $result['started_at'] : 0;
 
     if (!$is_paid && !$pending_allowed) {
-        wp_send_json_error([
-            'code' => 'PAYMENT_NOT_CONFIRMED',
-            'payment_status' => $payment_status,
-        ]);
+        $payload = svb_generation_state_payload($order);
+        $payload['status'] = 'payment_pending';
+        $payload['progress'] = 0;
+        $payload['download_url'] = '';
+        $payload['error_code'] = 'PAYMENT_PENDING';
+        $payload['message'] = 'Payment not confirmed';
+
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB DEBUG][GENERATION][START] payment pending ' . wp_json_encode([
+                'order_id' => $order['order_id'] ?? null,
+                'public_token' => $public_token,
+                'payment_status' => $payment_status,
+            ]));
+        }
+
+        wp_send_json_success($payload);
     }
 
     if (in_array($existing_status, ['queued', 'running'], true) && $started_at > 0) {
         $payload = svb_generation_state_payload($order);
+        if (defined('SVB_DEBUG') && SVB_DEBUG) {
+            error_log('[SVB DEBUG][GENERATION][START] resume ' . wp_json_encode([
+                'order_id' => $order['order_id'] ?? null,
+                'public_token' => $public_token,
+                'status' => $payload['status'] ?? '',
+                'pid' => $payload['pid'] ?? null,
+                'process_alive' => $payload['process_alive'] ?? null,
+            ]));
+        }
         wp_send_json_success($payload);
     }
 
@@ -2723,6 +2786,17 @@ function svb_start_generation() {
     }
 
     $payload = svb_generation_state_payload($order);
+
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        error_log('[SVB DEBUG][GENERATION][START] state ' . wp_json_encode([
+            'order_id' => $order['order_id'] ?? null,
+            'public_token' => $public_token,
+            'status' => $payload['status'] ?? '',
+            'pid' => $payload['pid'] ?? null,
+            'process_alive' => $payload['process_alive'] ?? null,
+            'payment_status' => $payload['payment_status'] ?? '',
+        ]));
+    }
 
     wp_send_json_success($payload);
 }
@@ -2743,6 +2817,17 @@ function svb_generation_status() {
     }
 
     $payload = svb_generation_state_payload($order);
+
+    if (defined('SVB_DEBUG') && SVB_DEBUG) {
+        error_log('[SVB DEBUG][GENERATION][STATUS] ' . wp_json_encode([
+            'order_id' => $order['order_id'] ?? null,
+            'public_token' => $public_token,
+            'status' => $payload['status'] ?? '',
+            'pid' => $payload['pid'] ?? null,
+            'process_alive' => $payload['process_alive'] ?? null,
+            'payment_status' => $payload['payment_status'] ?? '',
+        ]));
+    }
     wp_send_json_success($payload);
 }
 
