@@ -174,9 +174,13 @@ function svbDebugLog(tag, payload) {
 
 function svbExtractReturnParams() {
   const params = new URLSearchParams(window.location.search || '');
-  const svbReturn = params.get('svb_return') || '';
+const svbReturn = params.get('svb_return') || '';
   const svbToken = params.get('svb_token') || '';
-  const svbOrder = params.get('svb_order') || '';
+  let svbOrder = params.get('svb_order') || '';
+  
+  // [FIX] Ignore zero order ID from URL
+  if (svbOrder === '0') svbOrder = '';
+
   const hasReturnParams = svbReturn === '1' && (!!svbToken || !!svbOrder);
 
   return { params, svbReturn, svbToken, svbOrder, hasReturnParams };
@@ -1792,6 +1796,12 @@ function svbFormatTime(seconds) {
 
 
 function svbSetStep(n, reason = 'user_flow'){
+  // [FIX] Anti-rollback guard: якщо оплачено, не кидати на крок 2 автоматично
+  if (n === 2 && svbNormalizePaymentStatus(svbPaymentStatus) === 'paid' && reason === 'user_flow') {
+      console.warn('[SVB UI] Blocked auto-rollback to step 2 because status is PAID');
+      return;
+  }
+
   const prevState = svbLoadState();
   const prevStep = prevState && prevState.step ? prevState.step : null;
   $$('.svb-step').forEach(s=>s.classList.remove('active'));
@@ -4039,9 +4049,10 @@ async function svbHandlePaymentReturnFlow(params) {
   const lastAttempt = svbLoadLastPaymentAttempt();
   const storedOrder = svbLoadLastOrderToken();
   const hasState = !!savedState;
-  const urlOrderId = parseInt(params.get('order_id') || '0', 10);
-  const urlToken = params.get('token') || params.get('svb_order') || params.get('svb_token') || '';
-  const paymentAttemptId = lastAttempt && lastAttempt.order_id ? lastAttempt.order_id : null;
+const rawUrlOrderId = params.get('order_id') || params.get('svb_order');
+  const urlOrderId = (rawUrlOrderId && rawUrlOrderId !== '0') ? parseInt(rawUrlOrderId, 10) : 0;
+  // svb_order тут помилково брався як токен у старому коді, виправляємо пріоритет:
+  const urlToken = params.get('token') || params.get('svb_token') || '';  const paymentAttemptId = lastAttempt && lastAttempt.order_id ? lastAttempt.order_id : null;
   const orderId = urlOrderId || paymentAttemptId || (savedState && savedState.order_id) || (storedOrder && storedOrder.order_id) || 0;
   const token = urlToken || (lastAttempt && lastAttempt.public_token) || (savedState && savedState.public_token) || (storedOrder && storedOrder.token) || '';
 

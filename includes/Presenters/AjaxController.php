@@ -2790,12 +2790,26 @@ function svb_start_generation() {
 
     $result = svb_read_order_result($order);
     $resolved_payment = svb_order_resolve_payment($order);
-    $payment = $resolved_payment['payment'];
+$payment = $resolved_payment['payment'];
     $payment_status = $resolved_payment['status'];
     $payment_status_col = $resolved_payment['status_col'] ?? '';
+
+    if ($payment_status !== 'paid' && !empty($payment['invoice_id'])) {
+        $inv_status = svb_monobank_get_invoice_status($payment['invoice_id']);
+        if (!is_wp_error($inv_status)) {
+             $updated_p = svb_monobank_apply_payment_status($order, $inv_status, 'generation_start_sync');
+             $normalized_check = svb_payment_normalize_status($updated_p['status'] ?? '');
+             if ($normalized_check === 'paid') {
+                 $payment_status = 'paid';
+                 $payment = $updated_p;
+                 // Оновлюємо дані замовлення в пам'яті, щоб pending_allowed спрацював коректно
+                 $order['payment'] = svb_orders_encode_payment($payment);
+             }
+        }
+    }
+
     if ($payment_status !== 'paid') {
-        $fresh_order = svb_get_order_by_id((int) $order['order_id']);
-        if ($fresh_order) {
+        $fresh_order = svb_get_order_by_id((int) $order['order_id']);        if ($fresh_order) {
             $order = $fresh_order;
             $result = svb_read_order_result($order);
             $resolved_payment = svb_order_resolve_payment($order);
