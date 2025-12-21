@@ -2768,6 +2768,10 @@ async function svbPollPaymentConfirmation(orderId, token) {
     svbShowGenerationStatus(result || {});
     await svbSleep(2500);
   }
+  svbRecordResumeChoice(hasExplicitReturn ? 'url_return' : 'session_return', orderToUse || null, tokenToUse || null);
+  try {
+    document.cookie = `svb_public_token=${tokenToUse}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch (e) {}
 
   svbShowPaymentError('Оплата ще не підтверджена. Спробуйте оновити сторінку або зачекайте хвилину.');
   if (svbIsDebugMode()) {
@@ -4570,6 +4574,10 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
 
     svbSetStep(3, 'start_generation_by_token');
     svbShowGenerationProcessing();
+
+    if (svbIsDebugMode()) {
+        console.log('[SVB DEBUG][GENERATION][START]', { order_id: resolvedOrderId || null, public_token: tokenToUse, active_order: active });
+    }
 
     if (svbIsDebugMode()) {
         console.log('[SVB DEBUG][GENERATION][START]', { order_id: resolvedOrderId || null, public_token: tokenToUse, active_order: active });
