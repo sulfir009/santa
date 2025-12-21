@@ -143,6 +143,16 @@ function svbDebugLog(tag, payload) {
   } catch (e) {}
 }
 
+function svbExtractReturnParams() {
+  const params = new URLSearchParams(window.location.search || '');
+  const svbReturn = params.get('svb_return') || '';
+  const svbToken = params.get('svb_token') || '';
+  const svbOrder = params.get('svb_order') || '';
+  const hasReturnParams = svbReturn === '1' && (!!svbToken || !!svbOrder);
+
+  return { params, svbReturn, svbToken, svbOrder, hasReturnParams };
+}
+
 function svbNormalizePublicToken(token) {
   const t = (token || '').toString().trim();
   if (!t) return '';
@@ -260,7 +270,9 @@ function svbResolveInitialStep(opts = {}) {
   if (svbInitialStepLocked && svbInitialStepDecision) return svbInitialStepDecision;
 
   const state = svbLoadState() || {};
-  const hasReturnParams = !!(opts.returnContext && opts.returnContext.hasParams);
+  const hasReturnParams = typeof opts.hasReturnParams === 'boolean'
+    ? !!opts.hasReturnParams
+    : svbExtractReturnParams().hasReturnParams;
   const allowPaymentResume = !!opts.allowPaymentResume;
   const activeOrder = svbGetActiveOrder('initial_step_resolve');
   const serverGenStatus = SVB_PAGE_BOOT && (SVB_PAGE_BOOT.generation_status || SVB_PAGE_BOOT.status)
@@ -274,9 +286,9 @@ function svbResolveInitialStep(opts = {}) {
   let source = 'default';
   let reason = 'no_return';
 
-  if (allowPaymentResume && hasReturnParams) {
+  if (hasReturnParams) {
     decidedStep = 3;
-    source = 'return';
+    source = 'return_flow';
     reason = 'return_flow';
   } else if (canResumeGeneration) {
     decidedStep = 3;
@@ -5344,19 +5356,36 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 SVB Init started (Final Fix)');
 
   svbFetchSessionDebug('init');
+  const { params: urlParams, svbReturn, svbToken: svbTokenParam, svbOrder: svbOrderParam, hasReturnParams } = svbExtractReturnParams();
+  svbHadReturnParams = svbHadReturnParams || hasReturnParams;
+
+  try {
+    console.log('[SVB INIT][URL PARAMS]', {
+      svb_return: svbReturn,
+      svb_token: svbTokenParam,
+      svb_order: svbOrderParam,
+      computed_hasReturnParams: hasReturnParams,
+    });
+  } catch (e) {}
+
   svbInitActiveOrder('dom_boot');
   const captured = svbCaptureReturnParams();
-  const urlParams = new URLSearchParams(window.location.search);
   const returnContext = svbIsPaymentReturnNavigation(urlParams);
-  const isPaymentReturn = returnContext.allowed;
-  const allowPaymentResume = isPaymentReturn && !SVB_IS_RELOAD && svbConsumeAfterPaymentFlag(returnContext.hasParams);
+  const isPaymentReturn = returnContext.allowed || hasReturnParams;
+  const allowPaymentResume = hasReturnParams || (!SVB_IS_RELOAD && svbConsumeAfterPaymentFlag(returnContext.hasParams));
 
-  const initialDecision = svbResolveInitialStep({ returnContext, allowPaymentResume });
+  const initialDecision = svbResolveInitialStep({ returnContext, allowPaymentResume, hasReturnParams });
   svbSetStep(initialDecision.step, initialDecision.reason || initialDecision.source || 'init_resolve');
+
+  if (hasReturnParams) {
+    svbSetActiveOrder(svbOrderParam || captured.orderFromUrl || null, svbTokenParam || captured.tokenFromUrl || '', svbActiveOrder.payment_status || 'pending', { reason: 'return_flow', force: true });
+    svbSetStep(3, 'return_flow');
+    svbProceedToGenerateFlow();
+  }
 
   (async () => {
     let resumeHandled = false;
-    if (isPaymentReturn && allowPaymentResume) {
+    if ((hasReturnParams || isPaymentReturn) && allowPaymentResume) {
       resumeHandled = await svbHandleResumeFromUrl(urlParams);
     }
   })();
