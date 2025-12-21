@@ -573,6 +573,14 @@ function svb_check_payment() {
         }
     }
 
+    // Re-read from DB to use the persisted payment as the single source of truth.
+    $refreshed = svb_get_order_by_id_and_token($order_id, $token);
+    if ($refreshed) {
+        $order_row = $refreshed;
+        $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+        $status = svb_payment_normalize_status($payment['status'] ?? $status);
+    }
+
     $generation = svb_generation_state_payload($order_row);
 
     $response = [
@@ -589,6 +597,7 @@ function svb_check_payment() {
         'invoice_id' => svb_monobank_mask_invoice($payment['invoice_id'] ?? ''),
         'public_token' => svb_mask_value($token),
         'generation_status' => $generation['status'],
+        'source' => 'db_refresh',
     ]);
 
     wp_send_json_success($response);
@@ -2588,6 +2597,11 @@ function svb_generation_state_payload($order_row) {
     $public_token = isset($order_row['public_token']) ? sanitize_text_field($order_row['public_token']) : '';
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    $payment_status_col = isset($order_row['payment_status']) ? svb_payment_normalize_status($order_row['payment_status']) : '';
+    if ($payment_status_col === 'paid') {
+        $payment_status = 'paid';
+        $payment['status'] = 'paid';
+    }
     $invoice_id = $payment['invoice_id'] ?? '';
     $result = svb_read_order_result($order_row);
     $video_path = isset($result['video_path']) ? $result['video_path'] : '';
@@ -2751,6 +2765,25 @@ function svb_start_generation() {
     $result = svb_read_order_result($order);
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order['payment'] ?? []));
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    $payment_status_col = isset($order['payment_status']) ? svb_payment_normalize_status($order['payment_status']) : '';
+    if ($payment_status_col === 'paid' && $payment_status !== 'paid') {
+        $payment_status = 'paid';
+        $payment['status'] = 'paid';
+    }
+    if ($payment_status !== 'paid') {
+        $fresh_order = svb_get_order_by_id((int) $order['order_id']);
+        if ($fresh_order) {
+            $order = $fresh_order;
+            $result = svb_read_order_result($order);
+            $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order['payment'] ?? []));
+            $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
+            $payment_status_col = isset($order['payment_status']) ? svb_payment_normalize_status($order['payment_status']) : $payment_status_col;
+            if ($payment_status_col === 'paid') {
+                $payment_status = 'paid';
+                $payment['status'] = 'paid';
+            }
+        }
+    }
     $is_paid = ($payment_status === 'paid');
     $pending_allowed = svb_generation_pending_allowed($order, $public_token, $payment, $result);
 
@@ -2770,6 +2803,7 @@ function svb_start_generation() {
                 'order_id' => $order['order_id'] ?? null,
                 'public_token' => $public_token,
                 'payment_status' => $payment_status,
+                'payment_status_col' => $payment_status_col,
             ]));
         }
 
@@ -2807,6 +2841,7 @@ function svb_start_generation() {
             'pid' => $payload['pid'] ?? null,
             'process_alive' => $payload['process_alive'] ?? null,
             'payment_status' => $payload['payment_status'] ?? '',
+            'payment_status_col' => $payment_status_col,
         ]));
     }
 
