@@ -477,7 +477,7 @@ function svb_order_resume_info() {
     $video_path = $result['video_path'] ?? '';
     $generated_at = isset($result['generated_at']) ? strtotime($result['generated_at']) : 0;
     $has_video = ($video_path && file_exists($video_path) && is_readable($video_path) && (!$generated_at || (time() - $generated_at) <= HOUR_IN_SECONDS));
-    $can_regen = ($payment_status === 'success');
+    $can_regen = ($payment_status === 'paid');
 
     $resume_url = svb_build_resume_url($order_row['order_id'], $order_row['public_token'] ?? '');
     $download_url = ($can_regen && !empty($order_row['public_token'])) ? svb_build_download_url($order_row['order_id'], $order_row['public_token']) : '';
@@ -522,7 +522,7 @@ function svb_check_payment() {
 
     $response = [
         'found' => false,
-        'payment_status' => 'unpaid',
+        'payment_status' => 'pending',
     ];
 
     if (!$order_id || !$token) {
@@ -557,7 +557,7 @@ function svb_check_payment() {
                 'order_id' => $order_id,
             ]);
 
-            $updated_payment = svb_monobank_apply_payment_status($order_row, is_array($invoice_status) ? $invoice_status : []);
+            $updated_payment = svb_monobank_apply_payment_status($order_row, is_array($invoice_status) ? $invoice_status : [], 'poll');
             $payment = is_array($updated_payment) ? $updated_payment : $payment;
             $status = svb_payment_normalize_status($payment['status'] ?? $status);
 
@@ -2002,7 +2002,23 @@ function svb_payment_normalize_status($status) {
         return 'paid';
     }
 
-    return svb_monobank_normalize_status($status);
+    if (in_array($normalized, ['failed', 'failure', 'canceled', 'cancelled', 'expired', 'reversed'], true)) {
+        return 'failed';
+    }
+
+    if ($normalized === 'pending' || $normalized === 'unpaid' || $normalized === 'created' || $normalized === 'hold') {
+        return 'pending';
+    }
+
+    $fallback = svb_monobank_normalize_status($status);
+    if ($fallback === 'success') {
+        return 'paid';
+    }
+    if ($fallback === 'failure') {
+        return 'failed';
+    }
+
+    return 'pending';
 }
 
 function svb_payment_decision($payment_status, $paid_fingerprint, $fingerprint_current, $meta = []) {
@@ -2101,7 +2117,7 @@ function svb_pay_debug_state() {
             $response['mono']['modifiedDate'] = svb_monobank_extract_modified($status);
             $response['mono']['failureReason'] = $status['failureReason'] ?? '';
 
-            $payment = svb_monobank_apply_payment_status($order_row, $status);
+            $payment = svb_monobank_apply_payment_status($order_row, $status, 'payment_gate');
             $server_status = $payment['status'] ?? $server_status;
 
             $response['server']['payment_status'] = $server_status;
@@ -2137,7 +2153,7 @@ function svb_monobank_sync_status() {
     $session_id = svb_orders_get_session_id();
     $response = [
         'order_id' => $order_id,
-        'payment_status' => 'unpaid',
+        'payment_status' => 'pending',
         'paid_fingerprint' => '',
         'fingerprint_current' => '',
         'invoice_masked' => '',
@@ -2229,7 +2245,7 @@ function svb_monobank_sync_status() {
             ];
 
             // Monobank: webHookUrl may arrive out of order, rely on modifiedDate to decide updates.
-            $payment = svb_monobank_apply_payment_status($order_row, $status);
+            $payment = svb_monobank_apply_payment_status($order_row, $status, 'return');
             $response['payment_status'] = svb_payment_normalize_status($payment['status'] ?? $response['payment_status']);
             $response['paid_fingerprint'] = $payment['paid_fingerprint'] ?? $response['paid_fingerprint'];
             $response['modifiedDate'] = isset($payment['modifiedDate']) ? (int) $payment['modifiedDate'] : $response['modifiedDate'];
@@ -2686,7 +2702,15 @@ function svb_generation_state_payload($order_row) {
         }
     }
 
-    if (!$can_download && !$file_exists && in_array($payment_status, ['pending', 'processing', 'unpaid'], true)) {
+    if ($payment_status === 'failed' && !$file_exists) {
+        $status = 'failed';
+        $progress = 0;
+        $download_url = '';
+        $error_code = 'PAYMENT_FAILED';
+        if (!$ui_message) {
+            $ui_message = 'Оплата не підтверджена або була скасована.';
+        }
+    } elseif (!$can_download && !$file_exists && $payment_status !== 'paid') {
         $status = 'payment_pending';
         $progress = 0;
         $download_url = '';
@@ -2708,7 +2732,7 @@ function svb_generation_state_payload($order_row) {
         $download_url = '';
     }
 
-    if (!$can_download && !$ui_message && in_array($payment_status, ['pending', 'processing'], true)) {
+    if (!$can_download && !$ui_message && $payment_status === 'pending') {
         $ui_message = 'Оплата підтверджується. Відео вже генерується, посилання з\'явиться після підтвердження.';
     }
 
@@ -2782,6 +2806,17 @@ function svb_start_generation() {
     }
     $is_paid = ($payment_status === 'paid');
     $pending_allowed = svb_generation_pending_allowed($order, $public_token, $payment, $result);
+
+    if (function_exists('svb_pay_log')) {
+        svb_pay_log('generation.start_gate', [
+            'order_id' => $order['order_id'] ?? null,
+            'public_token' => svb_mask_value($public_token),
+            'db_payment_status' => $payment_status,
+            'payment_status_col' => $payment_status_col,
+            'pending_allowed' => $pending_allowed,
+            'result_status' => $result['status'] ?? '',
+        ]);
+    }
 
     $existing_status = isset($result['status']) ? $result['status'] : '';
     $started_at = isset($result['started_at']) ? (int) $result['started_at'] : 0;
@@ -3044,7 +3079,7 @@ function svb_payment_gate() {
     if ($invoice_id && !$is_paid_for_current && in_array($payment_status, ['pending', 'processing'], true)) {
         $status = svb_monobank_get_invoice_status($invoice_id);
         if (!is_wp_error($status)) {
-            $payment = svb_monobank_apply_payment_status($order_row, $status);
+            $payment = svb_monobank_apply_payment_status($order_row, $status, 'generation_status');
             $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
             $paid_fingerprint = $payment['paid_fingerprint'] ?? $paid_fingerprint;
             $payment_url = $payment['invoice_page_url'] ?? $payment_url;

@@ -781,7 +781,7 @@ function svb_init_user_order() {
 
 function svb_get_payment_defaults() {
     return [
-        'status' => 'unpaid',
+        'status' => 'pending',
         'invoice_id' => '',
         'invoice_page_url' => '',
         'invoice_fingerprint' => '',
@@ -800,14 +800,11 @@ function svb_payment_status_priority($status) {
 
     $map = [
         'paid' => 3,
-        'processing' => 2,
+        'failed' => 2,
         'pending' => 1,
-        'unpaid' => 0,
-        'failure' => 0,
-        'failed' => 0,
     ];
 
-    return isset($map[$normalized]) ? $map[$normalized] : 0;
+    return isset($map[$normalized]) ? $map[$normalized] : 1;
 }
 
 function svb_order_resolve_payment(array $order_row) {
