@@ -2769,10 +2769,18 @@ function svbShowGenerationStatus(payload) {
     queued: 'Замовлення в черзі. Це може зайняти до 1–2 хвилин…',
     running: 'Генеруємо відео… це може зайняти до 1–2 хвилин',
     processing: 'Генеруємо відео… це може зайняти до 1–2 хвилин',
+    payment_pending: 'Очікуємо підтвердження оплати…',
+    pending: 'Очікуємо підтвердження оплати…',
     done: 'Відео готове! Готуємо посилання…',
     failed: 'Генерація не вдалася. Спробуйте ще раз.'
   };
-  const text = (payload && payload.ui_message) ? payload.ui_message : (map[status] || map.processing);
+  const text = (payload && payload.ui_message)
+    ? payload.ui_message
+    : (payload && payload.message)
+      ? payload.message
+      : (payload && payload.last_error)
+        ? payload.last_error
+        : (map[status] || map.processing);
   if (statusEl) {
     statusEl.textContent = text;
   }
@@ -4727,7 +4735,8 @@ async function svbPollGeneration(publicToken) {
         }
 
         if (payload.status === 'failed') {
-            svbShowPaymentError('Генерація не вдалася. Спробуйте ще раз.');
+            const failMsg = payload.message || payload.ui_message || payload.last_error || 'Генерація не вдалася. Спробуйте ще раз.';
+            svbShowPaymentError(failMsg);
             svbStopGenerationPoll();
             return;
         }
