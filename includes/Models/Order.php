@@ -810,6 +810,36 @@ function svb_payment_status_priority($status) {
     return isset($map[$normalized]) ? $map[$normalized] : 0;
 }
 
+function svb_order_resolve_payment(array $order_row) {
+    $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
+    $status_json_raw = $payment['status'] ?? 'unpaid';
+    $status_json = svb_payment_normalize_status($status_json_raw);
+
+    $status_col_raw = isset($order_row['payment_status']) ? $order_row['payment_status'] : '';
+    $status_col = $status_col_raw !== '' ? svb_payment_normalize_status($status_col_raw) : '';
+
+    $status = $status_json;
+    $source = 'payment_json';
+
+    $json_priority = svb_payment_status_priority($status_json);
+    $col_priority = svb_payment_status_priority($status_col);
+
+    if ($status_col && $col_priority >= $json_priority) {
+        $status = $status_col;
+        $source = 'payment_status_col';
+    }
+
+    $payment['status'] = $status;
+
+    return [
+        'payment' => $payment,
+        'status' => $status,
+        'source' => $source,
+        'status_json' => $status_json,
+        'status_col' => $status_col,
+    ];
+}
+
 function svb_generate_public_token() {
     $token = bin2hex(random_bytes(32));
     return [

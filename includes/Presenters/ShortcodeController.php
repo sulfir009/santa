@@ -7,6 +7,9 @@ function svb_render_form() {
     $order_data = svb_init_user_order();
     $order_id = $order_data['order_id'];
     $payment_state = isset($order_data['payment']) ? $order_data['payment'] : svb_get_payment_defaults();
+    if (!empty($payment_state)) {
+        $payment_state['status'] = svb_payment_normalize_status($payment_state['status'] ?? 'unpaid');
+    }
 
     svb_log('payment_debug_page_boot', [
         'source' => 'render_form',

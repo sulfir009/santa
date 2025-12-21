@@ -123,6 +123,36 @@ let svbLatestGenerationStatus = null;
 let svbInitialStepLocked = false;
 let svbInitialStepDecision = null;
 
+const SVB_PAYMENT_PRIORITY = { unpaid: 0, pending: 1, failed: 2, paid: 3 };
+
+function svbNormalizePaymentStatus(status) {
+  const normalized = (status || '').toString().toLowerCase();
+  if (['paid', 'success', 'processing'].includes(normalized)) return 'paid';
+  if (['failed', 'failure', 'canceled', 'cancelled', 'expired'].includes(normalized)) return 'failed';
+  if (normalized === 'pending') return 'pending';
+  return 'unpaid';
+}
+
+function svbMaybeUpdatePaymentStatus(nextStatus, context = 'update') {
+  const incoming = svbNormalizePaymentStatus(nextStatus);
+  const current = svbNormalizePaymentStatus(svbPaymentStatus);
+  const incomingPriority = SVB_PAYMENT_PRIORITY[incoming] ?? 0;
+  const currentPriority = SVB_PAYMENT_PRIORITY[current] ?? 0;
+
+  if (incomingPriority < currentPriority) {
+    if (svbIsDebugMode()) {
+      console.warn('[SVB DEBUG][PAYMENT] skip downgrade', { current, incoming, context });
+    }
+    return current;
+  }
+
+  svbPaymentStatus = incoming;
+  if (svbIsDebugMode()) {
+    console.log('[SVB DEBUG][PAYMENT] status set', { status: svbPaymentStatus, context });
+  }
+  return svbPaymentStatus;
+}
+
 const SVB_GENERATION_STARTED_KEY = 'svb_generation_started_map';
 
 function svbRawDebugFlag() {
@@ -195,7 +225,7 @@ function svbSetActiveOrder(orderId, token, paymentStatus, opts = {}) {
   const next = Object.assign({}, svbActiveOrder);
   if (normalizedOrderId) next.order_id = normalizedOrderId;
   if (normalizedToken) next.public_token = normalizedToken;
-  if (paymentStatus) next.payment_status = paymentStatus;
+  if (paymentStatus) next.payment_status = svbNormalizePaymentStatus(paymentStatus);
   svbActiveOrderInitialized = true;
   svbActiveOrder = next;
 
@@ -206,17 +236,18 @@ function svbSetActiveOrder(orderId, token, paymentStatus, opts = {}) {
 
 function svbMarkPaymentPaid(orderId, token, source = 'payment_paid') {
   const currentState = svbLoadState() || {};
-  if (svbPaymentStatus === 'paid' && currentState.payment_status === 'success') {
+  const statePayment = svbNormalizePaymentStatus(currentState.payment_status);
+  if (svbNormalizePaymentStatus(svbPaymentStatus) === 'paid' && statePayment === 'paid') {
     return;
   }
 
-  svbPaymentStatus = 'paid';
+  svbMaybeUpdatePaymentStatus('paid', source);
   if (typeof SVB_PAYMENT !== 'undefined') {
     SVB_PAYMENT.status = 'paid';
   }
 
   const nextState = Object.assign({}, currentState, {
-    payment_status: 'success',
+    payment_status: 'paid',
   });
 
   if (orderId) nextState.order_id = orderId;
@@ -993,7 +1024,7 @@ const SVB_PAYMENT = (window.SVB_DATA && window.SVB_DATA.payment)
     ? window.SVB_DATA.payment
     : {};
 let svbPaymentReturnHandled = false;
-let svbPaymentStatus = SVB_PAYMENT.status || 'unpaid';
+let svbPaymentStatus = svbNormalizePaymentStatus(SVB_PAYMENT.status || 'unpaid');
 
 function svbIsDebugMode() {
     try {
@@ -3871,7 +3902,7 @@ async function svbHandleStep2Next() {
       return;
     }
 
-    svbPaymentStatus = 'paid';
+    svbMaybeUpdatePaymentStatus('paid', 'gate_decision');
     svbProceedToGenerateFlow();
   } catch (err) {
     svbError('[SVB PAY] invoice creation failed', err);
@@ -3912,7 +3943,7 @@ async function svbCheckInvoiceOnReturn() {
     return;
   }
 
-  if (svbPaymentStatus === 'paid') return;
+  if (svbNormalizePaymentStatus(svbPaymentStatus) === 'paid') return;
 
   const invoiceId = params.get('invoiceId') || svbGetStoredInvoiceId() || (SVB_PAYMENT.invoice_id || '');
   if (!invoiceId) return;
@@ -3920,7 +3951,7 @@ async function svbCheckInvoiceOnReturn() {
   try {
     const status = await svbRequestInvoiceStatus(invoiceId);
     if (status.status === 'paid') {
-      svbPaymentStatus = 'paid';
+      svbMaybeUpdatePaymentStatus('paid', 'return_invoice');
       SVB_PAYMENT.status = 'paid';
       svbClearInvoiceId();
       svbProceedToGenerateFlow();
@@ -3940,7 +3971,7 @@ async function svbHandlePaymentDecision(orderId, state, token, fromPendingSync =
 
   const markPaid = () => {
     svbHidePendingNotice();
-    svbPaymentStatus = 'paid';
+    svbMaybeUpdatePaymentStatus('paid', 'payment_decision');
     SVB_PAYMENT.status = 'paid';
     svbClearInvoiceId();
     svbSaveLastPaidOrder(orderId, tokenForMark, state.paid_fingerprint || state.fingerprint_current);
@@ -4146,7 +4177,7 @@ if (restoreBtn) {
 const paymentRetryBtn = document.getElementById('svb-payment-retry');
 if (paymentRetryBtn) {
   paymentRetryBtn.addEventListener('click', () => {
-    svbPaymentStatus = 'unpaid';
+    svbMaybeUpdatePaymentStatus('unpaid', 'payment_retry');
     svbClearInvoiceId();
     svbHidePaymentError();
     svbHandleStep2Next();
@@ -4155,7 +4186,7 @@ if (paymentRetryBtn) {
 const paymentBackBtn = document.getElementById('svb-payment-back');
 if (paymentBackBtn) {
   paymentBackBtn.addEventListener('click', () => {
-    svbPaymentStatus = 'unpaid';
+    svbMaybeUpdatePaymentStatus('unpaid', 'payment_back');
     svbClearInvoiceId();
     svbHidePaymentError();
     svbSetStep(2);
@@ -4593,7 +4624,7 @@ function svbEnsurePendingPaymentPolling(invoiceId, publicToken) {
             }
             if (status && status.status === 'paid') {
                 svbStopPaymentStatusPoll();
-                svbPaymentStatus = 'paid';
+                svbMaybeUpdatePaymentStatus('paid', 'pending_poll');
                 if (SVB_PAYMENT) SVB_PAYMENT.status = 'paid';
                 svbStartGenerationByToken(token || publicToken || '');
                 return;
