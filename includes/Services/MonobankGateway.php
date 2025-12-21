@@ -108,6 +108,33 @@ function svb_monobank_normalize_status($status) {
     return 'pending';
 }
 
+function svb_monobank_map_remote_status($remote_status) {
+    $normalized = svb_monobank_normalize_status($remote_status);
+
+    if ($normalized === 'success') {
+        return 'paid';
+    }
+
+    if ($normalized === 'failure') {
+        return 'failed';
+    }
+
+    if ($normalized === 'processing') {
+        return 'pending';
+    }
+
+    return 'pending';
+}
+
+function svb_monobank_debug_log($message, array $context = []) {
+    if (!defined('SVB_DEBUG') || !SVB_DEBUG) {
+        return;
+    }
+
+    $suffix = $context ? ' ' . wp_json_encode($context) : '';
+    error_log('[SVB DEBUG][MONO] ' . $message . $suffix);
+}
+
 function svb_monobank_extract_order_id($payload) {
     $reference = '';
     if (is_array($payload)) {
@@ -451,12 +478,13 @@ function svb_handle_monobank_return() {
     }
 
     $remote_status = $status['status'] ?? '';
-    $normalized_status = 'pending';
-    if ($remote_status === 'success') {
-        $normalized_status = 'paid';
-    } elseif (in_array($remote_status, ['failure', 'expired', 'canceled', 'reversed'], true)) {
-        $normalized_status = 'failed';
-    }
+    $normalized_status = svb_monobank_map_remote_status($remote_status);
+
+    svb_monobank_debug_log('return.status', [
+        'invoice' => svb_monobank_mask_invoice($invoice_id),
+        'remote_status' => $remote_status,
+        'normalized' => $normalized_status,
+    ]);
 
     svb_update_user_payment_state($uid, [
         'status' => $normalized_status,
@@ -526,6 +554,13 @@ function svb_handle_monobank_webhook(WP_REST_Request $request) {
     if ($order_id) {
         $order_row = svb_get_order_by_id($order_id);
         if ($order_row) {
+            $mapped = svb_monobank_map_remote_status($status);
+            svb_monobank_debug_log('webhook.status', [
+                'invoice' => svb_monobank_mask_invoice($invoice_id),
+                'remote_status' => $status,
+                'normalized' => $mapped,
+                'order_id' => $order_id,
+            ]);
             svb_monobank_apply_payment_status($order_row, is_array($payload) ? $payload : []);
         }
     }
