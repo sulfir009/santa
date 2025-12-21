@@ -559,7 +559,25 @@ function svb_check_payment() {
 
             $updated_payment = svb_monobank_apply_payment_status($order_row, is_array($invoice_status) ? $invoice_status : [], 'poll');
             $payment = is_array($updated_payment) ? $updated_payment : $payment;
-            $status = svb_payment_normalize_status($payment['status'] ?? $status);
+            
+            // === [FIX FINAL] Force Save to DB for Test Keys ===
+            $raw_status = $invoice_status['status'] ?? '';
+            
+            // Если Монобанк говорит success (даже тестовый), а в базе еще не paid
+            if ($raw_status === 'success') {
+                $status = 'paid';
+                $payment['status'] = 'paid'; // Обновляем локальную переменную
+                
+                // ПРИНУДИТЕЛЬНО ПИШЕМ В БАЗУ, чтобы следующий блок кода (refreshed) увидел это
+                svb_update_order_payment_by_order_id($order_id, [
+                    'status' => 'paid',
+                    'paid_at' => time(), // Фиксируем время оплаты
+                    'payment_updated_at' => time()
+                ]);
+            } else {
+                $status = svb_payment_normalize_status($payment['status'] ?? $status);
+            }
+            // === [FIX END] ===
 
             if (!empty($order_row['session_id'])) {
                 $user_updates = [
@@ -2794,19 +2812,30 @@ $payment = $resolved_payment['payment'];
     $payment_status = $resolved_payment['status'];
     $payment_status_col = $resolved_payment['status_col'] ?? '';
 
+// === [FIX START] Force Sync Payment Status (Improved) ===
     if ($payment_status !== 'paid' && !empty($payment['invoice_id'])) {
         $inv_status = svb_monobank_get_invoice_status($payment['invoice_id']);
+        
         if (!is_wp_error($inv_status)) {
              $updated_p = svb_monobank_apply_payment_status($order, $inv_status, 'generation_start_sync');
+             
+             // Получаем нормализованный статус
              $normalized_check = svb_payment_normalize_status($updated_p['status'] ?? '');
-             if ($normalized_check === 'paid') {
+             // Получаем "сырой" статус от банка (обычно 'success')
+             $raw_status = $inv_status['status'] ?? '';
+             
+             // Считаем оплаченным, если WP говорит paid ИЛИ банк говорит success
+             if ($normalized_check === 'paid' || $raw_status === 'success') {
                  $payment_status = 'paid';
                  $payment = $updated_p;
-                 // Оновлюємо дані замовлення в пам'яті, щоб pending_allowed спрацював коректно
+                 
+                 // Принудительно ставим статус paid в памяти для дальнейшей логики
+                 $payment['status'] = 'paid'; 
                  $order['payment'] = svb_orders_encode_payment($payment);
              }
         }
     }
+    // === [FIX END] ===
 
     if ($payment_status !== 'paid') {
         $fresh_order = svb_get_order_by_id((int) $order['order_id']);        if ($fresh_order) {

@@ -1796,11 +1796,19 @@ function svbFormatTime(seconds) {
 
 
 function svbSetStep(n, reason = 'user_flow'){
-  // [FIX] Anti-rollback guard: якщо оплачено, не кидати на крок 2 автоматично
-  if (n === 2 && svbNormalizePaymentStatus(svbPaymentStatus) === 'paid' && reason === 'user_flow') {
-      console.warn('[SVB UI] Blocked auto-rollback to step 2 because status is PAID');
-      return;
+  
+  // === [FIX START] Anti-rollback guard with Forward Check ===
+  // Получаем текущий активный шаг из DOM, чтобы понять, откуда мы идем
+  const currentActiveEl = document.querySelector('.svb-step.active');
+  const currentStepNum = currentActiveEl ? parseInt(currentActiveEl.getAttribute('data-step') || '0', 10) : 0;
+
+if (n === 2 && svbNormalizePaymentStatus(svbPaymentStatus) === 'paid' && reason === 'user_flow') {
+      if (currentStepNum !== 1) {
+          console.warn('[SVB UI] Blocked auto-rollback to step 2 because status is PAID (origin not step 1)');
+          return;
+      }
   }
+  // === [FIX END] ===
 
   const prevState = svbLoadState();
   const prevStep = prevState && prevState.step ? prevState.step : null;
@@ -4734,10 +4742,33 @@ async function svbStartGenerationByToken(publicToken, orderId = null) {
     fd.append('public_token', tokenToUse);
     fd.append('return_flow', returnFlowFlag ? '1' : '');
 
-    try {
+try {
         const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!data.success) {
+        const data = await res.json();
+
+        // === [FIX START] Auto-Retry Logic (Updated) ===
+        const tempPayload = data.data || {};
+        // Расширенная проверка: считаем "ожиданием" даже ошибку (success: false), 
+        // если мы в процессе возврата (returnFlowFlag). Это поможет пробить "глюк" первого запроса.
+        const isPaymentPending = (tempPayload.status === 'payment_pending') || 
+                                 (tempPayload.payment_status === 'pending') ||
+                                 (!data.success && returnFlowFlag); // <-- Добавили это условие
+        
+        if (isPaymentPending && returnFlowFlag) {
+             console.warn('[SVB GEN] Backend not ready (Pending/Error) vs Frontend PAID. Retrying in 2s...');
+             
+             const statusTitle = document.getElementById('svb-status');
+             if(statusTitle) statusTitle.textContent = 'Синхронізація оплати...';
+
+             svbGenerationPollLock = false; 
+             setTimeout(() => {
+                 svbStartGenerationByToken(tokenToUse, orderId);
+             }, 2000);
+             return;
+        }
+        // === [FIX END] ===
+
+        if (!data.success) {
       const errMsg = (data && typeof data.data === 'string')
         ? data.data
         : (data && data.data && data.data.code ? data.data.code : 'Не вдалося розпочати генерацію.');

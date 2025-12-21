@@ -347,6 +347,18 @@ function svb_monobank_create_invoice_request($amount_kop, $redirect_url, $refere
         'merchantPaymInfo' => [
             'reference' => $reference,
             'destination' => $comment,
+            // === [FIX START] Add basketOrder for fiscalization ===
+            'basketOrder' => [
+                [
+                    'name' => 'Персональне відео привітання', // Name shown on receipt
+                    'qty' => 1,
+                    'sum' => (int) $amount_kop, // Must match total amount exactly
+                    'icon' => '',
+                    'unit' => 'посл.',
+                    'code' => 'santa-video',
+                ]
+            ]
+            // === [FIX END] ===
         ],
     ];
 
@@ -386,7 +398,6 @@ function svb_monobank_create_invoice_request($amount_kop, $redirect_url, $refere
 
     return $decoded;
 }
-
 function svb_monobank_get_invoice_status($invoice_id) {
     $token = svb_monobank_get_token();
     if (!$token) {
