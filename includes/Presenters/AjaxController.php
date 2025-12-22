@@ -430,12 +430,6 @@ function svb_order_recover() {
         wp_send_json_success($payload);
     }
 
-    if ($resume_url) {
-        $subject = 'Ваше замовлення Santa Video';
-        $message = "Вітаємо! Якщо ви створювали відео раніше, скористайтесь посиланням для повернення до замовлення:\n\n{$resume_url}\n\nЯкщо ви не запитували посилання, просто ігноруйте цей лист.";
-        wp_mail($email, $subject, $message, ['Content-Type: text/plain; charset=UTF-8']);
-    }
-
     $payload = [
         'action' => 'email_sent',
         'reason' => 'session_mismatch_email_sent',
@@ -1418,7 +1412,6 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
             $label = "[{$cat}a1]";
 
             $chain  = "[{$idx}:a]";
-            if ($isName) $chain .= "atrim=0:{$segDur},";
             $chain .= "asetpts=PTS-STARTPTS";
             $chain .= $isName ? $name_format_chain : $audio_format_chain;
             $chain .= ",volume=1.0,adelay={$ms}:all=1";
@@ -1446,10 +1439,9 @@ $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
             $label = "[{$cat}a{$i}]";
 
             $chain  = "{$outs[$i-1]}";
-            if ($isName) $chain .= "atrim=0:{$segDur},";
             $chain .= "asetpts=PTS-STARTPTS";
             $chain .= $isName ? $name_format_chain : $audio_format_chain;
-            $chain .= ",volume=0.4,adelay={$ms}:all=1";
+            $chain .= ",volume=1.0,adelay={$ms}:all=1";
 
             if ($HAS_AFIFO) $chain .= ",afifo";
             $chain .= "{$label}";
@@ -1476,7 +1468,8 @@ $makeAudioBlocks('name',   $A_NAME);
     if (count($amix_inputs) <= 1) {
         $filter[] = '[abase]asplit[aout]'; 
     } else {
-        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=1';
+        // Отключаем нормализацию
+        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=0';
         $chain .= ',alimiter=level_in=1:level_out=1:limit=1:attack=5:release=100';
         if ($HAS_AFIFO) $chain .= ',afifo'; 
         $chain .= '[aout]';
@@ -1764,6 +1757,7 @@ if (!function_exists('svb_apply_manual_round_corners')) {
 }
 
 function svb_check_progress() {
+    svb_check_stale_orders_and_notify();
     // Перевірка безпеки
     if (!isset($_POST['_svb_nonce']) || !wp_verify_nonce($_POST['_svb_nonce'], 'svb_nonce')) {
         wp_send_json_error('bad nonce');
@@ -1953,6 +1947,16 @@ function svb_check_progress() {
 
         set_transient('svb_job_'.$token, [ 'dir'=>$data['job_dir'], 'url'=>$videoUrl ], HOUR_IN_SECONDS);
         delete_transient('svb_job_data_'.$token);
+        if ($verified_order && empty($result['email_sent'])) {
+                // Оновлюємо email в об'єкті, якщо він раптом змінився
+                $verified_order['customer_email'] = $order_row['customer_email'] ?? ''; 
+                
+                svb_send_success_email($verified_order, $videoUrl);
+                
+                // Відмічаємо, що відправили, щоб не спамити
+                $result['email_sent'] = true;
+                svb_update_order_result_status($order_id, $result);
+            }
         
         wp_send_json_success(['status' => 'done', 'url' => $videoUrl]);
 
@@ -1973,34 +1977,51 @@ function svb_confirm(){
     if (!isset($_POST['_svb_nonce']) || !wp_verify_nonce($_POST['_svb_nonce'], 'svb_nonce')) {
         wp_send_json_error('bad nonce');
     }
+
     $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
-    $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : '';
-    if (!$token) wp_send_json_error('no token');
-    
-    $data = get_transient('svb_job_'.$token); 
-    
-    if (!$data || empty($data['url'])) {
-        $data_progress = get_transient('svb_job_data_'.$token);
-        if ($data_progress) {
-             wp_send_json_error('Video is still processing.');
+    $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : ''; 
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+
+    if (!$email) wp_send_json_error('No email provided');
+
+    $order_row = null;
+    if ($order_id) {
+        $order_row = svb_get_order_by_id($order_id);
+    } elseif ($token) {
+        $order_row = svb_get_order_by_token($token);
+        if (!$order_row) {
+            $data = get_transient('svb_job_'.$token);
+            if ($data && !empty($data['url'])) {
+                 // Фолбек для транзиентов без ID (редкий случай)
+                 $sent = wp_mail($email, 'Video Ready', 'Link: ' . $data['url']);
+                 wp_send_json_success(['url'=>$data['url'], 'mail_sent'=>$sent, 'mail_error' => $sent ? '' : 'Transient mail failed']);
+                 return;
+            }
         }
-        wp_send_json_error('Video not found or expired.');
     }
 
-    if ($email) {
-        // === ОНОВЛЕННЯ EMAIL В ЗАМОВЛЕННІ ===
-        if (isset($_COOKIE['svb_user_uid'])) {
-            $uid = sanitize_text_field($_COOKIE['svb_user_uid']);
-            svb_update_user_order($uid, ['email' => $email]);
-        }
-        // ====================================
-
-        $subject = 'Ваше персональне відео від Санти';
-        $message = 'Дякуємо! Ваше відео готове: ' . $data['url'] . "\nПосилання дійсне протягом 1 години.";
-        @wp_mail($email, $subject, $message);
+    if (!$order_row) {
+        wp_send_json_error('Order not found');
     }
 
-    wp_send_json_success([ 'url'=>$data['url'] ]);
+    // Оновлюємо емейл якщо змінився
+    if ($email !== ($order_row['customer_email'] ?? '')) {
+        global $wpdb;
+        $wpdb->update($wpdb->prefix.'svb_orders', ['customer_email'=>$email], ['order_id'=>$order_row['order_id']]);
+        $order_row['customer_email'] = $email;
+    }
+
+    $public_token = svb_resolve_order_public_token($order_row);
+    $video_url = svb_build_download_url($order_row['order_id'], $public_token);
+
+    // === ВИКЛИК НОВОЇ ВЕРСІЇ ФУНКЦІЇ ===
+    $result = svb_send_success_email($order_row, $video_url);
+
+    wp_send_json_success([ 
+        'url' => $video_url, 
+        'mail_sent' => $result['success'],
+        'mail_error' => $result['error'] // <--- ТЕПЕР ТУТ БУДЕ ПРИЧИНА
+    ]);
 }
 function svb_dbg_push(){
     if (!isset($_POST['_svb_nonce']) || !wp_verify_nonce($_POST['_svb_nonce'], 'svb_nonce')) {
@@ -2524,24 +2545,36 @@ function svb_resume_by_identity() {
 
     $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
     $email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
-    if (!$order_id || !$email) {
-        wp_send_json_error('Потрібні email та номер замовлення');
+
+    if (!$order_id && !$email) {
+        wp_send_json_error('Введіть номер замовлення або Email');
     }
 
-    $order = svb_get_order_by_id($order_id);
+    $order = null;
+    
+    // 1. Пріоритет: Пошук за ID
+    if ($order_id) {
+        $order = svb_get_order_by_id($order_id);
+    }
+
+    // 2. Якщо ID немає, шукаємо за Email (останнє оплачене)
+    if (!$order && $email) {
+        $email_hash = svb_orders_email_hash($email);
+        if ($email_hash) {
+            $order = svb_find_latest_paid_order_by_email_hash($email_hash);
+        }
+    }
+
     if (!$order) {
-        wp_send_json_error('Замовлення не знайдено');
-    }
-
-    $order_email = isset($order['customer_email']) ? sanitize_email($order['customer_email']) : '';
-    if (!$order_email || strtolower($order_email) !== strtolower($email)) {
-        wp_send_json_error('Email не співпадає з замовленням');
+        wp_send_json_error('Замовлення з таким номером не знайдено.');
     }
 
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order['payment'] ?? []));
     $status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    
+    // Перевірка оплати
     if (!in_array($status, ['success', 'paid'], true)) {
-        wp_send_json_error('Оплата не підтверджена');
+        wp_send_json_error('Замовлення знайдено, але воно ще не оплачене.');
     }
 
     $result = [];
@@ -2552,8 +2585,26 @@ function svb_resume_by_identity() {
         }
     }
 
+    // === FIX START: Перевіряємо, чи файл існує фізично ===
+    $final_url = '';
+    $status_to_return = $result['status'] ?? '';
+
+    if (!empty($result['download_url']) || !empty($result['video_url'])) {
+        $path = $result['video_path'] ?? '';
+        
+        // Якщо файл існує на диску -> віддаємо посилання
+        if ($path && file_exists($path) && filesize($path) > 1000) {
+            $final_url = $result['download_url'] ?? ($result['video_url'] ?? '');
+        } else {
+            // Якщо файлу немає -> видаляємо посилання, щоб JS запустив регенерацію
+            $final_url = '';
+            $status_to_return = 'expired'; // Або порожньо
+        }
+    }
+    // === FIX END =========================================
+
     $payload = [
-        'order_id' => $order_id,
+        'order_id' => (int)$order['order_id'],
         'public_token' => $order['public_token'] ?? '',
         'child_count' => isset($order['child_count']) ? (int) $order['child_count'] : 1,
         'selected_video_id' => $order['selected_video_id'] ?? '',
@@ -2561,8 +2612,11 @@ function svb_resume_by_identity() {
         'segments' => !empty($order['segments']) ? (is_array($order['segments']) ? $order['segments'] : json_decode((string) $order['segments'], true)) : [],
         'voice' => !empty($order['voice']) ? (is_array($order['voice']) ? $order['voice'] : json_decode((string) $order['voice'], true)) : [],
         'photos' => !empty($order['photos']) ? (is_array($order['photos']) ? $order['photos'] : json_decode((string) $order['photos'], true)) : [],
-        'generation_status' => $result['status'] ?? '',
-        'result_url' => $result['download_url'] ?? ($result['video_url'] ?? ''),
+        
+        'generation_status' => $status_to_return,
+        'result_url' => $final_url, // Тут буде пусто, якщо файлу немає
+        
+        'restored_email' => $order['customer_email'] ?? '' 
     ];
 
     wp_send_json_success($payload);
@@ -3251,7 +3305,6 @@ function svb_start_generation() {
             $ms = (int)round($st * 1000);
             $label = "[{$cat}a1]";
             $chain  = "[{$idx}:a]";
-            if ($isName) $chain .= "atrim=0:{$segDur},";
             $chain .= "asetpts=PTS-STARTPTS" . ($isName ? $name_format_chain : $audio_format_chain);
             $chain .= ",volume=1.0,adelay={$ms}:all=1";
             if (!$isName) $chain .= ",atrim=0:{$tplDur}";
@@ -3273,9 +3326,8 @@ function svb_start_generation() {
             $ms = (int)round($st * 1000);
             $label = "[{$cat}a{$i}]";
             $chain  = "{$outs[$i-1]}";
-            if ($isName) $chain .= "atrim=0:{$segDur},";
             $chain .= "asetpts=PTS-STARTPTS" . ($isName ? $name_format_chain : $audio_format_chain);
-            $chain .= ",volume=0.4,adelay={$ms}:all=1";
+            $chain .= ",volume=1.0,adelay={$ms}:all=1";
             if ($HAS_AFIFO) $chain .= ",afifo";
             $chain .= "{$label}";
             $filter[] = $chain;
@@ -3294,7 +3346,7 @@ function svb_start_generation() {
     if (count($amix_inputs) <= 1) {
         $filter[] = '[abase]asplit[aout]'; 
     } else {
-        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=1';
+        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=0';
         $chain .= ',alimiter=level_in=1:level_out=1:limit=1:attack=5:release=100';
         if ($HAS_AFIFO) $chain .= ',afifo'; 
         $chain .= '[aout]';
@@ -4143,4 +4195,216 @@ function svb_monobank_invalidate_invoice() {
         'invalidated' => true,
         'invoice_masked' => svb_monobank_mask_invoice($invoice_id),
     ]);
+}
+
+function svb_send_success_email($order_row, $video_url) {
+    // 1. Отримуємо Email клієнта
+    $user_email = $order_row['customer_email']; 
+    
+    if (!$user_email) {
+        return ['success' => false, 'error' => 'No recipient email found'];
+    }
+
+    // Дані замовлення
+    $name = $order_row['customer_name'] ?? 'Друже';
+    $order_id = $order_row['order_id'] ?? '...';
+    
+    // === ЗОБРАЖЕННЯ (Використовуємо ваші посилання) ===
+    $img_bg   = 'https://e-santaa.com/wp-content/uploads/2025/12/bg.png';
+    $img_logo = 'https://e-santaa.com/wp-content/uploads/2025/12/logo.png';
+    $img_icon = 'https://e-santaa.com/wp-content/uploads/2025/12/dd.png';
+
+    // Налаштування відправника
+    $site_domain = parse_url(home_url(), PHP_URL_HOST); 
+    $site_domain = str_replace('www.', '', $site_domain);
+    $from_email = "noreply@" . $site_domain; 
+    $from_name = "Elf-Santa"; 
+
+    $subject = "🎁 Ваше відео від Санти готове! (Замовлення №$order_id)";
+
+    // === HTML EMAIL (ТАБЛИЧНА ВЕРСТКА) ===
+    $message = <<<HTML
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ваше відео готове</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, sans-serif;">
+    
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f5f5;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                
+                <table border="0" cellpadding="0" cellspacing="0" width="600" style="width: 100%; max-width: 600px; background-color: #961c1c; background-image: url('{$img_bg}'); background-size: cover; background-position: center; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    
+                    <tr>
+                        <td style="padding: 20px 25px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="left" width="50%">
+                                        <a href="https://e-santaa.com/" target="_blank">
+                                            <img src="{$img_logo}" alt="Elf-Santa" width="100" style="display: block; border: 0; max-width: 120px;">
+                                        </a>
+                                    </td>
+                                    <td align="right" width="50%" style="color: #ffffff; font-family: Arial, sans-serif; font-size: 13px; font-weight: bold; text-transform: uppercase;">
+                                        Замовлення №{$order_id}
+                                    </td>
+                                </tr>
+                            </table>
+                            <div style="height: 1px; background-color: #ff6b6b; margin-top: 15px; opacity: 0.5;"></div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td align="center" style="padding: 20px 30px 40px 30px;">
+                            
+                            <h1 style="margin: 0 0 10px 0; color: #FDE047; font-family: Arial, sans-serif; font-size: 32px; font-weight: 800; font-style: italic; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">
+                                Вітаємо, {$name}!
+                            </h1>
+
+                            <p style="margin: 0 0 25px 0; color: #FDE047; font-family: 'Times New Roman', serif; font-size: 18px; font-style: italic;">
+                                Створіть незабутній момент для своєї дитини!
+                            </p>
+
+                            <p style="margin: 0 0 35px 0; color: #ffffff; font-family: Arial, sans-serif; font-size: 24px; font-weight: 700; font-style: italic; line-height: 1.4; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">
+                                Ваше унікальне відео-привітання<br>від Санти вже готове!
+                            </p>
+
+                            <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                                <tr>
+                                    <td align="center" bgcolor="#FACC15" style="border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                                        <a href="{$video_url}" target="_blank" style="display: inline-block; padding: 16px 40px; font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; color: #D62828; text-decoration: none; text-transform: uppercase;">
+                                            Завантажити відео
+                                            <img src="{$img_icon}" width="18" height="18" alt="↓" style="vertical-align: middle; margin-left: 10px; border: 0;">
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 35px 0 10px 0; color: #ffffff; font-family: Arial, sans-serif; font-size: 16px; font-weight: 600; font-style: italic; line-height: 1.5;">
+                                Поділіться радістю з дитиною!<br>
+                                Якщо виникнуть питання - пишіть нам.
+                            </p>
+                            
+                            <p style="margin: 0 0 20px 0; color: #FDE047; font-size: 18px; font-weight: bold;">
+                                Веселих свят! 🎄✨
+                            </p>
+
+                            <p style="margin: 0;">
+                                <a href="https://e-santaa.com/" style="color: #ffffff; font-family: Arial, sans-serif; font-size: 14px; text-decoration: underline; font-weight: bold; font-style: italic;">
+                                    Команда E-Santaa.com
+                                </a>
+                            </p>
+
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="padding: 15px 25px;">
+                             <div style="height: 1px; background-color: #ff6b6b; margin-bottom: 15px; opacity: 0.5;"></div>
+                            
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="left" width="50%">
+                                        <a href="https://e-santaa.com/" target="_blank">
+                                            <img src="{$img_logo}" alt="Elf-Santa" width="80" style="display: block; border: 0;">
+                                        </a>
+                                    </td>
+                                    <td align="right" width="50%" style="color: #ffffff; font-family: Arial, sans-serif; font-size: 11px;">
+                                        © 2021-2026 Elf-Santa.<br>Всі права захищені.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                </table>
+                
+                <p style="text-align: center; font-size: 11px; color: #999; margin-top: 20px; font-family: sans-serif;">
+                    Якщо кнопка не працює, перейдіть за посиланням:<br>
+                    <a href="{$video_url}" style="color: #555;">{$video_url}</a>
+                </p>
+
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>
+HTML;
+
+    $headers = array(
+        'Content-Type: text/html; charset=UTF-8',
+        "From: $from_name <$from_email>",
+        "Reply-To: $from_email"
+    );
+    
+    $sent = wp_mail($user_email, $subject, $message, $headers);
+    
+    if ($sent) {
+        return ['success' => true, 'error' => ''];
+    } else {
+        global $phpmailer;
+        $error_info = "Unknown error";
+        if (isset($phpmailer) && !empty($phpmailer->ErrorInfo)) {
+            $error_info = $phpmailer->ErrorInfo;
+        }
+        return ['success' => false, 'error' => $error_info];
+    }
+}
+// === ФУНКЦІЯ "ПРИБИРАЛЬНИК" (Для відправки листів, якщо юзер закрив вкладку) ===
+function svb_check_stale_orders_and_notify() {
+    // Запускаємо з вірогідністю 10%, щоб не вантажити сервер кожним запитом
+    if (rand(1, 10) !== 1) return;
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'svb_orders';
+    
+    // Шукаємо замовлення, які "running", але оновлювалися більше 2 хвилин тому
+    $stale_rows = $wpdb->get_results("SELECT * FROM $table WHERE result LIKE '%\"status\":\"running\"%' AND updated_at < DATE_SUB(NOW(), INTERVAL 2 MINUTE) LIMIT 5", ARRAY_A);
+
+    if (!$stale_rows) return;
+
+    foreach ($stale_rows as $row) {
+        $res = json_decode($row['result'], true);
+        if (!$res || empty($res['log_path']) || !file_exists($res['log_path'])) continue;
+
+        // Перевіряємо лог, чи дійсно там "done"
+        $log_content = svb_tail_log_file($res['log_path'], 5000);
+        if (strpos($log_content, 'muxing overhead') !== false || strpos($log_content, 'global headers:') !== false) {
+            
+            // Якщо готово — формуємо шлях
+            $pidFile = dirname($res['log_path']) . '/ffmpeg.pid';
+            $outputFile = dirname($res['log_path']) . '/video.mp4';
+            
+            if (file_exists($outputFile) && filesize($outputFile) > 10000) {
+                // Копіюємо в постійну папку (логіка як в check_progress)
+                $dirs = svb_get_orders_upload_dir($row['order_id']);
+                $permanent_path = trailingslashit($dirs['result']) . 'video.mp4';
+                @copy($outputFile, $permanent_path);
+                
+                $public_token = svb_resolve_order_public_token($row);
+                $videoUrl = svb_build_download_url($row['order_id'], $public_token);
+
+                // Оновлюємо статус на DONE
+                $res['status'] = 'done';
+                $res['progress'] = 100;
+                $res['download_url'] = $videoUrl;
+                
+                // === ВІДПРАВЛЯЄМО ЛИСТ ===
+                if (empty($res['email_sent'])) {
+                    svb_send_success_email($row, $videoUrl);
+                    $res['email_sent'] = true;
+                }
+                
+                svb_update_order_result_status($row['order_id'], $res);
+                
+                // Чистка
+                @unlink($pidFile);
+                svb_schedule_cleanup(dirname($res['log_path']));
+            }
+        }
+    }
 }

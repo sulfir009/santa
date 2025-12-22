@@ -17,7 +17,39 @@ input.svb-input {
 .svb-dot.muted { background:#f0f0f0; color:#999; }
 .svb-title { font-size:28px; font-weight:800; margin:0; }
 .svb-actions { display:flex; gap:12px; margin-top:20px; }
+.svb-lookup-toggle-wrapper {
+    margin-bottom: 20px;
+    text-align: center;
+}
+button#svb-toggle-lookup {
+    border-radius: 16px;
+    background: #FACC15;
+    border: none;
+    margin-bottom: 8px;
+}
+.svb-lookup-btn {
+    width: 100%;
+    background-color: #F4D03F; /* Жовтий колір */
+    color: #5d4037; /* Коричневий текст */
+    border: none;
+    border-radius: 20px;
+    padding: 15px 20px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease, background-color 0.2s;
+    outline: none;
+}
 
+.svb-lookup-btn:hover {
+    background-color: #eebb2f;
+    transform: translateY(-2px);
+}
+
+.svb-lookup-btn:active {
+    transform: translateY(0);
+}
 /* === Кнопки (Загальні) === */
 .svb-btn { appearance:none; border:none; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer; transition:.2s ease; display: inline-flex; align-items: center; gap: 8px; line-height: 1.2; text-decoration: none; }
 .svb-btn:focus-visible { outline: 2px solid #B81F1F; outline-offset: 2px; box-shadow: 0 0 0 3px rgba(214,40,40,0.2); }
@@ -1243,9 +1275,17 @@ word-wrap: break-word
     .svb-lookup__title { font-size: 15px; }
     .svb-lookup__text { font-size: 12px; }
     .svb-lookup__actions { width: 100%; }
+    .svb-lookup-toggle-wrapper {width: 100%;}
 }
 
 @media (min-width: 1024px) {
+    .svb-video-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 37px;
+    align-items: center;
+    justify-content: space-between;
+}
     .svb-btn--next {
         width: auto;
         min-width: 180px;
@@ -1259,10 +1299,229 @@ word-wrap: break-word
         gap: 8px;
         box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
     }
+    .svb-lookup-toggle-wrapper {
+    width: 25%;
+}
     .svb-btn--next:focus-visible { box-shadow: 0 0 0 3px rgba(214, 40, 40, 0.2); outline: none; }
     .svb-btn--next:disabled { box-shadow: none; opacity: 0.6; cursor: not-allowed; }
 }
+button#svb-toggle-lookup {
+    border-radius: 16px;
+    background: #FACC15;
+    border: none;
+    /* width: 25%; */
+    color: red;
+    display: inline-flex;
+    white-space: normal;
+    font-size: 12px;
+    margin-left: 0;
+    margin-bottom: 8px;
+}
+
 
 .svb-customer-col {
     width: 100%;
 }
+.svb-input-error {
+    border-color: #ff4d4d !important;
+    background-color: #fff0f0 !important;
+    box-shadow: 0 0 5px rgba(255, 77, 77, 0.3);
+}
+/* === МОБИЛЬНАЯ АДАПТАЦИЯ ШАГА 3 (ПОРЯДОК БЛОКОВ) === */
+@media (max-width: 960px) {
+    /* 1. Делаем главную карточку флекс-контейнером */
+    .svb-step--video .svb-video-card {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    /* 2. "Растворяем" левую и правую колонки. 
+       Их дочерние элементы становятся прямыми детьми .svb-video-card */
+    .svb-video-left,
+    .svb-video-right {
+        display: contents;
+    }
+
+    /* === 3. НАЗНАЧАЕМ ПОРЯДОК (ORDER) === */
+
+    /* [1] Номер заказа (Сверху) */
+    .svb-video-order {
+        order: 1;
+        text-align: center; /* Центрируем текст как на фото */
+        background: #F0F8FF; /* Светлый фон как на фото */
+        border: none;
+    }
+
+    /* [2] Видео плеер */
+    .svb-video-preview {
+        order: 2;
+        min-height: 250px; /* Фикс высоты для мобилок */
+    }
+
+    /* [3] Кнопки (Скачать / Назад) */
+    .svb-video-actions {
+        order: 3;
+        width: 100%;
+        flex-direction: column-reverse; /* Кнопка "Назад" будет под кнопкой "Скачать" */
+        gap: 12px;
+    }
+
+    /* Стиль кнопки "Завантажити" как на макете */
+    .svb-video-download {
+        width: 100%;
+        justify-content: center;
+        background: #D62828; /* Красный */
+        color: white;
+        font-size: 18px;
+        padding: 14px;
+        border-radius: 12px;
+    }
+
+    /* Кнопка "Назад" - делаем менее заметной или оставляем как есть */
+    #svb-back-3 {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+
+    /* [4] Инструкция "Завантажте відео..." */
+    .svb-video-box {
+        order: 4;
+        background: #FFF6F0; /* Кремовый фон */
+    }
+
+    /* [5] Блок техподдержки */
+    .svb-video-box--small {
+        order: 5;
+    }
+
+    /* [6] Поделиться */
+    .svb-video-share {
+        order: 6;
+    }
+
+    /* [7] Поле Email (оставляем внизу) */
+    .svb-video-email {
+        order: 7;
+    }
+}
+
+/* --- Стили для простых карточек пользователя --- */
+.svb-user-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+.svb-user-slot {
+    /* Обертка слота */
+}
+/* Важно для скрытия слотов 2 и 3 ребенка (JS использует этот класс) */
+.svb-drop[style*="display: none"] {
+    display: none !important;
+}
+
+.svb-user-label {
+    text-align: center;
+    color: #333;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.4;
+    margin-bottom: 16px;
+}
+
+.svb-user-area {
+    position: relative;
+    width: 100%;
+    height: 209px;
+    background: white;
+    border-radius: 10px;
+    border: 2px dashed #B2B2B2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+.svb-user-area:hover {
+    border-color: #D62828;
+    background: #fffbfb;
+}
+.svb-user-area.has-image {
+    border: 2px solid #B2B2B2;
+}
+
+/* Скрываем стандартный инпут */
+.svb-user-area input[type="file"] {
+    display: none;
+}
+
+/* Заглушка */
+.svb-user-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    transition: opacity 0.2s;
+}
+.svb-user-icon svg {
+    width: 80px;
+    height: 80px;
+    fill: #e0e0e0;
+}
+.svb-add-text {
+    color: #333;
+    font-size: 16px;
+    font-weight: 500;
+    margin-top: 12px;
+}
+
+/* --- ИСПРАВЛЕНИЕ: Превью фото --- */
+.svb-user-preview {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover; /* Заполняет всю карточку */
+    border-radius: 8px;
+    z-index: 5;
+    
+    /* Критически важно: перебиваем JS, который пытается скрыть фото по таймлайну */
+    opacity: 1 !important; 
+    display: none; /* Скрыто пока нет src */
+    background: #fff; /* Фон, чтобы не просвечивала заглушка */
+}
+
+/* Показываем фото, если JS установил src */
+.svb-user-preview[src^="blob"], 
+.svb-user-preview[src^="data"],
+.svb-user-preview[src^="http"] {
+    display: block !important;
+}
+
+/* Кнопка удаления */
+.svb-user-remove {
+    position: absolute;
+    top: 11px;
+    right: 11px;
+    width: 28px;
+    height: 28px;
+    background: #D62828;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: none; /* JS покажет */
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    box-shadow: 0 0 0 3px white;
+}
+.svb-user-remove::before, .svb-user-remove::after {
+    content: ''; position: absolute; width: 14px; height: 2px; background: white; border-radius: 1px;
+}
+.svb-user-remove::before { transform: rotate(45deg); }
+.svb-user-remove::after { transform: rotate(-45deg); }

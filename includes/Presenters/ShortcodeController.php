@@ -19,7 +19,7 @@ function svb_render_form() {
         'session_id' => !empty($order_data['session_id']) ? svb_mask_value($order_data['session_id']) : '',
     ]);
 
-    $welcome_msg = "Раді бачити вас знову! Ваше замовлення №<strong>{$order_id}</strong>.";
+    $welcome_msg = "Ваше замовлення №<strong>{$order_id}</strong>.";
     $video_ready_html = '';
 
     // Перевірка наявності попереднього відео

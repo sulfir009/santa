@@ -1,3 +1,124 @@
+function svbValidateStep1() {
+    let isValid = true;
+    let firstErrorEl = null;
+
+    // Функция проверки одного поля
+    const check = (selector, visibleSelector = null) => {
+        const el = document.querySelector(selector);
+        // Если это select и он скрыт (display:none), проверяем его значение, 
+        // но красим видимый инпут (если передан visibleSelector) или родителя
+        const val = el ? el.value.trim() : '';
+        
+        // Для селектов с value="" или текстовых полей
+        if (!val) {
+            isValid = false;
+            const target = visibleSelector ? document.querySelector(visibleSelector) : el;
+            
+            if (target) {
+                target.classList.add('svb-input-error');
+                // Убираем красноту при вводе
+                target.addEventListener('input', () => target.classList.remove('svb-input-error'), {once: true});
+                target.addEventListener('change', () => target.classList.remove('svb-input-error'), {once: true});
+                
+                if (!firstErrorEl) firstErrorEl = target;
+            }
+        }
+    };
+
+    // 1. Имена (зависит от количества детей)
+    // Логика: проверяем скрытый select (куда падает файл), но красим текстовый инпут
+    check('select[name="name_audio"]', 'input[name="name_text"]');
+    
+    if (svbCurrentChildCount >= 2) {
+        check('select[name="name_audio_2"]', 'input[name="name_text_2"]');
+    }
+    if (svbCurrentChildCount >= 3) {
+        check('select[name="name_audio_3"]', 'input[name="name_text_3"]');
+    }
+
+    // 2. Возраст (только для 1 ребенка)
+    if (svbCurrentChildCount === 1) {
+        check('select[name="age_audio"]');
+    }
+
+    // 3. Общие поля
+    check('select[name="hobby_audio"]');
+    check('select[name="praise_audio"]');
+    check('select[name="request_audio"]');
+    
+    // 4. Данные клиента
+    check('input[name="customer_name"]');
+    // Для Email проверяем не только наличие, но и базовый формат
+    const emailEl = document.querySelector('input[name="customer_email_step1"]');
+    if (emailEl) {
+        const val = emailEl.value.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!val || !emailRegex.test(val)) {
+            isValid = false;
+            emailEl.classList.add('svb-input-error');
+            emailEl.addEventListener('input', () => emailEl.classList.remove('svb-input-error'), {once: true});
+            if (!firstErrorEl) firstErrorEl = emailEl;
+        }
+    }
+
+    if (!isValid && firstErrorEl) {
+        // Скроллим к первой ошибке
+        firstErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Можно добавить вибрацию на мобильных
+        if (navigator.vibrate) navigator.vibrate(200);
+    }
+
+    return isValid;
+}
+
+function svbValidateStep2() {
+    let missingPhotos = [];
+    
+    // Проверка конкретного фото
+    const checkPhoto = (key, label) => {
+        const input = document.querySelector(`input[name="photo_${key}"]`);
+        const img = document.getElementById(`img-${key}`);
+        
+        // Считаем фото загруженным, если:
+        // 1. В input есть файлы (новая загрузка)
+        // 2. ИЛИ у картинки есть src (восстановленное фото или уже загруженное) 
+        //    и src не пустой/не заглушка (проверяем длину строки или наличие blob/http)
+        const hasFile = input && input.files && input.files.length > 0;
+        const hasPreview = img && img.src && (img.src.startsWith('blob:') || img.src.includes('/') || img.src.length > 100);
+        
+        // Важно: если img.src пустой или равен URL страницы, считаем что фото нет
+        if (!hasFile && (!hasPreview || img.getAttribute('src') === window.location.href)) {
+            missingPhotos.push(label);
+            // Можно подсветить область дропа
+            const dropZone = document.querySelector(`.svb-drop[data-photo="${key}"]`);
+            if (dropZone) {
+                dropZone.style.border = "2px dashed red";
+                setTimeout(() => dropZone.style.border = "", 3000);
+            }
+            return false;
+        }
+        return true;
+    };
+
+    // Проверяем в зависимости от количества детей
+    checkPhoto('child1', 'Фото дитини 1');
+    
+    if (svbCurrentChildCount >= 2) {
+        checkPhoto('child2', 'Фото дитини 2');
+    }
+    
+    // Родители (обычно обязательны, если нет — убери эти строки)
+    checkPhoto('parent1', 'Фото батька');
+    checkPhoto('parent2', 'Фото матері');
+
+    if (missingPhotos.length > 0) {
+        alert(`Будь ласка, додайте фото:\n- ${missingPhotos.join('\n- ')}`);
+        return false;
+    }
+
+    return true;
+}
+
 /* === CSS MATRIX3D SOLVER (Для точної імітації FFmpeg Perspective) === */
 function svbSolveHomography(src, dst) {
     let t = 0;
@@ -836,7 +957,15 @@ function svbReinitAfterRender(savedValues = {}) {
         const el = document.querySelector(`[name="${name}"]`);
         if (el) el.value = val;
     });
-
+const savedState = svbLoadState();
+    if (savedState && savedState.formData && savedState.formData.email) {
+        const step3Email = document.getElementById('svb-email');
+        // FIX: Примусово оновлюємо email тим, що ввели на Кроці 1 (у стані браузера),
+        // навіть якщо сервер підставив старе значення.
+        if (step3Email) { 
+            step3Email.value = savedState.formData.email;
+        }
+    }
     // 3. Заново вешаем обработчики событий
     svbBindAudioPreview();
     // Обработчики фото вешаем только если элементы существуют (шаг 2 может быть скрыт, но inputs в DOM есть)
@@ -1777,7 +1906,21 @@ const $$ = (sel,root=document) => Array.from(root.querySelectorAll(sel));
 
 function svbScrollToTop() {
   const target = document.querySelector('.svb-wrap') || document.querySelector('.svb-card');
-  if (target && typeof target.scrollIntoView === 'function') {
+  if (!target) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+  }
+
+  // === FIX: Перевіряємо, чи ми вже бачимо початок блоку ===
+  const rect = target.getBoundingClientRect();
+  const isVisible = (rect.top >= 0) && (rect.top < window.innerHeight / 2);
+
+  // Якщо блок вже перед очима (не вище ніж 100px за екраном і не занадто низько), не скролимо
+  if (rect.top > -100 && rect.top < 150) {
+      return; 
+  }
+
+  if (typeof target.scrollIntoView === 'function') {
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1798,45 +1941,53 @@ function svbFormatTime(seconds) {
     );
 }
 
-
-
 function svbSetStep(n, reason = 'user_flow'){
   
-  // === [FIX START] Anti-rollback guard with Forward Check ===
-  // Получаем текущий активный шаг из DOM, чтобы понять, откуда мы идем
+  // Отримуємо поточний активний крок ДО змін
   const currentActiveEl = document.querySelector('.svb-step.active');
   const currentStepNum = currentActiveEl ? parseInt(currentActiveEl.getAttribute('data-step') || '0', 10) : 0;
 
-if (n === 2 && svbNormalizePaymentStatus(svbPaymentStatus) === 'paid' && reason === 'user_flow') {
+  // === Anti-rollback guard (Захист від повернення на крок 2, якщо оплачено) ===
+  // Дозволяємо, якщо reason == 'api_error' або 'lookup_success'
+  if (n === 2 && svbNormalizePaymentStatus(svbPaymentStatus) === 'paid' && reason === 'user_flow') {
       if (currentStepNum !== 1) {
-          console.warn('[SVB UI] Blocked auto-rollback to step 2 because status is PAID (origin not step 1)');
+          console.warn('[SVB UI] Blocked auto-rollback to step 2 because status is PAID');
           return;
       }
   }
-  // === [FIX END] ===
 
   const prevState = svbLoadState();
   const prevStep = prevState && prevState.step ? prevState.step : null;
+  
+  // Перемикаємо класи
   $$('.svb-step').forEach(s=>s.classList.remove('active'));
-  $(`.svb-step[data-step="${n}"]`).classList.add('active');
+  const targetStep = $(`.svb-step[data-step="${n}"]`);
+  if(targetStep) targetStep.classList.add('active');
+  
   for(let i=1;i<=3;i++){
     const dot = $(`#svb-dot-${i}`);
-    dot.classList.toggle('active', i===n);
-    dot.classList.toggle('muted', i!==n);
+    if(dot) {
+        dot.classList.toggle('active', i===n);
+        dot.classList.toggle('muted', i!==n);
+    }
   }
+  
   const titles = {1:'Крок 1 — Дані дитини', 2:'Крок 2 — Фото', 3:'Крок 3 — Підтвердження та отримання'};
-  $('#svb-title').textContent = titles[n] || '';
+  const titleEl = $('#svb-title');
+  if(titleEl) titleEl.textContent = titles[n] || '';
+  
   svbUpdateState({ step: n });
   console.log('[SVB UI][STEP]', { from: prevStep, to: n, reason });
+  
   if (n === 3) {
-    const active = svbGetActiveOrder('step_check');
-    const paymentStatus = svbNormalizePaymentStatus(active.payment_status || svbPaymentStatus);
-    if (svbIsDebugMode() && paymentStatus !== 'paid') {
-      console.warn('[SVB DEBUG][RESUME MISMATCH]', { resume_order: svbResumeChoice.order_id || null, reason: 'payment_not_paid_at_step3', payment_status: paymentStatus });
-    }
     svbMaybeEmitStep3Snapshot(reason);
   }
-  svbScrollToTop();
+
+  // === FIX: Скролимо ТІЛЬКИ якщо крок реально змінився ===
+  // Якщо ми були на 3-му і залишились на 3-му (оновлення статусу), скролити не треба
+  if (currentStepNum !== n) {
+      svbScrollToTop();
+  }
 }
 // === ФУНКЦИЯ ФИЛЬТРАЦИИ АУДИО (ФИНАЛЬНАЯ) ===
 function svbPopulateSelects() {
@@ -2603,12 +2754,12 @@ async function svbLookupExistingVideo() {
   const orderId = orderRaw ? parseInt(orderRaw, 10) : 0;
 
   if (!email && !orderId) {
-    svbSetLookupStatus('Вкажіть email або номер замовлення', 'error');
+    svbSetLookupStatus('Введіть номер замовлення', 'error');
     return;
   }
 
   svbLookupInFlight = true;
-  svbSetLookupStatus('Шукаємо відео…');
+  svbSetLookupStatus('Шукаємо замовлення...');
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.classList.add('is-loading');
@@ -2616,22 +2767,67 @@ async function svbLookupExistingVideo() {
 
   try {
     const fd = new FormData();
-    fd.append('action', 'svb_find_video');
+    fd.append('action', 'svb_resume_by_identity');
     fd.append('_svb_nonce', SVB_AJAX.nonce);
     if (email) fd.append('email', email);
     if (orderId) fd.append('order_id', orderId);
 
     const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd, credentials: 'same-origin' });
-    if (!res.ok) {
-      throw new Error('HTTP ' + res.status);
-    }
+    if (!res.ok) throw new Error('Помилка з\'єднання');
+    
     const json = await res.json();
-    if (!json.success) {
-      throw new Error(json.data || 'Не знайдено');
+    if (!json.success) throw new Error(json.data || 'Не знайдено');
+
+    const data = json.data || {};
+
+    // 1. Оновлюємо стан (це потрібно для коректної роботи генератора)
+    const finalEmail = email || data.restored_email || '';
+    
+    svbUpdateState(Object.assign({}, svbLoadState(), {
+        order_id: data.order_id,
+        public_token: data.public_token,
+        child_count: data.child_count,
+        selected_video_id: data.selected_video_id,
+        payment_status: 'paid', // [ВАЖЛИВО] Примусово ставимо paid
+        formData: Object.assign({}, svbLoadState().formData || {}, { email: finalEmail }),
+    }));
+    
+    // Оновлюємо глобальний об'єкт
+    svbSetActiveOrder(data.order_id, data.public_token, 'paid', { reason: 'lookup_found', force: true });
+    svbStoreLastOrderToken(data.order_id, data.public_token || '');
+
+    // Автозаповнення email
+    if (!email && finalEmail && emailInput) {
+        emailInput.value = finalEmail;
     }
 
-    svbHandleLookupSuccess(json.data || {});
-    svbSetLookupStatus('✅ Знайшли готове відео', 'success');
+    svbSetLookupStatus('✅ Замовлення знайдено!', 'success');
+
+    // === 2. ГОЛОВНА ЛОГІКА: Є ВІДЕО ЧИ НЕМАЄ? ===
+    
+    if (data.result_url && data.result_url.trim() !== '') {
+        // ВАРІАНТ А: Відео існує -> показуємо його
+        console.log('[SVB LOOKUP] Video found:', data.result_url);
+        data.download_url = data.result_url; // Адаптація поля
+        svbHandleLookupSuccess(data);
+    } else {
+        // ВАРІАНТ Б: Відео немає -> ПЕРЕГЕНЕРАЦІЯ
+        console.log('[SVB LOOKUP] Video missing. Starting regeneration...');
+        
+        // 1. Переходимо на крок 3
+        svbSetStep(3, 'lookup_resume_gen');
+        
+        // 2. [FIX] Очищаємо плеєр, щоб не було "пустого екрану"
+        svbResetPreviewState(); 
+        
+        // 3. Показуємо лоадер (відсотки)
+        svbShowGenerationProcessing('Відновлюємо файли та генеруємо відео...');
+        
+        // 4. Запускаємо генерацію
+        // Сервер візьме фото з папки ордера (ми це налаштували в PHP)
+        svbStartGenerationByToken(data.public_token, data.order_id);
+    }
+
   } catch (err) {
     const msg = err && err.message ? err.message : 'Не знайдено';
     svbSetLookupStatus(msg, 'error');
@@ -2762,6 +2958,9 @@ function svbShowRecoverModal(order) {
 
 async function svbHandleStep1Next(e) {
   e.preventDefault();
+  if (!svbValidateStep1()) {
+      return;
+  }
   const saved = svbLoadState();
   if (saved && saved.order_id && saved.public_token) {
     svbSetStep(2);
@@ -2773,6 +2972,24 @@ async function svbHandleStep1Next(e) {
   const email = emailInput && emailInput.value ? emailInput.value.trim() : '';
   const name = nameInput && nameInput.value ? nameInput.value.trim() : '';
   const { masked: emailMasked, normalized: emailNormalized } = svbMaskEmail(email);
+
+  if (email) {
+      const currentState = svbLoadState() || {};
+      const currentFormData = currentState.formData || {};
+      
+      currentFormData.email = email; // Зберігаємо для кроку 3
+      if(name) currentFormData.customer_name = name;
+
+      svbUpdateState({ 
+          formData: currentFormData
+      });
+      
+      // Відразу заповнюємо поле на 3 кроці, якщо воно існує в DOM
+      const step3Email = document.getElementById('svb-email');
+      if (step3Email) {
+          step3Email.value = email;
+      }
+  }
 
   console.log('[SVB RECOVER] click', {
     email_present: !!email,
@@ -2860,8 +3077,8 @@ function svbShowGenerationStatus(payload) {
   const statusEl = document.getElementById('svb-status');
   const map = {
     queued: 'Замовлення в черзі. Це може зайняти до 1–2 хвилин…',
-    running: 'Генеруємо відео… це може зайняти до 1–2 хвилин',
-    processing: 'Генеруємо відео… це може зайняти до 1–2 хвилин',
+    running: 'Магія Санти...🎁',
+    processing: 'Магія Санти...🎁',
     payment_pending: 'Очікуємо підтвердження оплати…',
     pending: 'Очікуємо підтвердження оплати…',
     done: 'Відео готове! Готуємо посилання…',
@@ -3861,7 +4078,6 @@ function svbProceedToGenerateFlow() {
 
   const isStep2 = document.querySelector('.svb-step[data-step="2"]')?.classList.contains('active');
   if (isStep2 && !hasPendingFiles && !isPaid) {
-      alert('⚠️ Будь ласка, виберіть фото перед продовженням.');
       svbToggleVideoOverlay(false); 
       return;
   }
@@ -3871,6 +4087,9 @@ function svbProceedToGenerateFlow() {
 }
 
 async function svbHandleStep2Next() {
+  if (!svbValidateStep2()) {
+      return; 
+  }
   if (svbStep2InFlight) {
     console.log('[SVB PAY][STEP2] click ignored: in-flight');
     return;
@@ -4219,10 +4438,13 @@ if (restoreBtn) {
     const statusBox = document.getElementById('svb-restore-status');
     const email = emailField ? emailField.value.trim() : '';
     const orderId = orderField ? parseInt(orderField.value, 10) : 0;
-    if (!email || !orderId) {
+
+    // === FIX: Перевіряємо, чи заповнено ХОЧА Б ОДНЕ поле ===
+    if (!email && !orderId) {
       if (statusBox) {
         statusBox.style.display = 'block';
-        statusBox.textContent = 'Вкажіть email та номер замовлення.';
+        statusBox.textContent = 'Вкажіть номер замовлення або email.';
+        statusBox.style.color = 'red';
       }
       return;
     }
@@ -4230,20 +4452,27 @@ if (restoreBtn) {
     if (statusBox) {
       statusBox.style.display = 'block';
       statusBox.textContent = 'Шукаємо замовлення...';
+      statusBox.style.color = '#666';
     }
 
     try {
       const fd = new FormData();
       fd.append('action', 'svb_resume_by_identity');
       fd.append('_svb_nonce', SVB_AJAX.nonce);
-      fd.append('email', email);
-      fd.append('order_id', orderId);
+      // Відправляємо те, що є
+      if(email) fd.append('email', email);
+      if(orderId) fd.append('order_id', orderId);
+
       const res = await fetch(SVB_AJAX.url, { method: 'POST', body: fd });
       const data = await res.json();
       if (!data.success) {
         throw new Error(data.data || 'Не вдалося відновити');
       }
       const payload = data.data || {};
+      
+      // Якщо сервер повернув email (ми знайшли по ID), підставимо його в форму
+      const finalEmail = email || payload.restored_email || '';
+
       svbUpdateState(Object.assign({}, svbLoadState(), {
         order_id: payload.order_id,
         public_token: payload.public_token,
@@ -4251,17 +4480,24 @@ if (restoreBtn) {
         selected_video_id: payload.selected_video_id,
         overlay_json: payload.overlay_json,
         segments: payload.segments,
-        formData: Object.assign({}, svbLoadState().formData || {}, { email }),
+        formData: Object.assign({}, svbLoadState().formData || {}, { email: finalEmail }),
       }));
+      
       svbStoreLastOrderToken(payload.order_id, payload.public_token || '');
+      
       if (statusBox) {
         statusBox.textContent = 'Замовлення знайдено. Переходимо до генерації...';
+        statusBox.style.color = 'green';
       }
+      
+      // Перехід на 3 крок (генерація)
       svbSetStep(3, 'lookup_resume_form');
       svbStartGenerate();
+      
     } catch (resumeErr) {
       if (statusBox) {
         statusBox.textContent = resumeErr.message || 'Не вдалося відновити замовлення';
+        statusBox.style.color = 'red';
       }
     }
   });
@@ -4290,33 +4526,61 @@ if (paymentBackBtn) {
     if (svbPollInterval) clearInterval(svbPollInterval);
     svbRestoreStep2State();
   });
-    $('#svb-finish').addEventListener('click', async ()=>{
-      const email = $('#svb-email').value.trim();
-      if(!email){ alert('Вкажіть email'); return; }
-    if(!svbVideoURL){
-      alert('Відео ще готується. Будь ласка, дочекайтесь повідомлення «Готово».');
-      return;
-    }
-    if (svbRecoveredFromLookup && svbVideoURL) {
-      await svbNavigateToDownload(svbVideoURL);
-      return;
-    }
-    const fd = new FormData();
-    fd.append('action','svb_confirm');
-    fd.append('_svb_nonce', SVB_AJAX.nonce);
-    fd.append('email', email);
-    fd.append('token', svbJobToken||'');
-  fetch(SVB_AJAX.url, { method:'POST', body:fd })
-    .then(r=>r.json()).then(data=>{
-      if (data.success) {
-  document.getElementById('svb-status').textContent = '✅ Готово';
-  svbRenderResultVideo(data.data.url);
-} else {
-  alert(data.data || 'Помилка підтвердження');
-}
+$('#svb-finish').addEventListener('click', async () => {
+    // 1. Получаем Email
+    const emailInput = document.getElementById('svb-email');
+    const email = emailInput ? emailInput.value.trim() : '';
 
-    });
-  });
+    // 2. Ищем ссылку на видео (для скачивания)
+    if (!svbVideoURL) {
+        const domLink = document.querySelector('.svb-download-link');
+        const domVideo = document.querySelector('#svb-result video');
+        if (domLink && domLink.href) svbVideoURL = domLink.href;
+        else if (domVideo && domVideo.src) svbVideoURL = domVideo.src;
+    }
+
+    if (!svbVideoURL) {
+        alert('Відео ще готується або сталася помилка. Спробуйте оновити сторінку.');
+        return;
+    }
+
+    // 3. СРАЗУ запускаем скачивание (User Experience)
+    svbNavigateToDownload(svbVideoURL);
+
+    // 4. В ФОНЕ отправляем письмо (AJAX)
+    // Нам нужно знать ID заказа. Берем его из глобального состояния.
+    const activeOrder = svbGetActiveOrder('download_click');
+    const orderId = activeOrder.order_id || (svbState ? svbState.order_id : 0);
+    const publicToken = activeOrder.public_token || (svbState ? svbState.public_token : '');
+
+    if (email && (orderId || publicToken)) {
+        console.log('[SVB MAIL] Sending email request in background...', {email, orderId});
+        
+        const fd = new FormData();
+        fd.append('action', 'svb_confirm');
+        fd.append('_svb_nonce', SVB_AJAX.nonce);
+        fd.append('email', email);
+        if (orderId) fd.append('order_id', orderId);
+        if (publicToken) fd.append('token', publicToken);
+
+        // Используем fetch без await, чтобы не блокировать интерфейс,
+        // но добавляем лог для дебага
+        fetch(SVB_AJAX.url, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    console.log('✅ [SVB MAIL] Email sent successfully:', res.data);
+                } else {
+                    console.error('❌ [SVB MAIL] Server error:', res.data);
+                }
+            })
+            .catch(err => console.error('❌ [SVB MAIL] Network error:', err));
+    } else {
+        console.warn('[SVB MAIL] Cannot send email: missing order_id or email');
+    }
+});
+  
+  
   function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function svbToggleVideoOverlay(show){
     const overlay = $('#svb-video-overlay');
@@ -4336,9 +4600,6 @@ function svbShowPoster(show) {
 function svbRenderResultVideo(url) {
   const res = document.getElementById('svb-result');
   if (!res) return;
-
-  // убираем мета-окно если оно есть
-  res.querySelectorAll('.svb-video-result-meta').forEach(n => n.remove());
 
   let video = res.querySelector('video');
   if (!video) {
@@ -4408,7 +4669,7 @@ function svbRenderResultVideo(url) {
     svbShowPoster(true);
     svbToggleVideoOverlay(true);
     svbUpdateVideoPercent(0);
-    $('#svb-status').textContent = 'Генеруємо відео… це може зайняти кілька хвилин';
+    $('#svb-status').textContent = 'Магія Санти...🎁';
   }
 
   async function svbStartGenerate() {
@@ -4681,7 +4942,7 @@ function svbAttachDownloadDebug(container, url) {
     });
 }
 
-function svbShowGenerationProcessing(message = 'Генеруємо відео… це може зайняти до 1–2 хвилин') {
+function svbShowGenerationProcessing(message = 'Магія Санти...🎁') {
     const statusEl = document.getElementById('svb-status');
     if (statusEl) {
         statusEl.textContent = message;
@@ -5017,13 +5278,8 @@ function svbHandleSuccessInternal(url) {
       video.playsInline = true;
       video.controlsList = 'nodownload';
 
-      const meta = document.createElement('div');
-      meta.className = 'svb-video-result-meta';
-      meta.innerHTML = `<b>Готово!</b> <a class="svb-download-link" href="${url}" download>Скачати відео</a>. Посилання дійсне 1 годину.`;
-
       res.innerHTML = '';
       res.appendChild(video);
-      res.appendChild(meta);
       res.style.display = 'block';
       svbAttachDownloadDebug(res, url);
     }
@@ -6031,5 +6287,22 @@ function svbDumpOverlayDebug(el, video, key, token){
                 });
             }
         }, 500); // Небольшая задержка, чтобы элементы успели отрисоваться
-    });
+// === ЛОГИКА ШТОРКИ (TOGGLE) ===
+    const toggleBtn = document.getElementById('svb-toggle-lookup');
+    const lookupSection = document.getElementById('svb-lookup-section');
+
+    if (toggleBtn && lookupSection) {
+        toggleBtn.addEventListener('click', () => {
+            if (lookupSection.style.display === 'none') {
+                lookupSection.style.display = 'block';
+                toggleBtn.innerHTML = '📝 Згорнути пошук'; 
+            } else {
+                lookupSection.style.display = 'none';
+                toggleBtn.innerHTML = '📝 Знайти моє замовлення - <span style="text-decoration: underline;">натисніть тут +</span>';
+            }
+        });
+    }
+    
+    
+      });
 })();

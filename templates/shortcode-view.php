@@ -15,24 +15,35 @@
             <?php echo wp_kses_post( $video_ready_html ); ?>
         </div>
 
-        <div class="svb-lookup">
-          <div class="svb-lookup__title">Вже створювали відео?</div>
-          <p class="svb-lookup__text">Введіть Email або номер замовлення, щоб відкрити готове відео</p>
-          <div class="svb-lookup__fields">
-            <label class="svb-field">
-              <span class="svb-label">Email</span>
-              <input class="svb-input" type="email" id="svb-lookup-email" placeholder="you@example.com" autocomplete="email">
-            </label>
-            <label class="svb-field">
-              <span class="svb-label">Номер замовлення</span>
-              <input class="svb-input" type="text" id="svb-lookup-order" placeholder="12345" inputmode="numeric">
-            </label>
-          </div>
-          <div class="svb-lookup__actions">
-            <button class="svb-btn primary svb-btn--lookup" type="button" id="svb-lookup-submit">Знайти відео</button>
-            <div class="svb-lookup__status" id="svb-lookup-status" role="status" aria-live="polite"></div>
-          </div>
+<div class="svb-lookup-toggle-wrapper">
+            <button id="svb-toggle-lookup" type="button" class="svb-lookup-btn">
+                📝 Знайти моє замовлення - <span style="text-decoration: underline;">натисніть тут +</span>
+            </button>
         </div>
+
+        <div id="svb-lookup-section" style="display: none;">
+            <div class="svb-lookup">
+              <div class="svb-lookup__title">Вже створювали відео?</div>
+              <p class="svb-lookup__text">Введіть Email або номер замовлення, щоб відновити доступ.</p>
+              <div class="svb-lookup__fields">
+                <label class="svb-field">
+                  <span class="svb-label">Email (не обов'язково, якщо є номер)</span>
+                  <input class="svb-input" type="email" id="svb-lookup-email" placeholder="you@example.com" autocomplete="email">
+                </label>
+                <label class="svb-field">
+                  <span class="svb-label">Номер замовлення</span>
+                  <input class="svb-input" type="text" id="svb-lookup-order" placeholder="12345" inputmode="numeric">
+                </label>
+              </div>
+              <div class="svb-lookup__actions">
+                <button class="svb-btn primary svb-btn--lookup" type="button" id="svb-lookup-submit">Відновити замовлення</button>
+                <div class="svb-lookup__status" id="svb-lookup-status" role="status" aria-live="polite"></div>
+              </div>
+            </div>
+        </div>
+
+<div id="svb-lookup-section" style="display: none;">
+    </div>
         <div id="svb-dynamic-container"></div>
 
         <div class="svb-header">
@@ -187,7 +198,9 @@
         </div>
       </section>
 
+
       <section class="svb-step" data-step="2">
+        <?php if ( $is_admin ) : ?>
         <div class="svb-photo-grid">
           
           <div class="svb-drop" data-photo="child1">
@@ -1818,7 +1831,101 @@
           </div>
 
           </div>
+<?php else : ?>
 
+        <?php 
+        $svg_child = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#e0e0e0"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+        $svg_parent = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#e0e0e0"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>';
+        
+        $cards = [
+            'child1'  => ['label' => 'Фото дитини 1', 'icon' => $svg_child],
+            'child2'  => ['label' => 'Фото дитини 2', 'icon' => $svg_child],
+            'parent1' => ['label' => 'Фото батька',   'icon' => $svg_parent],
+            'parent2' => ['label' => 'Фото матері',   'icon' => $svg_parent],
+        ];
+        ?>
+
+        <div class="svb-user-grid">
+            <?php foreach ($cards as $key => $conf): ?>
+                
+                <div class="svb-user-slot svb-drop" data-photo="<?php echo $key; ?>">
+                    
+                    <div class="svb-user-label"><?php echo $conf['label']; ?></div>
+                    
+                    <div class="svb-user-area" id="area-<?php echo $key; ?>" onclick="document.querySelector('input[name=\'photo_<?php echo $key; ?>\']').click();">
+                        
+                        <input type="file" name="photo_<?php echo $key; ?>" accept="image/*" required>
+                        
+                        <div class="svb-user-placeholder" id="ph-<?php echo $key; ?>">
+                            <div class="svb-user-icon"><?php echo $conf['icon']; ?></div>
+                            <span class="svb-add-text">+ Додати фото</span>
+                        </div>
+
+                        <img id="img-<?php echo $key; ?>" class="svb-user-preview" alt="" />
+
+                        <button type="button" class="svb-user-remove" id="btn-<?php echo $key; ?>" onclick="event.stopPropagation(); svbClearUserPhoto('<?php echo $key; ?>');"></button>
+                    </div>
+
+                    <input type="hidden" name="<?php echo $key; ?>_scale" value="100">
+                    <input type="hidden" name="<?php echo $key; ?>_x" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_y" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_angle" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_radius" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_opacity" value="100">
+                    <input type="hidden" name="<?php echo $key; ?>_glow" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_skew" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_skew_y" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_scale_x" value="100">
+                    <input type="hidden" name="<?php echo $key; ?>_scale_y" value="100">
+                    <input type="hidden" name="<?php echo $key; ?>_pleft" value="0">
+                    <input type="hidden" name="<?php echo $key; ?>_pright" value="0">
+                </div>
+            <?php endforeach; ?>
+        </div>
+
+        <script>
+        function svbClearUserPhoto(key) {
+            const img = document.getElementById('img-' + key);
+            const input = document.querySelector('input[name="photo_' + key + '"]');
+            
+            if (img) { 
+                img.removeAttribute('src'); 
+                img.style.display = 'none'; // Скрываем картинку
+            }
+            if (input) input.value = ''; // Сбрас файла
+            
+            // Показываем заглушку
+            document.getElementById('ph-' + key).style.display = 'flex';
+            document.getElementById('btn-' + key).style.display = 'none';
+            document.getElementById('area-' + key).classList.remove('has-image');
+        }
+
+        // Следим за изменениями картинки (когда ваш JS Cropper обновит src)
+        document.addEventListener('DOMContentLoaded', () => {
+            ['child1', 'child2', 'parent1', 'parent2'].forEach(key => {
+                const img = document.getElementById('img-' + key);
+                if (!img) return;
+
+                const observer = new MutationObserver(() => {
+                    // Если у картинки появился SRC (значит загрузили фото)
+                    if (img.getAttribute('src') && img.getAttribute('src').length > 5) {
+                        // Скрываем заглушку
+                        document.getElementById('ph-' + key).style.display = 'none';
+                        // Показываем кнопку удаления
+                        document.getElementById('btn-' + key).style.display = 'flex';
+                        // Добавляем класс рамке
+                        document.getElementById('area-' + key).classList.add('has-image');
+                        
+                        // Принудительно показываем картинку (на случай конфликтов)
+                        img.style.display = 'block';
+                    }
+                });
+                observer.observe(img, { attributes: true, attributeFilter: ['src'] });
+            });
+        });
+        </script>
+
+    <?php endif; ?>
         <div class="svb-field svb-admin-only" style="margin: 10px 0;">
           <label class="svb-label" style="display:flex; align-items:center; gap:8px;">
             <input type="checkbox" id="svb_payment_toggle" checked />
@@ -1843,6 +1950,9 @@
         <div id="svb-payment-pending" class="svb-payment-error" style="display:none; margin-top:12px; padding:12px; background:#e8f4ff; border:1px solid #b6ddff; border-radius:8px;">
           <div class="svb-payment-error__text" id="svb-payment-pending-text" style="margin-bottom:8px; color:#155189;">Оплата в процесі. Очікуємо підтвердження…</div>
         </div>
+
+       
+          
       </section>
 
       <section class="svb-step svb-step--video" data-step="3">
@@ -1882,10 +1992,7 @@
               </div>
 
               <!-- email оставляем, чтобы не ломать логику -->
-              <div class="svb-video-email">
-                <label class="svb-video-email__label" for="svb-email">Email для отримання посилання</label>
-                <input class="svb-input" type="email" name="email" id="svb-email" placeholder="you@example.com" required />
-              </div>
+              <input type="hidden" name="email" id="svb-email" value="<?php echo esc_attr($order_data['customer_email'] ?? ''); ?>" />
 
               <div class="svb-video-actions">
                 <button class="svb-btn ghost" type="button" id="svb-back-3">Назад</button>
@@ -1951,7 +2058,6 @@ $video_poster = !empty($video_poster)
 <div class="svb-modal" id="svb-recover-modal" style="display:none;" onclick="svbCloseRecoverModal(event)">
   <div class="svb-modal-content svb-req-popup-content">
     <div class="svb-modal-close svb-close-black" onclick="svbCloseRecoverModal(event, true)">&times;</div>
-    <h3>Раді бачити вас знову!</h3>
     <p>Ваше замовлення №<span data-recover-order-id></span>.</p>
     <p>🎥 Ваше відео: <span data-recover-video-state></span></p>
     <p><small data-recover-regen></small></p>
