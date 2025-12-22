@@ -85,22 +85,6 @@
     </div>
 </div>
 
-        <div class="svb-field svb-restore-block" style="margin: 16px 0; padding:12px; border:1px solid #e5e5e5; border-radius:8px;">
-          <div class="svb-label" style="margin-bottom:8px;">Вже оплачували? Введіть email та номер замовлення, щоб відновити.</div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
-            <label style="flex:1; min-width:200px;">
-              <span style="display:block; font-size:13px; color:#444; margin-bottom:4px;">Email</span>
-              <input type="email" class="svb-input" id="svb-restore-email" placeholder="you@example.com" />
-            </label>
-            <label style="width:140px;">
-              <span style="display:block; font-size:13px; color:#444; margin-bottom:4px;">Номер замовлення</span>
-              <input type="number" class="svb-input" id="svb-restore-order" min="1" placeholder="123" />
-            </label>
-            <button type="button" class="svb-btn ghost" id="svb-restore-btn">Знайти замовлення</button>
-          </div>
-          <div id="svb-restore-status" style="display:none; margin-top:8px; font-size:12px; color:#555;"></div>
-        </div>
-
         <div class="svb-grid cols-2">
           
           <div class="svb-names-row">

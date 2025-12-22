@@ -231,6 +231,26 @@ function svb_build_download_url($order_id, $token) {
         home_url('/')
     );
 }
+function svb_gen_trace($order_id, $step, array $ctx = []) {
+    $order_id = (int) $order_id;
+    if ($order_id <= 0) return;
+
+    $uploads = wp_upload_dir();
+    if (!empty($uploads['error'])) return;
+
+    $dir = trailingslashit($uploads['basedir']) . 'svb-logs';
+    if (!wp_mkdir_p($dir)) return;
+
+    $file = trailingslashit($dir) . 'order-' . $order_id . '.log';
+
+    $row = [
+        'ts'   => gmdate('c'),
+        'step' => (string) $step,
+        'ctx'  => $ctx,
+    ];
+
+    @file_put_contents($file, wp_json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
+}
 
 function svb_build_resume_url($order_id, $token) {
     $order_id = absint($order_id);
@@ -742,7 +762,32 @@ function svb_generate() {
     if ($requested_child_count < 1) $requested_child_count = 1;
     if ($requested_child_count > 3) $requested_child_count = 3;
 
-    $payment_required = svb_monobank_get_token() && (svb_monobank_amount_for_children($requested_child_count) > 0);
+// ✅ PAYMENT: allow admin bypass (and optional global switch if exists)
+$opt_payment_enabled = (int) get_option('svb_payment_enabled', 1); // если опции нет — будет 1
+$post_payment_disabled = isset($_POST['payment_disabled']) && (string) $_POST['payment_disabled'] === '1';
+
+// bypass разрешаем:
+// - всем, если глобально выключили оплату (svb_payment_enabled=0)
+// - или админам, если они прислали payment_disabled=1
+$payment_bypass = ($opt_payment_enabled === 0) || ($post_payment_disabled && current_user_can('manage_options'));
+
+$payment_required = !$payment_bypass
+    && svb_monobank_get_token()
+    && (svb_monobank_amount_for_children($requested_child_count) > 0);
+
+// ✅ если bypass — помечаем заказ как paid на сервере, чтобы статус/скачивание работали
+if ($payment_bypass) {
+    $fingerprint_current = isset($order_row['fingerprint_current']) ? (string) $order_row['fingerprint_current'] : '';
+    svb_update_order_payment_by_order_id((int) $order_row['order_id'], [
+        'status' => 'paid',
+        'paid_fingerprint' => $fingerprint_current,
+        'invoice_fingerprint' => $fingerprint_current,
+        'payment_updated_at' => time(),
+        'paid_at' => time(),
+        'child_count' => $requested_child_count,
+        'bypass' => 'payment_disabled',
+    ]);
+}
 
     if ($payment_required && !current_user_can('manage_options')) {
         $payment_state = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
@@ -819,6 +864,7 @@ function svb_generate() {
     $HAS_PERSPECTIVE = svb_ff_has_filter($ffmpeg, 'perspective');
 
     // === СОХРАНЕНИЕ ФОТО (WEBP) ===
+// === 1. СПРОБА ОТРИМАТИ НОВІ ФОТО (UPLOAD) ===
     $photos = [];
     $photo_keys = ['child1','child2','parent1','parent2'];
     $allowedExt  = ['png','jpg','jpeg','webp','heic','heif'];
@@ -843,24 +889,58 @@ function svb_generate() {
                 wp_send_json_error('cannot save photo ' . $field);
             }
 
-            // Use PNG for FFmpeg overlays to avoid WebP incompatibilities
+            // Конвертація в PNG
             $destFilePng = $base . '_rgba.png';
-            $isHeic   = in_array($ext, ['heic','heif'], true);
-
             $transcoded = svb_transcode_image_to_rgba($ffmpeg, $tmp, $destFilePng, 0, $job_dir);
 
             if ($transcoded && file_exists($destFilePng)) {
                 if (file_exists($tmp)) { @unlink($tmp); }
                 $photos[$pk] = $destFilePng;
             } else {
-                if ($isHeic) {
-                    if (file_exists($destFilePng)) { @unlink($destFilePng); }
-                    if (file_exists($tmp)) { @unlink($tmp); }
-                    wp_send_json_error('HEIC/HEIF is not supported on this server (cannot convert to PNG).');
-                }
-                $photos[$pk] = $tmp; // fallback for non-HEIC
+                $photos[$pk] = $tmp;
             }
         }
+    }
+
+    // === 2. ФОЛБЕК: ЯКЩО ФОТО НЕ ЗАВАНТАЖЕНО ЗАРАЗ, ШУКАЄМО В ЗБЕРЕЖЕНОМУ ЗАМОВЛЕННІ (ПІСЛЯ ОПЛАТИ) ===
+    if (empty($photos) && !empty($order_row['photos'])) {
+        $saved_photos = is_array($order_row['photos']) 
+            ? $order_row['photos'] 
+            : json_decode((string)$order_row['photos'], true);
+
+        if (is_array($saved_photos)) {
+            foreach ($photo_keys as $pk) {
+                // Якщо ми не завантажили нове фото для цього ключа, але воно є в базі
+                if (empty($photos[$pk]) && !empty($saved_photos[$pk])) {
+                    $source_path = $saved_photos[$pk];
+                    
+                    // Перевіряємо, чи існує файл фізично
+                    if (file_exists($source_path)) {
+                        // Копіюємо його в папку поточної задачі (job_dir), щоб FFmpeg мав до нього доступ
+                        $ext = pathinfo($source_path, PATHINFO_EXTENSION);
+                        $dest_path = $job_dir . '/' . $pk . '_restored.' . $ext;
+                        
+                        if (@copy($source_path, $dest_path)) {
+                            // Якщо це не PNG, конвертуємо (на всяк випадок)
+                            if (strtolower($ext) !== 'png') {
+                                $destPng = $job_dir . '/' . $pk . '_restored.png';
+                                svb_transcode_image_to_rgba($ffmpeg, $dest_path, $destPng, 0, $job_dir);
+                                $photos[$pk] = file_exists($destPng) ? $destPng : $dest_path;
+                            } else {
+                                $photos[$pk] = $dest_path;
+                            }
+                            
+                            svb_dbg_write($job_dir, "photo_restored_{$pk}", "Restored from: $source_path");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Перевірка: чи є у нас хоча б якісь фото для роботи?
+    if (empty($photos)) {
+        wp_send_json_error('Фото відсутні. Спробуйте завантажити їх знову.');
     }
 
     // === ПАРАМЕТРЫ ОВЕРЛЕЯ ===
@@ -1405,46 +1485,31 @@ $makeAudioBlocks('name',   $A_NAME);
 
     $filter_complex = implode(';', $filter);
     $output = $job_dir . '/video.mp4';
+    $logFile = $job_dir . '/ffmpeg.log'; // Строго в папке задачи
+    $pidFile = $job_dir . '/ffmpeg.pid';
+    $rcFile  = $job_dir . '/ffmpeg.rc';
     
-    $env_report = 'FFREPORT=file='.escapeshellarg($job_dir.'/ffreport.log').':level=32';
-
-    $cmd = $env_report.' '.$ffmpeg
+    // [FIXED] Видаляємо FFREPORT та -progress pipe:1, щоб уникнути буферизації
+    // FFmpeg стандартно пише time=... у stderr, що і парситься функцією перевірки прогресу
+    // Це забезпечить миттєвий запис у лог-файл без затримок.
+    $cmd = $ffmpeg
     . ' -nostdin -y -hide_banner'
-    . ' -loglevel level+info'
+    . ' -loglevel info'
     . ' -probesize 50M -analyzeduration 50M'
-    . ' -filter_complex_threads 8'
+    . ' -filter_complex_threads 4'
     . ' -fflags +genpts -avoid_negative_ts make_zero'
     . ' ' . implode(' ', $inputs)
     . ' -filter_complex ' . escapeshellarg($filter_complex)
     . ' -map ' . escapeshellarg($finalV)
-    . ' -map ' . escapeshellarg('[aout]')
-    . ' -map_metadata -1 -map_chapters -1'
-    . ' -r 24 -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -threads 0'
+    . ' -map ' . escapeshellarg($finalA)
+    . ' -r 24 -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p'
     . ' -c:a aac -b:a 64k -ar 22050 -ac 1'
-    . ' -max_muxing_queue_size 8192'
-    . ' -muxdelay 0 -muxpreload 0'
     . ' -movflags +faststart'
     . ' -progress pipe:1'
     . ' -t ' . escapeshellarg((string)$tplDur)
     . ' ' . escapeshellarg($output);
 
-    $logFile = svb_get_order_log_path($order_data['order_id'] ?? 0) ?: ($job_dir . '/ffmpeg.log');
-    $pidFile = $job_dir . '/ffmpeg.pid';
-    $rcFile  = $job_dir . '/ffmpeg.rc';
-    if (file_exists($rcFile)) { @unlink($rcFile); }
-
-    if (file_put_contents($logFile, "Init...\n") === false) {
-        wp_send_json_error(['msg' => 'Помилка: Неможливо створити файл логу. Перевірте права на папку: ' . $job_dir]);
-    }
-
-    $initial_log = [
-        'ts' => date('c'),
-        'order_id' => $order_data['order_id'] ?? null,
-        'cmd' => $cmd,
-        'output' => $output,
-        'job_dir' => $job_dir,
-    ];
-    @file_put_contents($logFile, "=== SVB FFmpeg start ===\n" . wp_json_encode($initial_log, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) . "\n\n", FILE_APPEND);
+    file_put_contents($logFile, "=== SVB RESUME GENERATION STARTED ===\nCMD: $cmd\n\n");
 
     svb_merge_order_result($order_row, [
         'status' => 'running',
@@ -2804,135 +2869,505 @@ function svb_generation_state_payload($order_row) {
 }
 
 function svb_start_generation() {
-    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
-        wp_send_json_error('Bad nonce');
-    }
-
+    if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) wp_send_json_error('Bad nonce');
     $public_token = isset($_POST['public_token']) ? sanitize_text_field(wp_unslash($_POST['public_token'])) : '';
-    if (!$public_token) {
-        wp_send_json_error('Missing token');
-    }
+    if (!$public_token) wp_send_json_error('Missing token');
 
     $order = svb_get_order_by_token($public_token);
-    if (!$order) {
-        wp_send_json_error('Order not found');
+    if (!$order) wp_send_json_error('Order not found');
+
+    // Sync Payment (проверка статуса оплаты перед запуском)
+    $resolved_payment = svb_order_resolve_payment($order);
+    $payment = $resolved_payment['payment'];
+    if (($resolved_payment['status'] ?? '') !== 'paid' && !empty($payment['invoice_id'])) {
+        $inv_status = svb_monobank_get_invoice_status($payment['invoice_id']);
+        if (!is_wp_error($inv_status)) {
+             $updated_p = svb_monobank_apply_payment_status($order, $inv_status, 'generation_start_sync');
+             if (($updated_p['status'] ?? '') === 'paid') $order['payment'] = svb_orders_encode_payment($updated_p); 
+        }
     }
 
     $result = svb_read_order_result($order);
-    $resolved_payment = svb_order_resolve_payment($order);
-$payment = $resolved_payment['payment'];
-    $payment_status = $resolved_payment['status'];
-    $payment_status_col = $resolved_payment['status_col'] ?? '';
+    $existing_status = $result['status'] ?? '';
+    
+    // Если процесс уже идет — не перезапускаем
+    if (($existing_status === 'running' || $existing_status === 'done') && isset($result['pid']) && file_exists("/proc/".$result['pid'])) {
+        wp_send_json_success(svb_generation_state_payload($order));
+        return;
+    }
 
-// === [FIX START] Force Sync Payment Status (Improved) ===
-    if ($payment_status !== 'paid' && !empty($payment['invoice_id'])) {
-        $inv_status = svb_monobank_get_invoice_status($payment['invoice_id']);
+    // === 1. ПОДГОТОВКА ПАПОК ===
+    $order_id = (int)$order['order_id'];
+    $uploads = wp_upload_dir();
+    $job = 'svb_resume_' . wp_generate_password(8, false, false);
+    $job_dir = trailingslashit($uploads['basedir']) . 'svb-jobs/' . $job;
+    $job_url = trailingslashit($uploads['baseurl']) . 'svb-jobs/' . $job;
+    if (!wp_mkdir_p($job_dir)) wp_send_json_error('cannot create job dir');
+
+    svb_dbg_write($job_dir, 'resume.start', ['order_id' => $order_id]);
+
+    // === 2. ЗАГРУЗКА КОНФИГУРАЦИИ ===
+    $selected_video_id = $order['selected_video_id'] ?? 'video1';
+    $defs = svb_get_definitions();
+    $current_def = $defs[$selected_video_id] ?? $defs['video1'];
+    
+    // Сливаем дефолтные сцены с теми, что в базе
+    $segments = array_merge($current_def['scenes'], json_decode($order['segments'] ?? '[]', true) ?: []);
+    $pos = json_decode($order['overlay_json'] ?? '{}', true) ?: [];
+
+    // === 3. ВОССТАНОВЛЕНИЕ ФОТО ===
+    $photos_db = json_decode($order['photos'] ?? '[]', true);
+    if (!is_array($photos_db)) $photos_db = [];
+    $photos = [];
+    $photo_keys = ['child1','child2','parent1','parent2'];
+    $storage_dirs = svb_get_orders_upload_dir($order_id);
+    $storage_path = trailingslashit($storage_dirs['photos']);
+
+    foreach ($photo_keys as $pk) {
+        $found_path = '';
+        // 1. Пробуем путь из JSON базы
+        if (isset($photos_db[$pk]) && is_string($photos_db[$pk]) && file_exists($photos_db[$pk])) {
+            $found_path = $photos_db[$pk];
+        } else {
+            // 2. Фолбек: ищем файл в папке order_id по имени (child1.*)
+            $candidates = glob($storage_path . $pk . '.*');
+            if ($candidates && !empty($candidates[0])) $found_path = $candidates[0];
+        }
+
+        if ($found_path && is_string($found_path) && file_exists($found_path)) {
+            $ext = pathinfo($found_path, PATHINFO_EXTENSION);
+            $dest = $job_dir . '/' . $pk . '.' . $ext;
+            if (copy($found_path, $dest)) {
+                $photos[$pk] = $dest;
+            }
+        }
+    }
+    if (empty($photos)) wp_send_json_error('Файли фото не знайдені. ID: ' . $order_id);
+
+    // === 4. ПРЕДВАРИТЕЛЬНАЯ ОБРАБОТКА ФОТО (ГЕОМЕТРИЯ + СВЕЧЕНИЕ) ===
+    // (Логика скопирована из svb_generate для идентичности)
+    $target_w = 854; 
+    $target_h = 480;
+
+    foreach ($photo_keys as $pk) {
+        if (empty($photos[$pk])) continue;
         
-        if (!is_wp_error($inv_status)) {
-             $updated_p = svb_monobank_apply_payment_status($order, $inv_status, 'generation_start_sync');
-             
-             // Получаем нормализованный статус
-             $normalized_check = svb_payment_normalize_status($updated_p['status'] ?? '');
-             // Получаем "сырой" статус от банка (обычно 'success')
-             $raw_status = $inv_status['status'] ?? '';
-             
-             // Считаем оплаченным, если WP говорит paid ИЛИ банк говорит success
-             if ($normalized_check === 'paid' || $raw_status === 'success') {
-                 $payment_status = 'paid';
-                 $payment = $updated_p;
-                 
-                 // Принудительно ставим статус paid в памяти для дальнейшей логики
-                 $payment['status'] = 'paid'; 
-                 $order['payment'] = svb_orders_encode_payment($payment);
+        $scenes_list = isset($pos[$pk]) && is_array($pos[$pk]) ? $pos[$pk] : [];
+        
+        // Фолбек если $pos пуст
+        if (empty($scenes_list) && !empty($segments[$pk])) {
+            $scenes_list = $segments[$pk];
+        }
+
+        $r = 0;
+        $glowPct = 0.0;
+        $scalePct = 100;
+
+        foreach ($scenes_list as $sc) {
+            if (isset($sc['radius']) && (int)$sc['radius'] > $r) {
+                $r = (int)$sc['radius'];
+            }
+            if (isset($sc['glow']) && (float)$sc['glow'] > $glowPct) {
+                $glowPct = (float)$sc['glow'];
+            }
+        }
+
+        if (isset($scenes_list[0]['scale'])) {
+            $scalePct = (int)$scenes_list[0]['scale'];
+        } elseif (!empty($scenes_list)) {
+             $first_k = array_key_first($scenes_list);
+             if (isset($scenes_list[$first_k]['scale'])) {
+                 $scalePct = (int)$scenes_list[$first_k]['scale'];
              }
         }
-    }
-    // === [FIX END] ===
 
-    if ($payment_status !== 'paid') {
-        $fresh_order = svb_get_order_by_id((int) $order['order_id']);        if ($fresh_order) {
-            $order = $fresh_order;
-            $result = svb_read_order_result($order);
-            $resolved_payment = svb_order_resolve_payment($order);
-            $payment = $resolved_payment['payment'];
-            $payment_status = $resolved_payment['status'];
-            $payment_status_col = $resolved_payment['status_col'] ?? $payment_status_col;
+        if ($r > 0 || $glowPct > 0) {
+            svb_apply_manual_round_corners($photos[$pk], $r, $scalePct, $target_w, $job_dir, $glowPct);
         }
     }
-    $is_paid = ($payment_status === 'paid');
-    $pending_allowed = svb_generation_pending_allowed($order, $public_token, $payment, $result);
 
-    if (function_exists('svb_pay_log')) {
-        svb_pay_log('generation.start_gate', [
-            'order_id' => $order['order_id'] ?? null,
-            'public_token' => svb_mask_value($public_token),
-            'db_payment_status' => $payment_status,
-            'payment_status_col' => $payment_status_col,
-            'pending_allowed' => $pending_allowed,
-            'result_status' => $result['status'] ?? '',
+// Аудио
+    $voice_db = json_decode($order['voice'] ?? '[]', true);
+    $audio_sel = [];
+
+    // Функція пошуку повного шляху до аудіофайлу
+    // Функція пошуку повного шляху до аудіофайлу
+    $svb_resolve_audio_path = function($filename) {
+        // === FIX: Перевірка типу (якщо прийшов масив — ігноруємо або беремо з нього рядок) ===
+        if (empty($filename) || !is_string($filename)) return false;
+        // ====================================================================================
+
+        // Якщо це вже повний шлях і файл існує
+        if (file_exists($filename)) return $filename;
+        
+        $clean_name = basename($filename);
+        
+        // Список папок, де можуть лежати аудіо
+        $dirs = [
+            SVB_PLUGIN_DIR . 'audio/name/boy/',
+            SVB_PLUGIN_DIR . 'audio/name/girl/',
+            SVB_PLUGIN_DIR . 'audio/name/',
+            SVB_PLUGIN_DIR . 'audio/age/',
+            SVB_PLUGIN_DIR . 'audio/hobby/',
+            SVB_PLUGIN_DIR . 'audio/praise/',
+            SVB_PLUGIN_DIR . 'audio/request/',
+        ];
+
+        foreach ($dirs as $dir) {
+            if (file_exists($dir . $clean_name)) {
+                return $dir . $clean_name;
+            }
+        }
+        return false;
+    };
+
+    if (is_array($voice_db)) {
+        foreach ($voice_db as $cat => $val) {
+            // === FIX: Якщо збережено як об'єкт {file: '...', ...}, дістаємо рядок ===
+            if (is_array($val) && isset($val['file'])) {
+                $val = $val['file'];
+            }
+            // ======================================================================
+
+            $found_path = $svb_resolve_audio_path($val);
+            if ($found_path) {
+                $audio_sel[$cat] = $found_path;
+            }
+        }
+    }
+
+    // Шаблон
+    $template = file_exists($current_def['file']) ? $current_def['file'] : SVB_PLUGIN_DIR . 'assets/template1.mp4';
+    
+    // Tools
+    $ffmpeg  = svb_exec_find('ffmpeg');  if (!$ffmpeg)  $ffmpeg  = '/usr/bin/ffmpeg';
+    
+    // Тривалість
+    $tplDur = svb_ffprobe_duration($template);
+    if ($tplDur <= 0) $tplDur = 478.0; 
+    
+    // Capabilities
+    $HAS_FIFO        = svb_ff_has_filter($ffmpeg, 'fifo');
+    $HAS_AFIFO       = svb_ff_has_filter($ffmpeg, 'afifo');
+    $HAS_SHEAR       = svb_ff_has_filter($ffmpeg, 'shear'); 
+    $HAS_PERSPECTIVE = svb_ff_has_filter($ffmpeg, 'perspective');
+
+    // FFmpeg Inputs
+    $inputs = ['-i ' . escapeshellarg($template)];
+    $imgIndexMap = [];
+    foreach ($photos as $k => $p) { $inputs[] = '-i ' . escapeshellarg($p); $imgIndexMap[$k] = count($inputs) - 1; }
+    $audIndexMap = [];
+    foreach ($audio_sel as $cat => $p) { $inputs[] = '-i ' . escapeshellarg($p); $audIndexMap[$cat] = count($inputs) - 1; }
+
+    /* === FILTER COMPLEX (КОПИЯ ИЗ svb_generate) === */
+    $filter = [];
+    $filter[] = "[0:v]fps=24,setsar=1,scale={$target_w}:{$target_h},setpts=PTS-STARTPTS[vbase_tmp]";
+    $filter[] = "[vbase_tmp]format=rgba[vbase]";
+    $vlabel = "[vbase]";
+    $vcount = 0;
+
+    $P_CHILD1  = $segments['child1'] ?? [];
+    $P_CHILD2  = $segments['child2'] ?? [];
+    $P_PARENTS = $segments['parents'] ?? ($segments['parent1'] ?? []);
+
+    $addOverlay = function($key, $scenesConfig) use (
+        &$filter, &$vlabel, &$vcount,
+        $imgIndexMap, $pos,
+        $HAS_FIFO, $HAS_SHEAR, $HAS_PERSPECTIVE,
+        $target_w, $target_h
+    ) {
+        if (!isset($imgIndexMap[$key])) return;
+        $idx = $imgIndexMap[$key];
+        $geomScenes = isset($pos[$key]) && is_array($pos[$key]) ? $pos[$key] : [];
+
+        foreach ($scenesConfig as $i => $sceneMeta) {
+            $p = isset($geomScenes[$i]) ? $geomScenes[$i] : ($geomScenes[0] ?? []);
+            
+            // Если в DB пусто, подмешиваем конфиг, чтобы не потерять координаты
+            if (empty($p['cx_norm']) && isset($sceneMeta['x'])) {
+                 $p = array_merge($sceneMeta, $p); 
+            }
+
+            $rawStart = $sceneMeta['start'] ?? ($sceneMeta[0] ?? 0);
+            $rawEnd   = $sceneMeta['end']   ?? ($sceneMeta[1] ?? 0);
+            $startSec = svb_ts_to_seconds($rawStart);
+            $endSec   = svb_ts_to_seconds($rawEnd);
+            
+            // Точный тайминг как в svb_generate
+            $adjStart = max(0, $startSec - 0.045);
+            $adjEnd   = $endSec + 0.01; 
+            $enableExpr = "between(t,".number_format($adjStart,4,'.','').",".number_format($adjEnd,4,'.','').")";
+
+            // Центр
+            $cx_norm = isset($p['cx_norm']) ? (float)$p['cx_norm'] : 0.5;
+            $cy_norm = isset($p['cy_norm']) ? (float)$p['cy_norm'] : 0.5;
+            $cx = $cx_norm * $target_w;
+            $cy = $cy_norm * $target_h;
+
+            $baseScale = isset($p['scale'])   ? (int)$p['scale']   : 100;
+            $strX      = isset($p['scale_x']) ? (int)$p['scale_x'] : 100;
+            $strY      = isset($p['scaleY'])  ? (int)$p['scaleY']  : 100;
+
+            $S  = max(0.1, $baseScale / 100.0);
+            $SX = max(0.1, $strX / 100.0);
+            $SY = max(0.1, $strY / 100.0);
+
+            $skewX_deg = isset($p['skew'])    ? (float)$p['skew']        : 0.0;
+            $skewY_deg = isset($p['skewY'])   ? (float)$p['skewY']       : 0.0;
+            $angle_deg = (float)($p['angle'] ?? 0.0);
+            $ratio = (isset($p['img_ratio']) && $p['img_ratio'] > 0) ? (float)$p['img_ratio'] : 1.0;
+
+            // Компенсация Glow
+            $glowVal = isset($p['glow']) ? (float)$p['glow'] : 0.0;
+            $scaleMultiplier = 1.0;
+            if ($glowVal > 0) {
+                $sigma = ($glowVal / 100.0) * 30.0;
+                $paddingPx = ceil(($sigma * 3) + 2);
+                $refW = 1152; 
+                $contentW = $refW - ($paddingPx * 2);
+                if ($contentW > 0) $scaleMultiplier = $refW / $contentW;
+            }
+
+            $w_src = max(2, (int)round($target_w * $S * $SX * $scaleMultiplier));
+            $baseW_for_H = $target_w * $S;
+            $h_src = max(2, (int)round(($baseW_for_H / $ratio) * $SY * $scaleMultiplier));
+            
+            $pleft  = isset($p['pleft'])  ? (int)$p['pleft']  : 0;
+            $pright = isset($p['pright']) ? (int)$p['pright'] : 0;
+            
+            $chain  = "[{$idx}:v]format=rgba,scale=w={$w_src}:h={$h_src}";
+
+            // 1. Perspective
+            if ($HAS_PERSPECTIVE && ($pleft != 0 || $pright != 0)) {
+                $padding = max(0, $pleft, $pright);
+                if ($padding > 0) {
+                    $w_padded = $w_src;
+                    $h_padded = $h_src + ($padding * 2); 
+                    $y0 = $padding - $pleft;
+                    $y1 = $padding - $pright;
+                    $y2 = $padding + $h_src + $pleft;
+                    $y3 = $padding + $h_src + $pright;
+                    $chain .= ",pad=w={$w_padded}:h={$h_padded}:x=0:y={$padding}:color=black@0";
+                    $chain .= ",perspective=x0=0:y0={$y0}:x1={$w_src}:y1={$y1}:x2=0:y2={$y2}:x3={$w_src}:y3={$y3}:interpolation=linear";
+                    $h_src = $h_padded;
+                }
+            }
+
+            // 2. Shear
+            $need_shear = $HAS_SHEAR && (abs($skewX_deg) > 0.001 || abs($skewY_deg) > 0.001);
+            if ($need_shear) {
+                $skewX_rad = ($skewX_deg * -1) * M_PI / 180.0;
+                $skewY_rad = ($skewY_deg * -1) * M_PI / 180.0;
+                $maxShiftX = abs(tan(abs($skewX_deg) * M_PI / 180.0)) * $h_src;
+                $maxShiftY = abs(tan(abs($skewY_deg) * M_PI / 180.0)) * $w_src;
+                $pad_margin = (int)ceil(max($maxShiftX, $maxShiftY));
+                
+                $w_padded = $w_src + 2 * $pad_margin;
+                $h_padded = $h_src + 2 * $pad_margin;
+                $shx = number_format(tan($skewX_rad), 6, '.', '');
+                $shy = number_format(tan($skewY_rad), 6, '.', '');
+
+                $chain .= ",pad=w={$w_padded}:h={$h_padded}:x={$pad_margin}:y={$pad_margin}:color=black@0";
+                $chain .= ",shear=shx={$shx}:shy={$shy}:fillcolor=black@0";
+
+                $cx -= (tan($skewX_rad) * $h_padded / 2.0);
+                $cy -= (tan($skewY_rad) * $w_padded / 2.0);
+            }
+
+            // 3. Rotate
+            $angle_rad = $angle_deg * M_PI / 180.0;
+            $angle_str = number_format($angle_rad, 15, '.', '');
+            $chain .= ",rotate={$angle_str}:ow=rotw(iw):oh=roth(ih):c=none";
+
+            // 4. Opacity
+            $opacityPct = isset($p['opacity']) ? (float)$p['opacity'] : 100.0;
+            if ($opacityPct < 100) {
+                $chain .= ",colorchannelmixer=aa=".($opacityPct/100.0);
+            }
+
+            $tmpOut = "{$key}_sc{$i}_tmp";
+            $filter[] = $chain . "[{$tmpOut}]";
+
+            $cx_fmt = number_format($cx, 4, '.', '');
+            $cy_fmt = number_format($cy, 4, '.', '');
+            $xExpr = "{$cx_fmt} - (w / 2)";
+            $yExpr = "{$cy_fmt} - (h / 2)";
+
+            $filter[] = "{$vlabel}[{$tmpOut}]overlay=x={$xExpr}:y={$yExpr}:enable='{$enableExpr}'[vtmp{$vcount}]";
+            $filter[] = "[vtmp{$vcount}]format=rgba[v{$vcount}]";
+            $vlabel = "[v{$vcount}]";
+            $vcount++;
+        }
+    };
+
+    $addOverlay('child1',  $P_CHILD1);
+    $addOverlay('child2',  $P_CHILD2);
+    $addOverlay('parent1', $P_PARENTS);
+    $addOverlay('parent2', $P_PARENTS);
+
+    $filter[] = "{$vlabel}format=yuv420p[vfinal]";
+    $finalV = "[vfinal]";
+
+    // --- АУДИО (1 в 1 как в svb_generate) ---
+    $audT = $current_def['audio_timings'];
+    $A_NAME    = $audT['name'];
+    $A_AGE     = $audT['age'] ?? [];
+    $A_HOBBY   = $audT['hobby'] ?? [];
+    $A_PRAISE  = $audT['praise'] ?? [];
+    $A_REQUEST = $audT['request'] ?? [];
+
+    $child_count_final = (int)($order['child_count'] ?? 1);
+    $A_NAME_2 = []; $A_NAME_3 = [];
+    $fmtTime = function($sec) {
+        $m = floor($sec / 60); $s = $sec % 60; $ms = ($sec - floor($sec)) * 1000;
+        return sprintf("%02d:%02d.%03d", $m, $s, $ms);
+    };
+    if ($child_count_final >= 2) {
+        foreach ($A_NAME as $pair) {
+             $A_NAME_2[] = [$fmtTime(svb_ts_to_seconds($pair[0])+1.0), $fmtTime(svb_ts_to_seconds($pair[1])+1.0)];
+        }
+    }
+    if ($child_count_final >= 3) {
+        foreach ($A_NAME as $pair) {
+             $A_NAME_3[] = [$fmtTime(svb_ts_to_seconds($pair[0])+2.0), $fmtTime(svb_ts_to_seconds($pair[1])+2.0)];
+        }
+    }
+
+    $audio_format_chain = ",aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=1:first_pts=0";
+    $amix_inputs = ['[abase]'];
+    $filter[] = '[0:a]aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=1:first_pts=0,volume=1.00[abase]';
+
+    $makeAudioBlocks = function($cat, $intervals) use (&$filter, &$amix_inputs, $audIndexMap, $HAS_AFIFO, $tplDur, $audio_format_chain){
+        if (!isset($audIndexMap[$cat]) || empty($intervals)) return;
+        $idx = $audIndexMap[$cat];
+        $isName = strpos($cat, 'name') === 0;
+        $name_format_chain = ',aformat=sample_fmts=fltp:sample_rates=22050:channel_layouts=mono,aresample=async=0:first_pts=0';
+
+        if (count($intervals) === 1) {
+            [$stS, $enS] = $intervals[0];
+            $st = svb_ts_to_seconds($stS);
+            $len = max(0, svb_ts_to_seconds($enS) - $st);
+            $segDur = $isName ? min($len, 1.007) : $tplDur;
+            $ms = (int)round($st * 1000);
+            $label = "[{$cat}a1]";
+            $chain  = "[{$idx}:a]";
+            if ($isName) $chain .= "atrim=0:{$segDur},";
+            $chain .= "asetpts=PTS-STARTPTS" . ($isName ? $name_format_chain : $audio_format_chain);
+            $chain .= ",volume=1.0,adelay={$ms}:all=1";
+            if (!$isName) $chain .= ",atrim=0:{$tplDur}";
+            if ($HAS_AFIFO) $chain .= ",afifo";
+            $chain .= "{$label}";
+            $filter[] = $chain;
+            $amix_inputs[] = $label;
+            return;
+        }
+        $outs = [];
+        for ($i=1; $i<=count($intervals); $i++) $outs[] = "[{$cat}s{$i}]";
+        $filter[] = "[{$idx}:a]asplit=" . count($intervals) . implode('', $outs);
+
+        for ($i=1; $i<=count($intervals); $i++){
+            [$stS, $enS] = $intervals[$i-1];
+            $st = svb_ts_to_seconds($stS);
+            $len = max(0, svb_ts_to_seconds($enS) - $st);
+            $segDur = $isName ? min($len, 1.007) : $tplDur;
+            $ms = (int)round($st * 1000);
+            $label = "[{$cat}a{$i}]";
+            $chain  = "{$outs[$i-1]}";
+            if ($isName) $chain .= "atrim=0:{$segDur},";
+            $chain .= "asetpts=PTS-STARTPTS" . ($isName ? $name_format_chain : $audio_format_chain);
+            $chain .= ",volume=0.4,adelay={$ms}:all=1";
+            if ($HAS_AFIFO) $chain .= ",afifo";
+            $chain .= "{$label}";
+            $filter[] = $chain;
+            $amix_inputs[] = $label;
+        }
+    };
+
+    $makeAudioBlocks('name',   $A_NAME);
+    if (!empty($audio_sel['name2'])) $makeAudioBlocks('name2', $A_NAME_2);
+    if (!empty($audio_sel['name3'])) $makeAudioBlocks('name3', $A_NAME_3);
+    $makeAudioBlocks('age',    $A_AGE); 
+    $makeAudioBlocks('hobby',  $A_HOBBY);
+    $makeAudioBlocks('praise', $A_PRAISE);
+    $makeAudioBlocks('request',$A_REQUEST);
+
+    if (count($amix_inputs) <= 1) {
+        $filter[] = '[abase]asplit[aout]'; 
+    } else {
+        $chain  = implode('', $amix_inputs) . 'amix=inputs=' . count($amix_inputs) . ':duration=longest:dropout_transition=0:normalize=1';
+        $chain .= ',alimiter=level_in=1:level_out=1:limit=1:attack=5:release=100';
+        if ($HAS_AFIFO) $chain .= ',afifo'; 
+        $chain .= '[aout]';
+        $filter[] = $chain;
+    }
+    $finalA = "[aout]";
+
+    $filter_complex = implode(';', $filter);
+    $output = $job_dir . '/video.mp4';
+    $logFile = svb_get_order_log_path($order_id) ?: ($job_dir . '/ffmpeg.log');
+    $pidFile = $job_dir . '/ffmpeg.pid';
+    $rcFile  = $job_dir . '/ffmpeg.rc';
+
+    $cmd = $ffmpeg
+    . ' -nostdin -y -hide_banner'
+    . ' -loglevel level+info'
+    . ' -probesize 50M -analyzeduration 50M'
+    . ' -filter_complex_threads 4'
+    . ' -fflags +genpts -avoid_negative_ts make_zero'
+    . ' ' . implode(' ', $inputs)
+    . ' -filter_complex ' . escapeshellarg($filter_complex)
+    . ' -map ' . escapeshellarg($finalV)
+    . ' -map ' . escapeshellarg($finalA)
+    . ' -r 24 -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p'
+    . ' -c:a aac -b:a 64k -ar 22050 -ac 1'
+    . ' -movflags +faststart'
+    . ' -t ' . escapeshellarg((string)$tplDur)
+    . ' ' . escapeshellarg($output);
+
+    file_put_contents($logFile, "=== SVB RESUME GENERATION ===\nCMD: $cmd\n\n");
+    
+    svb_merge_order_result($order, [
+        'status' => 'running',
+        'progress' => 0,
+        'updated_at' => current_time('mysql'),
+        'log_path' => $logFile,
+        'last_error' => '',
+        'duration' => $tplDur, 
+    ]);
+
+    set_transient('svb_job_data_' . $public_token, [
+        'job_dir'  => $job_dir,
+        'logFile'  => $logFile,
+        'output'   => $output,
+        'pidFile'  => $pidFile,
+        'rcFile'   => $rcFile, 
+        'tplDur'   => $tplDur,
+        'job_url'  => $job_url,
+        'order_id' => $order_id,
+        // Сохраняем команду для дебага если что
+        'cmd'      => $cmd
+    ], HOUR_IN_SECONDS);
+
+    $cmd_bg = '(' . $cmd . ' > ' . escapeshellarg($logFile) . ' 2>&1; echo $? > ' . escapeshellarg($rcFile) . ') > /dev/null 2>&1 & echo $!';
+    
+    // Запуск через exec (как в svb_generate)
+    $pid = null;
+    $pid_out = [];
+    $rc = -1;
+    $last_line = exec($cmd_bg, $pid_out, $rc);
+    $pid = is_string($last_line) ? trim($last_line) : null;
+    
+    if ($pid && is_numeric($pid) && $pid > 0) {
+        file_put_contents($pidFile, $pid);
+        $payload = svb_generation_state_payload($order);
+        $payload['status'] = 'running';
+        wp_send_json_success($payload);
+    } else {
+        wp_send_json_error([
+            'msg' => 'Failed to launch exec',
+            'log' => print_r($pid_out, true)
         ]);
     }
-
-    $existing_status = isset($result['status']) ? $result['status'] : '';
-    $started_at = isset($result['started_at']) ? (int) $result['started_at'] : 0;
-
-    if (!$is_paid && !$pending_allowed) {
-        $payload = svb_generation_state_payload($order);
-        $payload['status'] = 'payment_pending';
-        $payload['progress'] = 0;
-        $payload['download_url'] = '';
-        $payload['error_code'] = 'PAYMENT_PENDING';
-        $payload['message'] = 'Payment not confirmed';
-
-        if (defined('SVB_DEBUG') && SVB_DEBUG) {
-            error_log('[SVB DEBUG][GENERATION][START] payment pending ' . wp_json_encode([
-                'order_id' => $order['order_id'] ?? null,
-                'public_token' => $public_token,
-                'payment_status' => $payment_status,
-                'payment_status_col' => $payment_status_col,
-                'payment_source' => $resolved_payment['source'] ?? '',
-            ]));
-        }
-
-        wp_send_json_success($payload);
-    }
-
-    if (in_array($existing_status, ['queued', 'running'], true) && $started_at > 0) {
-        $payload = svb_generation_state_payload($order);
-        if (defined('SVB_DEBUG') && SVB_DEBUG) {
-            error_log('[SVB DEBUG][GENERATION][START] resume ' . wp_json_encode([
-                'order_id' => $order['order_id'] ?? null,
-                'public_token' => $public_token,
-                'status' => $payload['status'] ?? '',
-                'pid' => $payload['pid'] ?? null,
-                'process_alive' => $payload['process_alive'] ?? null,
-            ]));
-        }
-        wp_send_json_success($payload);
-    }
-
-    if ($pending_allowed && empty($result['delivery_locked'])) {
-        $result['delivery_locked'] = true;
-        $result['payment_pending_started_at'] = $result['payment_pending_started_at'] ?? time();
-        svb_update_order_result_status($order['order_id'], $result);
-        $order['result'] = $result;
-    }
-
-    $payload = svb_generation_state_payload($order);
-
-    if (defined('SVB_DEBUG') && SVB_DEBUG) {
-        error_log('[SVB DEBUG][GENERATION][START] state ' . wp_json_encode([
-            'order_id' => $order['order_id'] ?? null,
-            'public_token' => $public_token,
-            'status' => $payload['status'] ?? '',
-            'pid' => $payload['pid'] ?? null,
-            'process_alive' => $payload['process_alive'] ?? null,
-            'payment_status' => $payload['payment_status'] ?? '',
-            'payment_status_col' => $payment_status_col,
-        ]));
-    }
-
-    wp_send_json_success($payload);
 }
 
 function svb_generation_status() {
@@ -2945,6 +3380,99 @@ function svb_generation_status() {
         wp_send_json_error('Missing token');
     }
 
+    // 1. Отримуємо дані про активне завдання
+    $job_data = get_transient('svb_job_data_' . $public_token);
+    
+    if ($job_data && isset($job_data['logFile'])) {
+        $logFile = $job_data['logFile'];
+        $rcFile = $job_data['rcFile'] ?? '';
+        $outputFile = $job_data['output'] ?? '';
+        $tplDur  = (float)($job_data['tplDur'] ?? 0);
+        $order_id = $job_data['order_id'] ?? 0;
+        $job_dir = $job_data['job_dir'] ?? '';
+
+        // [ВАЖЛИВО] Фолбек тривалості: якщо 0, ставимо 478 сек, щоб проценти не були 0
+        if ($tplDur <= 0) $tplDur = 478.0;
+
+        clearstatcache(true, $logFile);
+        clearstatcache(true, $rcFile);
+
+        // --- А: ЧИТАЄМО ЛОГ І ОНОВЛЮЄМО ПРОГРЕС ---
+        if (file_exists($logFile)) {
+            $size = filesize($logFile);
+            $readSize = 10240; 
+            $offset = max(0, $size - $readSize);
+            $log_content = file_get_contents($logFile, false, null, $offset);
+            
+            $percent = 0;
+            // Шукаємо останній час у логу (time=00:01:23.45)
+            if ($log_content && preg_match_all('/time=\s*([\d:.]+)/', $log_content, $matches)) {
+                $last_time_str = end($matches[1]);
+                $current_sec = svb_ts_to_seconds($last_time_str);
+                if ($tplDur > 0) {
+                    $percent = min(99, floor(($current_sec / $tplDur) * 100));
+                }
+            }
+
+            // Оновлюємо базу, щоб система бачила активність і не видавала Timeout
+            if ($order_id) {
+                $current_order = svb_get_order_by_id($order_id);
+                if ($current_order) {
+                    svb_merge_order_result($current_order, [
+                        'status' => 'running',
+                        'progress' => $percent,
+                        'updated_at' => current_time('mysql'), // Оновлюємо час, щоб не було "stalled"
+                        'log_path' => $logFile,
+                        'duration' => $tplDur
+                    ]);
+                }
+            }
+        }
+
+        // --- Б: ПЕРЕВІРЯЄМО ЗАВЕРШЕННЯ (RC ФАЙЛ) ---
+        if ($rcFile && file_exists($rcFile)) {
+            $rcVal = (int) trim((string) @file_get_contents($rcFile));
+            
+            // УСПІХ: код 0 і файл існує
+            if ($rcVal === 0 && file_exists($outputFile) && filesize($outputFile) > 10000) {
+                if ($order_id) {
+                    $dirs = svb_get_orders_upload_dir($order_id);
+                    $permanent_path = trailingslashit($dirs['result']) . 'video.mp4';
+                    
+                    if (copy($outputFile, $permanent_path)) {
+                         $videoUrl = svb_build_download_url($order_id, $public_token);
+                         
+                         svb_update_order_result_status($order_id, [
+                            'status' => 'done',
+                            'progress' => 100,
+                            'video_path' => $permanent_path,
+                            'download_url' => $videoUrl,
+                            'updated_at' => current_time('mysql'),
+                            'generated_at' => current_time('mysql'),
+                            'last_error' => ''
+                         ]);
+                         
+                         // Чистка тимчасових файлів
+                         if ($job_dir) svb_schedule_cleanup($job_dir);
+                         delete_transient('svb_job_data_' . $public_token);
+                    }
+                }
+            } 
+            // ПОМИЛКА: код не 0
+            elseif ($rcVal !== 0) {
+                 if ($order_id) {
+                     svb_update_order_result_status($order_id, [
+                        'status' => 'failed',
+                        'last_error' => 'FFmpeg error code: ' . $rcVal,
+                        'updated_at' => current_time('mysql'),
+                    ]);
+                 }
+                 delete_transient('svb_job_data_' . $public_token);
+            }
+        }
+    }
+
+    // 2. Повертаємо актуальний статус клієнту
     $order = svb_get_order_by_token($public_token);
     if (!$order) {
         wp_send_json_error('Order not found');
@@ -2955,11 +3483,8 @@ function svb_generation_status() {
     if (defined('SVB_DEBUG') && SVB_DEBUG) {
         error_log('[SVB DEBUG][GENERATION][STATUS] ' . wp_json_encode([
             'order_id' => $order['order_id'] ?? null,
-            'public_token' => $public_token,
             'status' => $payload['status'] ?? '',
-            'pid' => $payload['pid'] ?? null,
-            'process_alive' => $payload['process_alive'] ?? null,
-            'payment_status' => $payload['payment_status'] ?? '',
+            'progress' => $payload['progress'] ?? 0
         ]));
     }
     wp_send_json_success($payload);
@@ -2998,47 +3523,35 @@ function svb_ffmpeg_log() {
 }
 
 function svb_payment_gate() {
+    // Ініціалізація масиву для дебагу
+    $debug_log = [
+        'files_received' => [],
+        'upload_dir' => '',
+        'save_attempts' => [],
+        'db_write_photos' => '',
+    ];
+
     if (!check_ajax_referer('svb_nonce', '_svb_nonce', false)) {
-        wp_send_json_error('Bad nonce');
+        wp_send_json_error(['message' => 'Bad nonce', 'debug' => $debug_log]);
     }
 
     $order_data = svb_init_user_order();
     $uid = $order_data['uid'] ?? '';
     if (!$uid) {
-        wp_send_json_error('Session missing');
+        wp_send_json_error(['message' => 'Session missing', 'debug' => $debug_log]);
     }
 
     $order_id_req = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
     $token_req = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
 
     $child_count = isset($_POST['child_count']) ? (int) $_POST['child_count'] : 1;
-    if ($child_count < 1) $child_count = 1;
-    if ($child_count > 3) $child_count = 3;
-
     $selected_video_id = isset($_POST['selected_video_id']) ? sanitize_text_field(wp_unslash($_POST['selected_video_id'])) : '';
-    $overlay_json_raw = isset($_POST['overlay_json']) ? wp_unslash($_POST['overlay_json']) : '';
-    $overlay_json = json_decode($overlay_json_raw, true);
-    if (!is_array($overlay_json)) {
-        $overlay_json = [];
-    }
 
-    $segments_raw = isset($_POST['segments']) ? wp_unslash($_POST['segments']) : '';
-    $segments = json_decode($segments_raw, true);
-    if (!is_array($segments)) {
-        $segments = [];
-    }
-
-    $voice_raw = isset($_POST['voice_payload']) ? wp_unslash($_POST['voice_payload']) : '';
-    $voice = json_decode($voice_raw, true);
-    if (!is_array($voice)) {
-        $voice = [];
-    }
-
-    $photo_hashes_raw = isset($_POST['photo_hashes']) ? wp_unslash($_POST['photo_hashes']) : '[]';
-    $photo_hashes = json_decode($photo_hashes_raw, true);
-    if (!is_array($photo_hashes)) {
-        $photo_hashes = [];
-    }
+    // Отримуємо JSON дані
+    $overlay_json = json_decode(wp_unslash($_POST['overlay_json'] ?? '{}'), true) ?: [];
+    $segments     = json_decode(wp_unslash($_POST['segments'] ?? '[]'), true) ?: [];
+    $voice        = json_decode(wp_unslash($_POST['voice_payload'] ?? '[]'), true) ?: [];
+    $photo_hashes = json_decode(wp_unslash($_POST['photo_hashes'] ?? '[]'), true) ?: [];
 
     $fingerprint_params = [
         'child_count' => $child_count,
@@ -3048,29 +3561,20 @@ function svb_payment_gate() {
         'overlay_json' => $overlay_json,
     ];
     $client_fingerprint = isset($_POST['fingerprint']) ? sanitize_text_field(wp_unslash($_POST['fingerprint'])) : '';
-    $fingerprint_current = $client_fingerprint ? $client_fingerprint : svb_compute_fingerprint_from_hashes($fingerprint_params, $photo_hashes);
+    $fingerprint_current = $client_fingerprint ?: svb_compute_fingerprint_from_hashes($fingerprint_params, $photo_hashes);
 
+    // 1. Пошук або створення замовлення
     $order_row = null;
     $storage = 'table';
 
     if ($token_req) {
         $order_row = svb_get_order_by_token($token_req);
     }
-
     if (!$order_row && $order_id_req && $token_req) {
         $order_row = svb_get_order_by_id_and_token($order_id_req, $token_req);
     }
-
     if (!$order_row) {
         $order_row = svb_get_order_row_by_uid($uid, $order_data);
-    }
-
-    if (is_wp_error($order_row)) {
-        $db_error = $order_row->get_error_data()['db_error'] ?? '';
-        if ($db_error) {
-            svb_pay_log('payment_gate.order_error', ['db_error' => $db_error], $order_data);
-        }
-        wp_send_json_error('Order storage error');
     }
 
     $fingerprint_matches = $order_row && !empty($order_row['fingerprint_current'])
@@ -3080,25 +3584,82 @@ function svb_payment_gate() {
     if (!$order_row || !$fingerprint_matches) {
         $created = svb_create_new_order_for_session($uid, $order_data);
         if (is_wp_error($created)) {
-            $db_error = $created->get_error_data()['db_error'] ?? '';
-            if ($db_error) {
-                svb_pay_log('payment_gate.create_error', ['db_error' => $db_error], $order_data);
-            }
-            wp_send_json_error('Order not found');
+            $debug_log['error'] = 'Create error: ' . $created->get_error_message();
+            wp_send_json_error(['message' => 'Order storage error', 'debug' => $debug_log]);
         }
         $order_row = $created;
         $storage = 'new_order';
     }
 
-    $order_data['order_id'] = (int) ($order_row['order_id'] ?? $order_data['order_id'] ?? 0);
+    $order_id = (int)($order_row['order_id'] ?? 0);
+    if (!$order_id) wp_send_json_error(['message' => 'Order ID invalid', 'debug' => $debug_log]);
+
+ // === 2. ЗБЕРЕЖЕННЯ ФОТО (FINAL FIX) ===
+    $dirs = svb_get_orders_upload_dir($order_id); 
+    $target_dir = trailingslashit($dirs['photos']);
+    $debug_log['upload_dir'] = $target_dir;
+
+    // 1. Берем то, что УЖЕ есть в базе (чтобы не потерять при повторном сохранении)
+    $existing_photos = json_decode($order_row['photos'] ?? '[]', true);
+    if (!is_array($existing_photos)) {
+        $existing_photos = [];
+    }
+    // Если в базе старый формат с ключом 'hashes' - сбрасываем, иначе используем как базу
+    if (isset($existing_photos['hashes'])) {
+        $photos = [];
+    } else {
+        $photos = $existing_photos;
+    }
+
+    $photo_keys = ['child1', 'child2', 'parent1', 'parent2'];
+    $allowed = ['jpg','jpeg','png','webp','heic','heif'];
+    
+    // 2. Обрабатываем новые загрузки (если есть)
+    if (!empty($_FILES)) {
+        foreach ($photo_keys as $pk) {
+            $input_name = 'photo_' . $pk;
+            
+            if (!empty($_FILES[$input_name]['name']) && $_FILES[$input_name]['error'] === UPLOAD_ERR_OK) {
+                $tmp_name = $_FILES[$input_name]['tmp_name'];
+                $name     = $_FILES[$input_name]['name'];
+                $debug_log['files_received'][] = "$pk: $name";
+                
+                $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                if (!in_array($ext, $allowed)) {
+                    $debug_log['save_attempts'][] = "$pk: Skipped (bad ext)";
+                    continue;
+                }
+
+                $new_name = $pk . '.' . $ext;
+                $dest_path = $target_dir . $new_name;
+
+                // Перемещаем файл в постоянную папку заказа
+                if (move_uploaded_file($tmp_name, $dest_path)) {
+                    $photos[$pk] = $dest_path; // Записываем ПУТЬ в массив
+                    $debug_log['save_attempts'][] = "$pk: Saved to $dest_path";
+                    @chmod($dest_path, 0644); // Права доступа
+                } else {
+                    $debug_log['save_attempts'][] = "$pk: Failed move_uploaded_file";
+                    error_log("[SVB ERROR] Failed to move file to $dest_path");
+                }
+            }
+        }
+    } else {
+        $debug_log['files_received'] = 'NONE (empty $_FILES)';
+    }
+
+    // === 3. ОНОВЛЕННЯ БАЗИ (FIX) ===
+    // Ось тут була помилка. Тепер ми пишемо масив $photos (шляхи), а не hashes.
+    $photos_json = wp_json_encode($photos);
+    $debug_log['db_write_photos'] = $photos_json; // Логуємо, що пішло в базу
+
     $public_token = svb_resolve_order_public_token($order_row);
     if ($public_token) {
         $order_data['public_token'] = $public_token;
-        $order_data['token_hash'] = $order_row['token_hash'] ?? '';
     }
 
     svb_update_order_fingerprint(
-        $order_row['order_id'],
+        $order_id,
         $fingerprint_current,
         [
             'child_count' => $child_count,
@@ -3106,47 +3667,32 @@ function svb_payment_gate() {
             'overlay_json' => wp_json_encode($overlay_json),
             'segments' => wp_json_encode($segments),
             'voice' => wp_json_encode($voice),
-            'photos' => wp_json_encode(['hashes' => $photo_hashes]),
+            'photos' => $photos_json, // [FIX] ТУТ БУЛА ПОМИЛКА
         ]
     );
 
     svb_update_user_order($uid, [
-        'order_id' => (int) $order_row['order_id'],
+        'order_id' => $order_id,
         'public_token' => $public_token,
         'token_hash' => $order_row['token_hash'] ?? '',
         'fingerprint_current' => $fingerprint_current,
     ]);
 
+    // === 4. ОПЛАТА ===
     $payment_disabled = isset($_POST['payment_disabled']) && $_POST['payment_disabled'] === '1';
     $payment = svb_orders_normalize_payment(svb_orders_decode_payment($order_row['payment'] ?? []));
-    $paid_fingerprint = isset($payment['paid_fingerprint']) ? $payment['paid_fingerprint'] : '';
+    $paid_fingerprint = $payment['paid_fingerprint'] ?? '';
     $payment_status = svb_payment_normalize_status($payment['status'] ?? 'unpaid');
+    
     $is_paid_for_current = ($payment_status === 'paid')
-        && $paid_fingerprint
-        && $fingerprint_current
         && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
 
-    $payment_url = $payment['invoice_page_url'] ?? '';
-    $invoice_id = $payment['invoice_id'] ?? '';
-    $created_ts = isset($payment['invoice_created_at']) ? (int) $payment['invoice_created_at'] : 0;
-    $recent_invoice = $created_ts ? ((time() - $created_ts) < 1800) : false;
-
-    if ($invoice_id && !$is_paid_for_current && in_array($payment_status, ['pending', 'processing'], true)) {
-        $status = svb_monobank_get_invoice_status($invoice_id);
-        if (!is_wp_error($status)) {
-            $payment = svb_monobank_apply_payment_status($order_row, $status, 'generation_status');
-            $payment_status = svb_payment_normalize_status($payment['status'] ?? $payment_status);
-            $paid_fingerprint = $payment['paid_fingerprint'] ?? $paid_fingerprint;
-            $payment_url = $payment['invoice_page_url'] ?? $payment_url;
-            $is_paid_for_current = ($payment_status === 'paid')
-                && $paid_fingerprint
-                && $fingerprint_current
-                && svb_safe_hash_equals((string) $paid_fingerprint, (string) $fingerprint_current);
-        }
+    if (current_user_can('manage_options') && !$payment_disabled && $is_paid_for_current) {
+        $is_paid_for_current = false; 
     }
 
     if ($payment_disabled && !$is_paid_for_current) {
-        svb_update_order_payment_by_order_id($order_row['order_id'], [
+        svb_update_order_payment_by_order_id($order_id, [
             'status' => 'paid',
             'paid_fingerprint' => $fingerprint_current,
             'payment_updated_at' => time(),
@@ -3157,48 +3703,38 @@ function svb_payment_gate() {
         $is_paid_for_current = true;
     }
 
-    $invoice_matches_fp = empty($payment['invoice_fingerprint'])
-        ? true
-        : svb_safe_hash_equals((string) $payment['invoice_fingerprint'], (string) $fingerprint_current);
-    $should_create_invoice = !$payment_disabled && !$is_paid_for_current && (
-        empty($payment_url)
-        || !in_array($payment_status, ['pending', 'processing'], true)
-        || !$recent_invoice
-        || !$invoice_matches_fp
-    );
+    $payment_url = $payment['invoice_page_url'] ?? '';
+    $invoice_id = $payment['invoice_id'] ?? '';
+    
+    $should_create_invoice = !$payment_disabled && !$is_paid_for_current;
+    
+    if ($should_create_invoice && $invoice_id) {
+        $inv_fp = $payment['invoice_fingerprint'] ?? '';
+        $fp_match = svb_safe_hash_equals((string)$inv_fp, (string)$fingerprint_current);
+        $recent = !empty($payment['invoice_created_at']) && (time() - $payment['invoice_created_at'] < 1800);
+        if ($fp_match && $recent && in_array($payment_status, ['pending','processing'])) {
+            $should_create_invoice = false;
+        }
+    }
 
     if ($should_create_invoice) {
-        if (!svb_monobank_get_token()) {
-            wp_send_json_error('Payment is not configured.');
-        }
+        if (!svb_monobank_get_token()) wp_send_json_error(['message' => 'Payment not configured', 'debug' => $debug_log]);
 
         $amount = svb_monobank_amount_for_children($child_count);
-        if ($amount <= 0) {
-            wp_send_json_error('Invalid amount for selected children');
-        }
+        if ($amount <= 0) wp_send_json_error(['message' => 'Invalid amount', 'debug' => $debug_log]);
 
         $return_url = svb_monobank_build_redirect_url($public_token);
         $webhook_url = svb_monobank_build_webhook_url($public_token);
-
-        $reference = 'SVB-' . ($order_row['order_id'] ?? 'order') . '-' . wp_generate_password(6, false, false);
-        $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_row['order_id'] ?? 'unknown');
+        $reference = 'SVB-' . $order_id . '-' . wp_generate_password(6, false, false);
+        $comment = sprintf('Santa Video, kids=%d, order=%s', $child_count, $order_id);
 
         $invoice = svb_monobank_create_invoice_request($amount, $return_url, $reference, $comment, $webhook_url);
-        if (is_wp_error($invoice)) {
-            $err_data = $invoice->get_error_data();
-            $status = is_array($err_data) ? ($err_data['status'] ?? '') : '';
-            $body_snippet = (is_array($err_data) && isset($err_data['body'])) ? svb_pay_trim($err_data['body']) : '';
-            $message_parts = [];
-            if ($status) $message_parts[] = 'http=' . $status;
-            if ($body_snippet) $message_parts[] = 'body=' . $body_snippet;
-            $public_message = $message_parts ? ('mono api: ' . implode(' ', $message_parts)) : $invoice->get_error_message();
-            wp_send_json_error($public_message);
-        }
+        if (is_wp_error($invoice)) wp_send_json_error(['message' => 'Mono Error: ' . $invoice->get_error_message(), 'debug' => $debug_log]);
 
-        $invoice_id = isset($invoice['invoiceId']) ? sanitize_text_field($invoice['invoiceId']) : '';
+        $invoice_id = sanitize_text_field($invoice['invoiceId'] ?? '');
         $payment_url = $invoice['pageUrl'] ?? '';
 
-        $payment_updates = [
+        svb_update_order_payment_by_order_id($order_id, [
             'status' => 'pending',
             'invoice_id' => $invoice_id,
             'invoice_page_url' => $payment_url,
@@ -3206,18 +3742,13 @@ function svb_payment_gate() {
             'reference' => $reference,
             'amount' => $amount,
             'child_count' => $child_count,
-            'modifiedDate' => 0,
             'invoice_created_at' => time(),
             'payment_updated_at' => time(),
-        ];
-
-        svb_update_order_payment_by_order_id($order_row['order_id'], $payment_updates);
+        ]);
         $payment_status = 'pending';
     }
 
-    $invoice_masked = svb_monobank_mask_invoice($invoice_id);
-
-    list($decision, $normalized_payment_status, $reason) = svb_payment_decision(
+    list($decision, $normalized_status, $reason) = svb_payment_decision(
         $payment_status,
         $paid_fingerprint,
         $fingerprint_current,
@@ -3225,44 +3756,19 @@ function svb_payment_gate() {
     );
 
     $response = [
-        'order_id' => (int) $order_row['order_id'],
+        'order_id' => (int)$order_id,
         'public_token' => $public_token,
         'fingerprint_current' => $fingerprint_current,
         'paid_fingerprint' => $paid_fingerprint,
-        'payment_status' => $normalized_payment_status,
-        'payment_status_raw' => $payment['status'] ?? 'unpaid',
+        'payment_status' => $normalized_status,
         'invoice_id' => $invoice_id,
-        'invoice_page_url' => $payment_url,
         'payment_url' => $payment_url,
-        'invoice_masked' => $invoice_masked,
-        'invoice_page_url_masked' => svb_mask_page_url($payment_url),
-        'is_paid_for_current' => ($decision === 'paid'),
         'decision' => ($decision === 'paid') ? 'PAID' : 'PAY',
         'reason' => $reason,
         'storage' => $storage,
-        'resume_url' => svb_build_resume_url($order_row['order_id'], $public_token),
-        'transaction_id' => $payment['transaction_id'] ?? '',
-        'paid_at' => isset($payment['paid_at']) ? (int) $payment['paid_at'] : 0,
-        'is_paid' => ($decision === 'paid'),
+        'resume_url' => svb_build_resume_url($order_id, $public_token),
+        'debug_gate' => $debug_log // <--- ВАЖЛИВО: дивіться це поле в консолі!
     ];
-
-    if (function_exists('svb_debug_enabled') && svb_debug_enabled()) {
-        $response['debug'] = [
-            'storage' => $storage,
-            'has_invoice' => !empty($invoice_id),
-            'token_mask' => svb_mask_value($public_token),
-        ];
-    }
-
-    if (svb_pay_should_log()) {
-        svb_pay_log('payment_gate.result', [
-            'order_id' => $response['order_id'],
-            'payment_status' => $response['payment_status'],
-            'paid_fingerprint' => $response['paid_fingerprint'],
-            'fingerprint_current' => $fingerprint_current,
-            'reason' => $response['reason'],
-        ]);
-    }
 
     wp_send_json_success($response);
 }

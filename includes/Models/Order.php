@@ -1301,15 +1301,16 @@ function svb_update_order_payment_by_order_id($order_id, array $updates) {
 
     $final_normalized = svb_payment_normalize_status($final_status);
 
-    if (isset($updates['status'])) {
-        $update_data['payment_status'] = $final_normalized;
-        $update_formats[] = '%s';
-    }
+if (isset($updates['status']) && svb_orders_table_has_column($table, 'payment_status')) {
+    $update_data['payment_status'] = $final_normalized;
+    $update_formats[] = '%s';
+}
 
-    if (!empty($updates['invoice_id'])) {
-        $update_data['payment_invoice_id'] = sanitize_text_field($updates['invoice_id']);
-        $update_formats[] = '%s';
-    }
+if (!empty($updates['invoice_id']) && svb_orders_table_has_column($table, 'payment_invoice_id')) {
+    $update_data['payment_invoice_id'] = sanitize_text_field($updates['invoice_id']);
+    $update_formats[] = '%s';
+}
+
 
     $wpdb->update($table, $update_data, ['id' => $row['id']], $update_formats, ['%d']);
 

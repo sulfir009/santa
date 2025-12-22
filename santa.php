@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Santa Video Builder (All-in-One)
  * Description: 3-шаговый модуль генерации персонального видео (как elfisanta): выбор озвучек, загрузка фото, сборка через FFmpeg. Хранение результата 1 час.
- * Version: 3.1.3 (Real-Time Progress)
+ * Version: 3.1.4 (Real-Time Progress)
  * Author: You
  */
 
@@ -506,7 +506,31 @@ add_filter('wp_redirect', function($location, $status) {
     return $location;
 }, 999, 2);
 // === [DEBUG END] ===
+// === [DATABASE FIX START] ===
+add_action('init', function() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'svb_orders';
+    
+    // Проверяем, есть ли таблица
+    if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name) {
+        return;
+    }
 
+    // Добавляем колонку payment_status, если её нет
+    $col = $wpdb->get_results("SHOW COLUMNS FROM `$table_name` LIKE 'payment_status'");
+    if (empty($col)) {
+        $wpdb->query("ALTER TABLE `$table_name` ADD COLUMN `payment_status` VARCHAR(50) DEFAULT 'pending'");
+        error_log('[SVB FIX] Column payment_status added.');
+    }
+
+    // Добавляем колонку payment_invoice_id, если её нет
+    $col2 = $wpdb->get_results("SHOW COLUMNS FROM `$table_name` LIKE 'payment_invoice_id'");
+    if (empty($col2)) {
+        $wpdb->query("ALTER TABLE `$table_name` ADD COLUMN `payment_invoice_id` VARCHAR(255) DEFAULT NULL");
+        error_log('[SVB FIX] Column payment_invoice_id added.');
+    }
+});
+// === [DATABASE FIX END] ===
 add_action('wp_ajax_svb_save_config', svb_wrap_ajax('svb_save_config', 'ajax:svb_save_config'));
 
 add_shortcode('santa_video_form', 'svb_render_form');
