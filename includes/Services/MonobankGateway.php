@@ -200,13 +200,26 @@ function svb_monobank_apply_payment_status(array $order_row, array $status_paylo
         return $payment;
     }
 
-    $updates = [
+  $updates = [
         'status' => $normalized_status,
         'invoice_id' => sanitize_text_field($status_payload['invoiceId'] ?? ($payment['invoice_id'] ?? '')),
         'modifiedDate' => $remote_modified ?: $saved_modified,
         'failureReason' => sanitize_text_field($status_payload['failureReason'] ?? ''),
         'payment_updated_at' => time(),
     ];
+
+    if (!empty($status_payload['receiptUrl'])) {
+        $updates['receipt_url'] = esc_url_raw($status_payload['receiptUrl']);
+    }
+
+    // === [DEBUG] Перевірка чека ===
+    if (!empty($status_payload['receiptUrl'])) {
+        $updates['receipt_url'] = esc_url_raw($status_payload['receiptUrl']);
+        error_log('[SVB] Чек знайдено і збережено: ' . $status_payload['receiptUrl']);
+    } else {
+        error_log('[SVB] Увага! Monobank не надіслав receiptUrl. Статус: ' . ($status_payload['status'] ?? 'unknown'));
+    }
+    // ==============================
 
     if (!empty($status_payload['paymentDetails']['merchantPaymInfo']['reference'])) {
         $updates['reference'] = sanitize_text_field($status_payload['paymentDetails']['merchantPaymInfo']['reference']);

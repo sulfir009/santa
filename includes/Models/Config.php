@@ -86,10 +86,8 @@ function svb_get_config_file_for_read() {
 }
 
 function svb_get_definitions() {
+    // 1. Ваші стандартні налаштування (залиште цей масив як є)
     $defaults = [
-        // ==============================================
-        // ВІДЕО ДЛЯ 1 ДИТИНИ (Video 1-4)
-        // ==============================================
         'video1' => [
             'label' => '1.Фабрика Іграшок',
             'url'   => SVB_PLUGIN_URL . 'assets/template1.mp4',
@@ -110,6 +108,7 @@ function svb_get_definitions() {
                 'request' => [ ['06:14:21','06:22:23'] ],
             ]
         ],
+        // ... (інші відео video2, video3, etc. залишаються тут) ...
         'video2' => [
             'label' => '2.Чарівна Кухня',
             'url'   => SVB_PLUGIN_URL . 'assets/template2.mp4',
@@ -176,13 +175,6 @@ function svb_get_definitions() {
                 'request' => [ ['06:27:25','06:33:31'] ],
             ]
         ],
-
-        // ==============================================
-        // ВІДЕО ДЛЯ ГРУП (2-3 ДІТЕЙ) (Video 5-8)
-        // Тайминги взяты из файлов Santa_X_Group.txt
-        // ==============================================
-
-
         'video5' => [
             'label' => '1.Фабрика Іграшок',
             'url'   => SVB_PLUGIN_URL . 'assets/template1_multi.mp4',
@@ -190,28 +182,19 @@ function svb_get_definitions() {
             'image' => SVB_PLUGIN_URL . 'assets/poster1.png',
             'for_children' => [2, 3, 4],
             'scenes' => [
-                'child1'  => [
-                    ['start'=>'00:55:21', 'end'=>'01:00:01', 'label'=>'Сцена 1'],
-                    ['start'=>'06:53:16', 'end'=>'07:00:06', 'label'=>'Сцена 2']
-                ],
-                'child2'  => [
-                    ['start'=>'02:18:20', 'end'=>'02:23:01', 'label'=>'Сцена 1'],
-                    ['start'=>'04:13:02', 'end'=>'04:16:12', 'label'=>'Сцена 2']
-                ],
-                // В файле было только 06:27:18, добавил +10 сек для конца
+                'child1'  => [ ['start'=>'00:55:21', 'end'=>'01:00:01', 'label'=>'Сцена 1'], ['start'=>'06:53:16', 'end'=>'07:00:06', 'label'=>'Сцена 2'] ],
+                'child2'  => [ ['start'=>'02:18:20', 'end'=>'02:23:01', 'label'=>'Сцена 1'], ['start'=>'04:13:02', 'end'=>'04:16:12', 'label'=>'Сцена 2'] ],
                 'parent1' => [ ['start'=>'06:24:24', 'end'=>'06:33:04', 'label'=>'Сцена 1'] ],
                 'parent2' => [ ['start'=>'06:24:24', 'end'=>'06:33:04', 'label'=>'Сцена 1'] ],
             ],
             'audio_timings' => [
-                // Добавляем +60 сек к старту, как было в оригинале для запаса
                 'name'    => [ ['00:33:28','00:36:21'], ['01:42:27','01:45:20'], ['03:30:19','03:33:19'], ['05:45:10','05:48:03'] ],
                 'hobby'   => [ ['02:33:05','02:38:01'] ],
                 'praise'  => [ ['05:48:25','05:54:07'] ],
                 'request' => [ ['06:07:08','06:15:10'] ],
-                'age'     => [], // В файле "Вік:" пусто
+                'age'     => [], 
             ]
         ],
-
         'video6' => [
             'label' => '2.Чарівна Кухня',
             'url'   => SVB_PLUGIN_URL . 'assets/template2_multi.mp4',
@@ -219,10 +202,7 @@ function svb_get_definitions() {
             'image' => SVB_PLUGIN_URL . 'assets/poster2.png',
             'for_children' => [2, 3, 4],
             'scenes' => [
-                'child1'  => [
-                    ['start'=>'01:30:21', 'end'=>'01:40:03', 'label'=>'Книга'],
-                    ['start'=>'04:31:12', 'end'=>'04:37:03', 'label'=>'Сцена 2']
-                ],
+                'child1'  => [ ['start'=>'01:30:21', 'end'=>'01:40:03', 'label'=>'Книга'], ['start'=>'04:31:12', 'end'=>'04:37:03', 'label'=>'Сцена 2'] ],
                 'child2'  => [ ['start'=>'04:45:22', 'end'=>'04:52:21', 'label'=>'Сцена 1'] ],
                 'parent1' => [ ['start'=>'02:43:12', 'end'=>'02:50:20', 'label'=>'Сцена 1'] ],
                 'parent2' => [ ['start'=>'02:42:20', 'end'=>'02:49:27', 'label'=>'Сцена 1'] ],
@@ -235,7 +215,6 @@ function svb_get_definitions() {
                 'age'     => [],
             ]
         ],
-
         'video7' => [
              'label' => '3.Казкові Санчата',
              'url'   => SVB_PLUGIN_URL . 'assets/template3_multi.mp4',
@@ -256,7 +235,6 @@ function svb_get_definitions() {
                 'age'     => [],
              ]
         ],
-
         'video8' => [
             'label' => '4.Містечко Чудес',
             'url'   => SVB_PLUGIN_URL . 'assets/template4_multi.mp4',
@@ -264,14 +242,8 @@ function svb_get_definitions() {
             'image' => SVB_PLUGIN_URL . 'assets/poster4.png',
             'for_children' => [2, 3, 4],
             'scenes' => [
-                'child1'  => [
-                    ['start'=>'00:27:09', 'end'=>'00:29:05', 'label'=>'Початок'],
-                    ['start'=>'06:59:23', 'end'=>'07:05:18', 'label'=>'Кінець']
-                ],
-                'child2'  => [
-                    ['start'=>'03:05:19', 'end'=>'03:16:13', 'label'=>'Сцена 1'],
-                    ['start'=>'09:04:19', 'end'=>'09:11:00', 'label'=>'Сцена 2']
-                ],
+                'child1'  => [ ['start'=>'00:27:09', 'end'=>'00:29:05', 'label'=>'Початок'], ['start'=>'06:59:23', 'end'=>'07:05:18', 'label'=>'Кінець'] ],
+                'child2'  => [ ['start'=>'03:05:19', 'end'=>'03:16:13', 'label'=>'Сцена 1'], ['start'=>'09:04:19', 'end'=>'09:11:00', 'label'=>'Сцена 2'] ],
                 'parent1' => [ ['start'=>'04:12:15', 'end'=>'04:17:05', 'label'=>'Сцена 1'] ],
                 'parent2' => [ ['start'=>'04:12:15', 'end'=>'04:17:05', 'label'=>'Сцена 1'] ],
             ], 
@@ -285,15 +257,38 @@ function svb_get_definitions() {
         ],
     ];
 
-    // Если существует файл svb_config.json, накладываем изменения на default
+    // === ОНОВЛЕНА ЛОГІКА ЗАВАНТАЖЕННЯ JSON ===
     $config_path = svb_get_config_file_for_read();
+    
     if ($config_path && file_exists($config_path)) {
         $json = file_get_contents($config_path);
         $saved = json_decode($json, true);
+
+        // Діагностика: якщо JSON битий, пишемо помилку в лог
+        if ($saved === null && json_last_error() !== JSON_ERROR_NONE) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[SVB CONFIG ERROR] Invalid JSON in svb_config.json: ' . json_last_error_msg());
+            }
+        }
+        
         if (is_array($saved)) {
             foreach ($saved as $vid => $cfg) {
-                if (isset($defaults[$vid]['scenes']) && isset($cfg['scenes'])) {
-                    $defaults[$vid]['scenes'] = $cfg['scenes'];
+                if (isset($cfg['scenes'])) {
+                    // Якщо відео вже є - оновлюємо
+                    if (isset($defaults[$vid])) {
+                        $defaults[$vid]['scenes'] = $cfg['scenes'];
+                    } 
+                    // Якщо відео нове (з JSON) - додаємо його повністю
+                    else {
+                        $defaults[$vid] = [
+                            'label'  => $cfg['label'] ?? $vid,
+                            'url'    => $cfg['url'] ?? '',
+                            'file'   => $cfg['file'] ?? '',
+                            'image'  => $cfg['image'] ?? '',
+                            'scenes' => $cfg['scenes'],
+                            'for_children' => $cfg['for_children'] ?? [1]
+                        ];
+                    }
                 }
             }
         }

@@ -925,11 +925,35 @@ function svbBindChildCount() {
         if (field2) field2.style.display = (svbCurrentChildCount >= 2) ? 'block' : 'none';
         if (field3) field3.style.display = (svbCurrentChildCount >= 3) ? 'block' : 'none';
 
-        // Оновлюємо селекти аудіо (щоб сховати "Я один" для груп)
+        // Оновлюємо селекти аудіо
         if (typeof svbPopulateSelects === 'function') svbPopulateSelects();
 
         // ГОЛОВНЕ: Перемальовуємо відео-селектор
         svbRenderUI();
+
+        // === ИСПРАВЛЕНИЕ: Принудительная зачистка кнопок ===
+        [1, 2, 3].forEach(idx => {
+            const btn = document.getElementById('svb-name-play-' + idx);
+            if (!btn) return;
+
+            // Если индекс ребенка больше, чем выбрано детей — СКРЫВАЕМ кнопку
+            if (idx > svbCurrentChildCount) {
+                btn.style.display = 'none';
+                btn.dataset.audioUrl = '';
+            } else {
+                // Если ребенок активен — проверяем, выбрано ли имя, чтобы показать кнопку
+                const selectName = idx === 1 ? 'name_audio' : ('name_audio_' + idx);
+                const select = document.querySelector(`select[name="${selectName}"]`);
+                if (select && select.value) {
+                    if (typeof svbUpdateNamePlayButton === 'function') {
+                        svbUpdateNamePlayButton(btn, select.value);
+                    }
+                } else {
+                    // Имя не выбрано — скрываем кнопку
+                    btn.style.display = 'none';
+                }
+            }
+        });
     };
 
     radios.forEach(r => r.addEventListener('change', handleCountChange));
@@ -937,7 +961,6 @@ function svbBindChildCount() {
     // Ініціалізація при старті
     handleCountChange();
 }
-
 // Допоміжна функція для модалки прев'ю
 function svbPreviewModal(url) {
     const modal = document.getElementById('svb-video-modal');
@@ -2666,29 +2689,46 @@ function svbCollectOverlayData() {
 const svbNorm = s => (s||'').toString().toLowerCase().trim().replace(/[\s_\-’']/g,'');
 
 let SVB_SELECTED = {};
-function buildSoundMap(){
-  const pull = (cat) => {
-    // ВИПРАВЛЕННЯ: Використовуємо getAllNames() замість getNameOptionsByGender()
-    let items = (cat === 'name') ? getAllNames() : (SVB_AUDIO[cat] || []);
-    
-    // Шукаємо селект. Для імен це може бути name_audio, name_audio_2, etc.
-    // Але ця функція збирає основний масив для кроку 3.
-    // Тут логіка спрощена для загального списку.
-    const sel = document.querySelector(`select[name="${cat}_audio"]`);
-    
-    if (!sel) return null;
-    const file = sel.value;
-    const it = items.find(i => i.file === file);
-    return it ? { file: it.file, url: it.url, label: it.label } : null;
-  };
+function buildSoundMap() {
+    // Оновлена функція pull, яка приймає кастомний селектор
+    const pull = (cat, customSelectorName = null) => {
+        // Якщо категорія починається з 'name' (наприклад name, name2), беремо список імен
+        let items = (cat.startsWith('name')) ? getAllNames() : (SVB_AUDIO[cat] || []);
+        
+        // Якщо передано конкретне ім'я інпуту, шукаємо його, інакше стандартне cat + "_audio"
+        const inputName = customSelectorName || `${cat}_audio`;
+        
+        const sel = document.querySelector(`select[name="${inputName}"]`);
+        
+        if (!sel) return null;
+        const file = sel.value;
+        const it = items.find(i => i.file === file);
+        return it ? { file: it.file, url: it.url, label: it.label } : null;
+    };
 
-  SVB_SELECTED = {
-    name:    pull('name'),
-    age:     pull('age'),
-    hobby:   pull('hobby'),
-    praise:  pull('praise'),
-    request: pull('request')
-  };
+    // Збираємо базові поля
+    SVB_SELECTED = {
+        name:    pull('name'), // name_audio
+        age:     pull('age'),
+        hobby:   pull('hobby'),
+        praise:  pull('praise'),
+        request: pull('request')
+    };
+
+    // === FIX: Додаємо імена для 2-ї та 3-ї дитини ===
+    // PHP чекає ключі 'name2' та 'name3' в масиві voice
+    
+    // Перевіряємо, чи є інпут для другої дитини і чи вибрано щось
+    const name2 = pull('name', 'name_audio_2');
+    if (name2) {
+        SVB_SELECTED.name2 = name2;
+    }
+
+    // Перевіряємо, чи є інпут для третьої дитини
+    const name3 = pull('name', 'name_audio_3');
+    if (name3) {
+        SVB_SELECTED.name3 = name3;
+    }
 }
 
 function svbSetLookupStatus(message, type = '') {
@@ -5388,13 +5428,12 @@ function svbBindNamePlayButtons() {
     });
 }
 
-// Замените существующую функцию svbBindNameSuggestUniversal на эту:
 function svbBindNameSuggestUniversal(inputId, resultBoxId, selectName, displayId, playBtnId) {
     const input = document.querySelector(`input[name="${inputId}"]`);
     const box = document.getElementById(resultBoxId);
     const sel = document.querySelector(`select[name="${selectName}"]`);
     const display = document.getElementById(displayId);
-    const playBtn = document.getElementById(playBtnId);
+    // playBtn здесь НЕ ищем, чтобы избежать конфликта с клонированием
 
     if (!input || !box || !sel) return;
 
@@ -5412,7 +5451,6 @@ function svbBindNameSuggestUniversal(inputId, resultBoxId, selectName, displayId
         
         if (items.length > 0 && normQ) {
             box.style.display = 'block';
-            // Базовая стилизация выпадающего списка
             box.style.position = 'absolute';
             box.style.zIndex = '1000';
             box.style.background = '#fff';
@@ -5427,7 +5465,9 @@ function svbBindNameSuggestUniversal(inputId, resultBoxId, selectName, displayId
 
     input.addEventListener('input', e => {
         doSearch(e.target.value);
-        if(playBtn) playBtn.style.display = 'none'; // Скрываем кнопку при наборе
+        // Скрываем кнопку при наборе текста, так как выбор сброшен
+        const currentBtn = document.getElementById(playBtnId);
+        if(currentBtn) currentBtn.style.display = 'none'; 
     });
     input.addEventListener('focus', e => doSearch(e.target.value));
 
@@ -5448,9 +5488,12 @@ function svbBindNameSuggestUniversal(inputId, resultBoxId, selectName, displayId
             display.style.color = 'green';
         }
 
-        // === ЛОГИКА КНОПКИ PLAY ===
-        if (playBtn) {
-            svbUpdateNamePlayButton(playBtn, file);
+        // === ИСПРАВЛЕНИЕ: Ищем кнопку прямо сейчас ===
+        const currentPlayBtn = document.getElementById(playBtnId);
+        if (currentPlayBtn) {
+            if (typeof svbUpdateNamePlayButton === 'function') {
+                svbUpdateNamePlayButton(currentPlayBtn, file);
+            }
         }
 
         box.style.display = 'none';
@@ -5746,18 +5789,31 @@ if (saveBtn) {
         });
 
         // 3. Отправляем на сервер
-        const fd = new FormData();
+const fd = new FormData();
         fd.append('action', 'svb_save_config');
         fd.append('_svb_nonce', SVB_AJAX.nonce);
         fd.append('video_id', SVB_SELECTED_VIDEO_ID);
         fd.append('scenes', JSON.stringify(scenesConfig));
 
-        const price1 = document.getElementById('svb-price-child-1');
-        const price2 = document.getElementById('svb-price-child-2');
-        const price3 = document.getElementById('svb-price-child-3');
-        if (price1) fd.append('price_child_1', price1.value || '');
-        if (price2) fd.append('price_child_2', price2.value || '');
-        if (price3) fd.append('price_child_3', price3.value || '');
+        // === ОНОВЛЕНО: Збір 6 цін (старі + нові) ===
+        const pricesDebug = {}; // Об'єкт для логування
+
+        for (let i = 1; i <= 3; i++) {
+            // 1. Нова ціна (реальна сума до сплати)
+            const priceEl = document.getElementById(`svb-price-child-${i}`);
+            const priceVal = priceEl ? (priceEl.value || '') : '';
+            fd.append(`price_child_${i}`, priceVal);
+
+            // 2. Стара ціна (візуальна, закреслена)
+            const oldPriceEl = document.getElementById(`svb-old-price-child-${i}`);
+            const oldPriceVal = oldPriceEl ? (oldPriceEl.value || '') : '';
+            fd.append(`old_price_child_${i}`, oldPriceVal);
+
+            // Зберігаємо для payloadSummary
+            pricesDebug[`price_child_${i}`] = priceVal;
+            pricesDebug[`old_price_child_${i}`] = oldPriceVal;
+        }
+        // ===========================================
 
         const payloadSummary = {
             video_id: SVB_SELECTED_VIDEO_ID,
@@ -5765,11 +5821,7 @@ if (saveBtn) {
                 acc[key] = Array.isArray(scenesConfig[key]) ? scenesConfig[key].length : 0;
                 return acc;
             }, {}),
-            prices: {
-                price_child_1: price1 ? price1.value || '' : undefined,
-                price_child_2: price2 ? price2.value || '' : undefined,
-                price_child_3: price3 ? price3.value || '' : undefined,
-            }
+            prices: pricesDebug // Передаємо зібрані ціни в лог
         };
 
         const logSaveConfigError = (status, url, data) => {
@@ -5788,7 +5840,6 @@ if (saveBtn) {
                 // no-op
             }
         };
-
         const oldText = saveBtn.textContent;
         const isDebugAdmin = !!(window.SVB_DATA && (window.SVB_DATA.is_admin || (window.SVB_DATA.payment && window.SVB_DATA.payment.is_admin)));
         const saveUrl = SVB_AJAX.url || '';

@@ -93,7 +93,7 @@ button#svb-toggle-lookup {
 @media (min-width: 1024px){ .svb-grid.cols-3 { grid-template-columns: repeat(3, 1fr); } }
 
 .svb-field { display:flex; flex-direction:column; gap:8px; }
-.svb-label { font-weight:700; font-size:14px; }
+.svb-label { font-weight:700; font-size:14px; text-align: left;}
 .svb-input, .svb-select { border:1px solid #E3E3E3; border-radius:50px; padding:10px 16px; font-size:15px; }
 .svb-range { border:1px solid #E3E3E3; border-radius: 12px; padding: 0; height: 22px; }
 
@@ -121,10 +121,10 @@ button#svb-toggle-lookup {
 
 .svb-suggest { position: relative; }
 #svb-name-suggest, #svb-name-suggest-2, #svb-name-suggest-3 {
-  position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E3E3E3; border-radius: 10px;
+  position: absolute; top: 50%; left: 0; right: 0; background: #fff; border: 1px solid #E3E3E3; border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.08); z-index: 9999; max-height: 240px; overflow: auto; display: none;
 }
-.svb-suggest-item{ padding: 10px 12px; cursor: pointer; }
+.svb-suggest-item{ padding: 10px 12px; cursor: pointer; text-align: left;}
 .svb-suggest-item:hover, .svb-suggest-item.active{ background: #F6F6F6; }
 
 .svb-vid-preview { position: relative; background: #000; border-radius: 12px; overflow: hidden; width: 100%; max-width: 854px; margin: 0 auto; aspect-ratio: 16 / 9; }
@@ -1005,14 +1005,7 @@ word-wrap: break-word
     font-weight: 400;
 }
 
-.svb-step--video .svb-video-card {
-    background: #fff;
-    border-radius: 16px;
-    padding: 16px;
-    display: grid;
-    grid-template-columns: 403px 1fr;
-    gap: 16px;
-}
+
 
 .svb-video-left {
     display: flex;
@@ -1218,7 +1211,7 @@ word-wrap: break-word
     }
 
     .svb-video-right .svb-video-preview {
-        min-height: 260px;
+        min-height: 177px;
     }
 
     .svb-video-progress {
@@ -1228,16 +1221,24 @@ word-wrap: break-word
 }
 
 @media (max-width: 768px) {
-    .svb-step--video .svb-video-page { padding: 16px; border-radius: 20px; }
+    .svb-step--video .svb-video-page { padding: 0; border-radius: 20px; }
     .svb-video-page__title { font-size: 30px; }
     .svb-video-actions { justify-content: center; }
 }
 @media (max-width: 600px) {
-    .svb-video-right .svb-video-preview { min-height: 220px; }
+    .svb-video-right .svb-video-preview { min-height: 177px; }
     .svb-video-actions .svb-btn { width: 100%; text-align: center; }
 }
 
 @media (max-width: 1024px) {
+    .svb-step--video .svb-video-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 403px 1fr;
+    gap: 16px;
+}
     .svb-wrap { margin: 20px auto; padding: 0 12px; }
     .svb-card { padding: 18px 14px; }
     .svb-header { flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -1279,6 +1280,14 @@ word-wrap: break-word
 }
 
 @media (min-width: 1024px) {
+    .svb-step--video .svb-video-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 403px 1fr;
+    gap: 16px;
+}
     .svb-video-actions {
     display: flex;
     gap: 10px;
@@ -1327,83 +1336,115 @@ button#svb-toggle-lookup {
     background-color: #fff0f0 !important;
     box-shadow: 0 0 5px rgba(255, 77, 77, 0.3);
 }
-/* === МОБИЛЬНАЯ АДАПТАЦИЯ ШАГА 3 (ПОРЯДОК БЛОКОВ) === */
-@media (max-width: 960px) {
-    /* 1. Делаем главную карточку флекс-контейнером */
-    .svb-step--video .svb-video-card {
+@media (max-width: 768px) {
+    
+    /* 1. Делаем ГЛАВНЫМ контейнером svb-video-page */
+    .svb-video-page {
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 15px;
+        padding-bottom: 20px;
     }
 
-    /* 2. "Растворяем" левую и правую колонки. 
-       Их дочерние элементы становятся прямыми детьми .svb-video-card */
-    .svb-video-left,
-    .svb-video-right {
-        display: contents;
+    /* 2. Игнорируем (распаковываем) промежуточный блок карточки */
+    .svb-video-card {
+        display: contents; 
     }
 
-    /* === 3. НАЗНАЧАЕМ ПОРЯДОК (ORDER) === */
+    /* 3. Игнорируем (распаковываем) левую колонку */
+    .svb-video-left {
+        display: contents; 
+    }
 
-    /* [1] Номер заказа (Сверху) */
+    /* === ПОРЯДОК ЭЛЕМЕНТОВ === */
+
+    /* Заголовок "Ваше видео" (оставляем самым первым) */
+    .svb-video-page__title {
+        order: 0;
+        text-align: center;
+        margin-bottom: 5px;
+    }
+
+    /* Блок 1: Номер заказа */
     .svb-video-order {
         order: 1;
-        text-align: center; /* Центрируем текст как на фото */
-        background: #F0F8FF; /* Светлый фон как на фото */
-        border: none;
+        background: #f0f8ff;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: center;
+        width: 100%;
+        margin: 0;
     }
 
-    /* [2] Видео плеер */
-    .svb-video-preview {
+    /* Блок 2: Видео плеер */
+    .svb-video-right {
         order: 2;
-        min-height: 250px; /* Фикс высоты для мобилок */
+        width: 100%;
+        margin: 0;
     }
 
-    /* [3] Кнопки (Скачать / Назад) */
+    /* Блок 3: Кнопка скачивания */
     .svb-video-actions {
         order: 3;
         width: 100%;
-        flex-direction: column-reverse; /* Кнопка "Назад" будет под кнопкой "Скачать" */
-        gap: 12px;
+        margin-top: 0 !important;
     }
 
-    /* Стиль кнопки "Завантажити" как на макете */
-    .svb-video-download {
-        width: 100%;
-        justify-content: center;
-        background: #D62828; /* Красный */
-        color: white;
-        font-size: 18px;
-        padding: 14px;
-        border-radius: 12px;
-    }
-
-    /* Кнопка "Назад" - делаем менее заметной или оставляем как есть */
-    #svb-back-3 {
-        width: 100%;
-        text-align: center;
-        justify-content: center;
-    }
-
-    /* [4] Инструкция "Завантажте відео..." */
+    /* Блок 4: Инструкции (бежевые блоки) */
     .svb-video-box {
         order: 4;
-        background: #FFF6F0; /* Кремовый фон */
+        background: #fff9f0;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        width: 100%;
+        margin: 0;
     }
 
-    /* [5] Блок техподдержки */
-    .svb-video-box--small {
-        order: 5;
-    }
-
-    /* [6] Поделиться */
+    /* Блок 5: Поделиться */
     .svb-video-share {
-        order: 6;
+        order: 5;
+        background: #fff9f0;
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+        width: 100%;
     }
 
-    /* [7] Поле Email (оставляем внизу) */
-    .svb-video-email {
-        order: 7;
+    /* === СТИЛИЗАЦИЯ (Красная кнопка и плеер) === */
+
+    #svb-finish {
+        width: 100%;
+        background-color: #DC2626;
+        color: white;
+        font-weight: bold;
+        font-size: 18px;
+        padding: 16px;
+        border-radius: 12px;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);
+    }
+    
+    /* Скрываем кнопку "Назад" на мобилке */
+    #svb-back-3 {
+        display: none; 
+    }
+
+    /* Скругление видео */
+    .svb-video-preview {
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    /* Иконки по центру */
+    .svb-video-share__icons {
+        justify-content: center;
+        gap: 15px;
     }
 }
 

@@ -82,7 +82,14 @@ function svb_render_form() {
 
     $current_path = isset($_SERVER['REQUEST_URI']) ? wp_unslash($_SERVER['REQUEST_URI']) : '/';
     $payment_return_url = add_query_arg('svb_payment_return', '1', home_url($current_path));
+    
     $payment_prices = svb_get_price_map_uah();
+    
+    $payment_old_prices = [];
+    for ($i = 1; $i <= 3; $i++) {
+        $payment_old_prices[$i] = (int) get_option('svb_old_price_child_' . $i, 0);
+    }
+
     $payment_enabled = svb_monobank_get_token() && (max($payment_prices ?: [0]) > 0);
 
     $ffmpeg_path = svb_exec_find('ffmpeg');
@@ -141,6 +148,7 @@ function svb_render_form() {
             'invoice_id'  => $payment_state['invoice_id'] ?? '',
             'child_count' => (int) ($payment_state['child_count'] ?? 1),
             'prices'      => $payment_prices,
+            'old_prices'  => $payment_old_prices,
             'return_url'  => esc_url($payment_return_url),
             'is_admin'    => $is_admin,
         ],

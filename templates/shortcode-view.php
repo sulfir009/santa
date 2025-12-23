@@ -7,6 +7,7 @@
   }
 <?php endif; ?>
   </style>
+  
 <div class="svb-wrap">
       <div class="svb-card">
         
@@ -67,34 +68,53 @@
     <label class="svb-label" style="margin-bottom:10px;">Для скількох дітей відео?</label>
     
     <div class="svb-child-count-wrap">
-        <input type="radio" name="child_count" id="cc1" value="1" class="svb-child-radio" checked>
+        
+        <?php 
+            $old1 = isset($localize['payment']['old_prices'][1]) ? (int)$localize['payment']['old_prices'][1] : 0;
+            $new1 = isset($localize['payment']['prices'][1]) ? (int)$localize['payment']['prices'][1] : 249;
+        ?>
+        <input type="radio" name="child_count" id="cc1" value="1" class="svb-child-radio" <?php checked($payment_state['child_count'] ?? 1, 1); ?>>
         <label for="cc1" class="svb-child-label">
             <span class="svb-c-text">1 дитина</span>
             <span class="svb-c-price">
-                <s class="svb-c-old">350</s>
-                <span class="svb-c-new">249 грн</span>
+                <?php if ($old1 > $new1): ?>
+                    <s class="svb-c-old"><?php echo $old1; ?></s>
+                <?php endif; ?>
+                <span class="svb-c-new"><?php echo $new1; ?> грн</span>
             </span>
         </label>
         
-        <input type="radio" name="child_count" id="cc2" value="2" class="svb-child-radio">
+        <?php 
+            $old2 = isset($localize['payment']['old_prices'][2]) ? (int)$localize['payment']['old_prices'][2] : 0;
+            $new2 = isset($localize['payment']['prices'][2]) ? (int)$localize['payment']['prices'][2] : 279;
+        ?>
+        <input type="radio" name="child_count" id="cc2" value="2" class="svb-child-radio" <?php checked($payment_state['child_count'] ?? 1, 2); ?>>
         <label for="cc2" class="svb-child-label">
             <span class="svb-c-text">2 дитини</span>
             <span class="svb-c-price">
-                <s class="svb-c-old">350</s>
-                <span class="svb-c-new">249 грн</span>
+                <?php if ($old2 > $new2): ?>
+                    <s class="svb-c-old"><?php echo $old2; ?></s>
+                <?php endif; ?>
+                <span class="svb-c-new"><?php echo $new2; ?> грн</span>
             </span>
         </label>
         
-        <input type="radio" name="child_count" id="cc3" value="3" class="svb-child-radio">
+        <?php 
+            $old3 = isset($localize['payment']['old_prices'][3]) ? (int)$localize['payment']['old_prices'][3] : 0;
+            $new3 = isset($localize['payment']['prices'][3]) ? (int)$localize['payment']['prices'][3] : 299;
+        ?>
+        <input type="radio" name="child_count" id="cc3" value="3" class="svb-child-radio" <?php checked($payment_state['child_count'] ?? 1, 3); ?>>
         <label for="cc3" class="svb-child-label">
             <span class="svb-c-text">3 дитини</span>
             <span class="svb-c-price">
-                <s class="svb-c-old">350</s>
-                <span class="svb-c-new">249 грн</span>
+                <?php if ($old3 > $new3): ?>
+                    <s class="svb-c-old"><?php echo $old3; ?></s>
+                <?php endif; ?>
+                <span class="svb-c-new"><?php echo $new3; ?> грн</span>
             </span>
         </label>
+
     </div>
-</div>
 
         <div class="svb-grid cols-2">
           
@@ -259,19 +279,47 @@
     </button>
 </div>
 
-    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:12px 0 6px;">
-      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
-        <span>Ціна для 1 дитини (грн)</span>
-        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-1" value="<?php echo esc_attr($price_map_uah[1] ?? 249); ?>" />
-      </label>
-      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
-        <span>Ціна для 2 дітей (грн)</span>
-        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-2" value="<?php echo esc_attr($price_map_uah[2] ?? 249); ?>" />
-      </label>
-      <label class="svb-label" style="display:flex; flex-direction:column; gap:6px;">
-        <span>Ціна для 3 дітей (грн)</span>
-        <input type="number" min="0" max="100000" step="1" class="svb-input" id="svb-price-child-3" value="<?php echo esc_attr($price_map_uah[3] ?? 249); ?>" />
-      </label>
+<div class="svb-admin-prices" style="margin:12px 0 6px; padding:15px; background:#f6f7f7; border:1px solid #dcdcde; border-radius:4px;">
+        <h4 style="margin-top:0; margin-bottom:10px;">Налаштування цін (Монобанк)</h4>
+        <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            
+            <div style="flex:1; min-width:140px; border-right:1px solid #ddd; padding-right:20px;">
+                <strong style="display:block; margin-bottom:8px;">👶 1 Дитина</strong>
+                
+                <label style="font-size:11px; color:#666; display:block;">Стара ціна (закр.):</label>
+                <input type="number" id="svb-old-price-child-1" class="svb-input" style="width:100%; margin-bottom:8px;"
+                       value="<?php echo esc_attr($localize['payment']['old_prices'][1] ?? 0); ?>" placeholder="350">
+                
+                <label style="font-size:11px; color:#000; font-weight:bold; display:block;">Нова ціна (сплата):</label>
+                <input type="number" id="svb-price-child-1" class="svb-input" style="width:100%; border-color:#2271b1;"
+                       value="<?php echo esc_attr($localize['payment']['prices'][1] ?? 249); ?>" placeholder="249">
+            </div>
+
+            <div style="flex:1; min-width:140px; border-right:1px solid #ddd; padding-right:20px;">
+                <strong style="display:block; margin-bottom:8px;">👶👶 2 Дитини</strong>
+                
+                <label style="font-size:11px; color:#666; display:block;">Стара ціна (закр.):</label>
+                <input type="number" id="svb-old-price-child-2" class="svb-input" style="width:100%; margin-bottom:8px;"
+                       value="<?php echo esc_attr($localize['payment']['old_prices'][2] ?? 0); ?>" placeholder="380">
+                
+                <label style="font-size:11px; color:#000; font-weight:bold; display:block;">Нова ціна (сплата):</label>
+                <input type="number" id="svb-price-child-2" class="svb-input" style="width:100%; border-color:#2271b1;"
+                       value="<?php echo esc_attr($localize['payment']['prices'][2] ?? 279); ?>" placeholder="279">
+            </div>
+
+            <div style="flex:1; min-width:140px;">
+                <strong style="display:block; margin-bottom:8px;">👶👶👶 3 Дитини</strong>
+                
+                <label style="font-size:11px; color:#666; display:block;">Стара ціна (закр.):</label>
+                <input type="number" id="svb-old-price-child-3" class="svb-input" style="width:100%; margin-bottom:8px;"
+                       value="<?php echo esc_attr($localize['payment']['old_prices'][3] ?? 0); ?>" placeholder="399">
+                
+                <label style="font-size:11px; color:#000; font-weight:bold; display:block;">Нова ціна (сплата):</label>
+                <input type="number" id="svb-price-child-3" class="svb-input" style="width:100%; border-color:#2271b1;"
+                       value="<?php echo esc_attr($localize['payment']['prices'][3] ?? 299); ?>" placeholder="299">
+            </div>
+
+        </div>
     </div>
 
     <div style="margin-bottom:10px; padding:6px; background:#eef; border-radius:6px; display:flex; align-items:center; gap:8px;">

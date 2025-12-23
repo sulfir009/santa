@@ -74,25 +74,27 @@ function svb_save_config() {
             }
         };
 
-        for ($i = 1; $i <= 3; $i++) {
+for ($i = 1; $i <= 3; $i++) {
             $price_key = 'price_child_' . $i;
             if (isset($_POST[$price_key])) {
                 $val = (int) sanitize_text_field(wp_unslash($_POST[$price_key]));
-                if ($val < 0) {
-                    $val = 0;
-                }
-                if ($val > 100000) {
-                    $val = 100000;
-                }
+                if ($val < 0) $val = 0;
+                if ($val > 100000) $val = 100000;
                 update_option('svb_price_child_' . $i, $val);
+            }
+
+
+            $old_price_key = 'old_price_child_' . $i;
+            if (isset($_POST[$old_price_key])) {
+                $valOld = (int) sanitize_text_field(wp_unslash($_POST[$old_price_key]));
+                if ($valOld < 0) $valOld = 0;
+                update_option('svb_old_price_child_' . $i, $valOld);
             }
         }
 
-        // 1. Получаем ПОЛНУЮ конфигурацию (Дефолтные настройки + то, что уже было в файле)
-        // Функция svb_get_definitions() уже делает слияние за нас.
         $allVideos = svb_get_definitions();
 
-        // 2. Обновляем в этом полном массиве данные ТОЛЬКО для текущего видео
+
         if (isset($allVideos[$videoId])) {
             $allVideos[$videoId]['scenes'] = $scenesData;
         } else {
@@ -3262,7 +3264,7 @@ function svb_start_generation() {
     $filter[] = "{$vlabel}format=yuv420p[vfinal]";
     $finalV = "[vfinal]";
 
-    // --- АУДИО (1 в 1 как в svb_generate) ---
+// --- Аудио (1 в 1 как в svb_generate) ---
     $audT = $current_def['audio_timings'];
     $A_NAME    = $audT['name'];
     $A_AGE     = $audT['age'] ?? [];
@@ -3270,7 +3272,13 @@ function svb_start_generation() {
     $A_PRAISE  = $audT['praise'] ?? [];
     $A_REQUEST = $audT['request'] ?? [];
 
-    $child_count_final = (int)($order['child_count'] ?? 1);
+    // FIX: Використовуємо розраховану раніше змінну $child_count, а не стару з бази
+    $child_count_final = isset($child_count) ? $child_count : (int)($order['child_count'] ?? 1);
+    
+    // Додаткова страховка: якщо є файли імен, збільшуємо лічильник
+    if (isset($audio_sel['name2'])) $child_count_final = max($child_count_final, 2);
+    if (isset($audio_sel['name3'])) $child_count_final = max($child_count_final, 3);
+
     $A_NAME_2 = []; $A_NAME_3 = [];
     $fmtTime = function($sec) {
         $m = floor($sec / 60); $s = $sec % 60; $ms = ($sec - floor($sec)) * 1000;
@@ -4205,11 +4213,16 @@ function svb_send_success_email($order_row, $video_url) {
         return ['success' => false, 'error' => 'No recipient email found'];
     }
 
+    // === ОТРИМАННЯ ПОСИЛАННЯ НА ЧЕК ===
+    $payment_data = isset($order_row['payment']) ? (is_array($order_row['payment']) ? $order_row['payment'] : json_decode($order_row['payment'], true)) : [];
+    $receipt_url = $payment_data['receipt_url'] ?? '';
+    // ==================================
+
     // Дані замовлення
     $name = $order_row['customer_name'] ?? 'Друже';
     $order_id = $order_row['order_id'] ?? '...';
     
-    // === ЗОБРАЖЕННЯ (Використовуємо ваші посилання) ===
+    // === ЗОБРАЖЕННЯ ===
     $img_bg   = 'https://e-santaa.com/wp-content/uploads/2025/12/bg.png';
     $img_logo = 'https://e-santaa.com/wp-content/uploads/2025/12/logo.png';
     $img_icon = 'https://e-santaa.com/wp-content/uploads/2025/12/dd.png';
@@ -4222,14 +4235,31 @@ function svb_send_success_email($order_row, $video_url) {
 
     $subject = "🎁 Ваше відео від Санти готове! (Замовлення №$order_id)";
 
-    // === HTML EMAIL (ТАБЛИЧНА ВЕРСТКА) ===
+    // === HTML EMAIL (З Dark Mode Fix) ===
+    // Розбиваємо HTML на частини, щоб вставити умову для чека
     $message = <<<HTML
 <!DOCTYPE html>
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
     <title>Ваше відео готове</title>
+    <style>
+        :root {
+            color-scheme: light;
+            supported-color-schemes: light;
+        }
+        u + #body a {
+            color: inherit;
+            text-decoration: none;
+            font-size: inherit;
+            font-family: inherit;
+            font-weight: inherit;
+            line-height: inherit;
+        }
+    </style>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, sans-serif;">
     
@@ -4248,8 +4278,8 @@ function svb_send_success_email($order_row, $video_url) {
                                             <img src="{$img_logo}" alt="Elf-Santa" width="100" style="display: block; border: 0; max-width: 120px;">
                                         </a>
                                     </td>
-                                    <td align="right" width="50%" style="color: #ffffff; font-family: Arial, sans-serif; font-size: 13px; font-weight: bold; text-transform: uppercase;">
-                                        Замовлення №{$order_id}
+                                    <td align="right" width="50%" style="color: #ffffff !important; font-family: Arial, sans-serif; font-size: 13px; font-weight: bold; text-transform: uppercase;">
+                                        <span style="color: #ffffff !important;">Замовлення №{$order_id}</span>
                                     </td>
                                 </tr>
                             </table>
@@ -4260,41 +4290,56 @@ function svb_send_success_email($order_row, $video_url) {
                     <tr>
                         <td align="center" style="padding: 20px 30px 40px 30px;">
                             
-                            <h1 style="margin: 0 0 10px 0; color: #FDE047; font-family: Arial, sans-serif; font-size: 32px; font-weight: 800; font-style: italic; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">
-                                Вітаємо, {$name}!
+                            <h1 style="margin: 0 0 10px 0; color: #FDE047 !important; font-family: Arial, sans-serif; font-size: 32px; font-weight: 800; font-style: italic; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">
+                                <span style="color: #FDE047 !important;">Вітаємо, {$name}!</span>
                             </h1>
 
-                            <p style="margin: 0 0 25px 0; color: #FDE047; font-family: 'Times New Roman', serif; font-size: 18px; font-style: italic;">
-                                Створіть незабутній момент для своєї дитини!
+                            <p style="margin: 0 0 25px 0; color: #FDE047 !important; font-family: 'Times New Roman', serif; font-size: 18px; font-style: italic;">
+                                <span style="color: #FDE047 !important;">Створіть незабутній момент для своєї дитини!</span>
                             </p>
 
-                            <p style="margin: 0 0 35px 0; color: #ffffff; font-family: Arial, sans-serif; font-size: 24px; font-weight: 700; font-style: italic; line-height: 1.4; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">
-                                Ваше унікальне відео-привітання<br>від Санти вже готове!
+                            <p style="margin: 0 0 35px 0; color: #ffffff !important; font-family: Arial, sans-serif; font-size: 24px; font-weight: 700; font-style: italic; line-height: 1.4; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">
+                                <span style="color: #ffffff !important;">Ваше унікальне відео-привітання<br>від Санти вже готове!</span>
                             </p>
 
                             <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
                                 <tr>
                                     <td align="center" bgcolor="#FACC15" style="border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-                                        <a href="{$video_url}" target="_blank" style="display: inline-block; padding: 16px 40px; font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; color: #D62828; text-decoration: none; text-transform: uppercase;">
-                                            Завантажити відео
+                                        <a href="{$video_url}" target="_blank" style="display: inline-block; padding: 16px 40px; font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; color: #D62828 !important; text-decoration: none; text-transform: uppercase;">
+                                            <span style="color: #D62828 !important;">Завантажити відео</span>
                                             <img src="{$img_icon}" width="18" height="18" alt="↓" style="vertical-align: middle; margin-left: 10px; border: 0;">
                                         </a>
                                     </td>
                                 </tr>
+HTML;
+
+    if (!empty($receipt_url)) {
+        $message .= <<<HTML
+                                <tr>
+                                    <td align="center" style="padding-top: 15px;">
+                                        <a href="{$receipt_url}" target="_blank" style="font-family: Arial, sans-serif; font-size: 14px; color: #FDE047 !important; text-decoration: underline;">
+                                            <span style="color: #FDE047 !important;">📜 Завантажити фіскальний чек</span>
+                                        </a>
+                                    </td>
+                                </tr>
+HTML;
+    }
+
+    $message .= <<<HTML
                             </table>
 
-                            <p style="margin: 35px 0 10px 0; color: #ffffff; font-family: Arial, sans-serif; font-size: 16px; font-weight: 600; font-style: italic; line-height: 1.5;">
-                                Поділіться радістю з дитиною!<br>
-                                Якщо виникнуть питання - пишіть нам.
+                            <p style="margin: 35px 0 10px 0; color: #ffffff !important; font-family: Arial, sans-serif; font-size: 16px; font-weight: 600; font-style: italic; line-height: 1.5;">
+                                <span style="color: #ffffff !important;">Поділіться радістю з дитиною!<br>
+                                Якщо виникнуть питання - пишіть нам.</span>
                             </p>
                             
-                            <p style="margin: 0 0 20px 0; color: #FDE047; font-size: 18px; font-weight: bold;">
-                                Веселих свят! 🎄✨
+                            <p style="margin: 0 0 20px 0; color: #FDE047 !important; font-size: 18px; font-weight: bold;">
+                                <span style="color: #FDE047 !important;">Веселих свят! 🎄✨</span>
                             </p>
 
                             <p style="margin: 0;">
-                                <a href="https://e-santaa.com/" style="color: #ffffff; font-family: Arial, sans-serif; font-size: 14px; text-decoration: underline; font-weight: bold; font-style: italic;">
-                                    Команда E-Santaa.com
+                                <a href="https://e-santaa.com/" style="color: #ffffff !important; font-family: Arial, sans-serif; font-size: 14px; text-decoration: underline; font-weight: bold; font-style: italic;">
+                                    <span style="color: #ffffff !important;">Команда E-Santaa.com</span>
                                 </a>
                             </p>
 
@@ -4312,8 +4357,8 @@ function svb_send_success_email($order_row, $video_url) {
                                             <img src="{$img_logo}" alt="Elf-Santa" width="80" style="display: block; border: 0;">
                                         </a>
                                     </td>
-                                    <td align="right" width="50%" style="color: #ffffff; font-family: Arial, sans-serif; font-size: 11px;">
-                                        © 2021-2026 Elf-Santa.<br>Всі права захищені.
+                                    <td align="right" width="50%" style="color: #ffffff !important; font-family: Arial, sans-serif; font-size: 11px;">
+                                        <span style="color: #ffffff !important;">© 2021-2026 Elf-Santa.<br>Всі права захищені.</span>
                                     </td>
                                 </tr>
                             </table>
@@ -4322,9 +4367,9 @@ function svb_send_success_email($order_row, $video_url) {
 
                 </table>
                 
-                <p style="text-align: center; font-size: 11px; color: #999; margin-top: 20px; font-family: sans-serif;">
+                <p style="text-align: center; font-size: 11px; color: #999999; margin-top: 20px; font-family: sans-serif;">
                     Якщо кнопка не працює, перейдіть за посиланням:<br>
-                    <a href="{$video_url}" style="color: #555;">{$video_url}</a>
+                    <a href="{$video_url}" style="color: #555555;">{$video_url}</a>
                 </p>
 
             </td>

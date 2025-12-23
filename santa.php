@@ -112,6 +112,7 @@ $svb_dependencies = [
     'includes/Services/MonobankGateway.php',
     'includes/Presenters/ShortcodeController.php',
     'includes/Presenters/AjaxController.php',
+    'includes/Models/AdminOrders.php',
 ];
 
 $svb_missing_files = [];
@@ -139,6 +140,7 @@ require_once SVB_PLUGIN_DIR . 'includes/Services/MediaPipeline.php';
 require_once SVB_PLUGIN_DIR . 'includes/Services/MonobankGateway.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/ShortcodeController.php';
 require_once SVB_PLUGIN_DIR . 'includes/Presenters/AjaxController.php';
+require_once SVB_PLUGIN_DIR . 'includes/Models/AdminOrders.php';
 
 svb_register_error_observer();
 
